@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Force card view and hide table view */
+#tours-list table, 
+#tours-list thead, 
+#tours-list tbody, 
+#tours-list tr, 
+#tours-list th, 
+#tours-list td {
+  display: none !important;
+}
+
+/* Ensure card layout is visible */
+.card-view-container {
+  display: block !important;
+} 
