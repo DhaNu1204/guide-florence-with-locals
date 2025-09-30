@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clear Tour Cache</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #6b46c1;
+    }
+    .button {
+      background-color: #6b46c1;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .button:hover {
+      background-color: #553c9a;
+    }
+    .success {
+      color: green;
+      font-weight: bold;
+      margin-top: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Tour Cache Cleaner</h1>
+  <p>If you're seeing inconsistent tour data across different devices or browsers, use this tool to clear your local browser cache.</p>
+  <p>This will force the app to load fresh data from the server.</p>
+  
+  <button id="clearButton" class="button">Clear Tour Cache</button>
+  <div id="success" class="success">Cache cleared successfully! You can now return to the app.</div>
+  
+  <script>
+    document.getElementById('clearButton').addEventListener('click', function() {
+      // Clear all localStorage keys related to tours
+      localStorage.removeItem('tours');
+      localStorage.removeItem('tours_v1');
+      
+      // Also look for any other potential tour-related keys
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes('tour') || key.includes('Tour')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      console.log('Cache cleared successfully!');
+      document.getElementById('success').style.display = 'block';
+      this.disabled = true;
+    });
+  </script>
+</body>
+</html> 
