@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bokun API Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #6B46C1;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #6B46C1;
+            margin-top: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-left: 4px solid #6B46C1;
+        }
+        button {
+            background: #6B46C1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #553C9A;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .response {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Bokun API Integration Test Suite</h1>
+        
+        <div class="info">
+            <strong>Test Environment URLs:</strong><br>
+            • Frontend: <a href="http://localhost:5173" target="_blank">http://localhost:5173</a><br>
+            • API Server: <a href="http://localhost:8080/api" target="_blank">http://localhost:8080/api</a><br><br>
+            <strong>Note:</strong> Make sure both servers are running before testing.
+        </div>
+
+        <h2>1. Test Database Connection</h2>
+        <div class="test-section">
+            <button onclick="testDatabaseConnection()">Test Database</button>
+            <div id="db-response" class="response"></div>
+        </div>
+
+        <h2>2. Configure Bokun API (Mock Credentials for Testing)</h2>
+        <div class="test-section">
+            <label>Access Key:</label>
+            <input type="text" id="access-key" value="TEST_ACCESS_KEY_123" />
+            
+            <label>Secret Key:</label>
+            <input type="password" id="secret-key" value="TEST_SECRET_KEY_456" />
+            
+            <label>Vendor ID:</label>
+            <input type="text" id="vendor-id" value="TEST_VENDOR_789" />
+            
+            <button onclick="saveConfig()">Save Configuration</button>
+            <button onclick="getConfig()">Get Current Config</button>
+            <div id="config-response" class="response"></div>
+        </div>
+
+        <h2>3. Test Webhook Simulation</h2>
+        <div class="test-section">
+            <p>Simulate different webhook events from Bokun:</p>
+            <button onclick="simulateWebhook('create')">Simulate Booking Created</button>
+            <button onclick="simulateWebhook('update')">Simulate Booking Updated</button>
+            <button onclick="simulateWebhook('cancel')">Simulate Booking Cancelled</button>
+            <div id="webhook-response" class="response"></div>
+        </div>
+
+        <h2>4. Test Manual Sync</h2>
+        <div class="test-section">
+            <label>Start Date:</label>
+            <input type="date" id="sync-start" value="2025-01-29" />
+            
+            <label>End Date:</label>
+            <input type="date" id="sync-end" value="2025-02-05" />
+            
+            <button onclick="manualSync()">Run Manual Sync</button>
+            <div id="sync-response" class="response"></div>
+        </div>
+
+        <h2>5. Test Tour Creation via Bokun</h2>
+        <div class="test-section">
+            <button onclick="createTestTour()">Create Test Tour from Bokun</button>
+            <div id="tour-response" class="response"></div>
+        </div>
+
+        <h2>6. View Unassigned Tours</h2>
+        <div class="test-section">
+            <button onclick="getUnassignedTours()">Get Unassigned Tours</button>
+            <div id="unassigned-response" class="response"></div>
+        </div>
+
+        <h2>7. Test Auto-Assignment</h2>
+        <div class="test-section">
+            <label>Tour ID to Assign:</label>
+            <input type="number" id="tour-id" placeholder="Enter tour ID" />
+            <button onclick="autoAssignGuide()">Auto-Assign Guide</button>
+            <div id="assign-response" class="response"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        
+        async function makeRequest(url, method = 'GET', data = null) {
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(url, options);
+                const result = await response.text();
+                
+                try {
+                    return JSON.parse(result);
+                } catch {
+                    return result;
+                }
+            } catch (error) {
+                return { error: error.message };
+            }
+        }
+        
+        async function testDatabaseConnection() {
+            const response = await makeRequest(`${API_BASE}/test_connection.php`);
+            document.getElementById('db-response').innerHTML = 
+                `<span class="${response.success ? 'success' : 'error'}">
+                    ${JSON.stringify(response, null, 2)}
+                </span>`;
+        }
+        
+        async function saveConfig() {
+            const data = {
+                access_key: document.getElementById('access-key').value,
+                secret_key: document.getElementById('secret-key').value,
+                vendor_id: document.getElementById('vendor-id').value,
+                sync_enabled: true,
+                auto_assign_guides: true
+            };
+            
+            const response = await makeRequest(`${API_BASE}/bokun_sync.php?action=config`, 'POST', data);
+            document.getElementById('config-response').innerHTML = 
+                `<span class="${response.success ? 'success' : 'error'}">
+                    ${JSON.stringify(response, null, 2)}
+                </span>`;
+        }
+        
+        async function getConfig() {
+            const response = await makeRequest(`${API_BASE}/bokun_sync.php?action=config`);
+            document.getElementById('config-response').innerHTML = 
+                `${JSON.stringify(response, null, 2)}`;
+        }
+        
+        async function simulateWebhook(type) {
+            const webhookData = {
+                create: {
+                    timestamp: new Date().toISOString(),
+                    bookingId: 'TEST_BOOKING_' + Date.now()
+                },
+                update: {
+                    timestamp: new Date().toISOString(),
+                    bookingId: 'TEST_BOOKING_UPDATE_' + Date.now(),
+                    experienceBookingId: 'EXP_' + Date.now()
+                },
+                cancel: {
+                    timestamp: new Date().toISOString(),
+                    bookingId: 'TEST_BOOKING_CANCEL_' + Date.now()
+                }
+            };
+            
+            const headers = {
+                'x-bokun-topic': `bookings/${type}`,
+                'x-bokun-booking-id': webhookData[type].bookingId
+            };
+            
+            const response = await fetch(`${API_BASE}/bokun_webhook.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...headers
+                },
+                body: JSON.stringify(webhookData[type])
+            });
+            
+            const result = await response.text();
+            document.getElementById('webhook-response').innerHTML = 
+                `Webhook Type: ${type}\n${result}`;
+        }
+        
+        async function manualSync() {
+            const data = {
+                start_date: document.getElementById('sync-start').value,
+                end_date: document.getElementById('sync-end').value
+            };
+            
+            const response = await makeRequest(`${API_BASE}/bokun_sync.php?action=sync`, 'POST', data);
+            document.getElementById('sync-response').innerHTML = 
+                `${JSON.stringify(response, null, 2)}`;
+        }
+        
+        async function createTestTour() {
+            // First create via webhook
+            const bookingId = 'BOKUN_TEST_' + Date.now();
+            const webhookResponse = await fetch(`${API_BASE}/bokun_webhook.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-bokun-topic': 'bookings/create',
+                    'x-bokun-booking-id': bookingId
+                },
+                body: JSON.stringify({
+                    timestamp: new Date().toISOString(),
+                    bookingId: bookingId
+                })
+            });
+            
+            const result = await webhookResponse.text();
+            document.getElementById('tour-response').innerHTML = 
+                `Created test tour with Bokun ID: ${bookingId}\n${result}`;
+        }
+        
+        async function getUnassignedTours() {
+            const response = await makeRequest(`${API_BASE}/bokun_sync.php?action=unassigned`);
+            document.getElementById('unassigned-response').innerHTML = 
+                `${JSON.stringify(response, null, 2)}`;
+        }
+        
+        async function autoAssignGuide() {
+            const tourId = document.getElementById('tour-id').value;
+            if (!tourId) {
+                alert('Please enter a tour ID');
+                return;
+            }
+            
+            const response = await makeRequest(`${API_BASE}/bokun_sync.php?action=auto-assign`, 'POST', {
+                tour_id: parseInt(tourId)
+            });
+            
+            document.getElementById('assign-response').innerHTML = 
+                `${JSON.stringify(response, null, 2)}`;
+        }
+    </script>
+</body>
+</html>

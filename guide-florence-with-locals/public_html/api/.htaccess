@@ -1,0 +1,29 @@
+RewriteEngine On
+RewriteBase /api/
+
+# Allow direct access to existing files and directories
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Allow cross-domain requests (CORS)
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "POST, GET, OPTIONS, DELETE, PUT"
+Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+
+# Handle OPTIONS method for CORS preflight requests
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
+
+# Route for tours paid status update: /tours/{id}/paid
+RewriteRule ^tours/([0-9]+)/paid$ update_paid_status.php [QSA,L]
+
+# Route for tours cancelled status update: /tours/([0-9]+)/cancelled
+RewriteRule ^tours/([0-9]+)/cancelled$ update_cancelled_status.php [QSA,L]
+
+# Catch-all: route all other requests to index.php (RESTful API routing)
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Handle 404s
+ErrorDocument 404 /api/404.php
