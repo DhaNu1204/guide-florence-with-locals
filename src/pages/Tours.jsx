@@ -97,6 +97,66 @@ const getBookingDate = (tour) => {
   }
 };
 
+// Helper function to extract tour language from bokun_data
+const getTourLanguage = (tour) => {
+  try {
+    // First check if language is stored in database
+    if (tour.language) {
+      return tour.language;
+    }
+
+    // Extract from Bokun data
+    if (tour.bokun_data) {
+      const bokunData = JSON.parse(tour.bokun_data);
+      if (bokunData.productBookings && bokunData.productBookings[0]) {
+        const booking = bokunData.productBookings[0];
+
+        // IMPORTANT: Check in notes for "GUIDE : English" pattern
+        if (booking.notes && Array.isArray(booking.notes)) {
+          for (const note of booking.notes) {
+            if (note.body) {
+              // Look for "GUIDE : English" or similar patterns
+              const guideMatch = note.body.match(/GUIDE\s*:\s*([A-Za-z]+)/i);
+              if (guideMatch) {
+                return guideMatch[1].charAt(0).toUpperCase() + guideMatch[1].slice(1).toLowerCase();
+              }
+
+              // Look for "Booking languages:" section
+              const langMatch = note.body.match(/Booking languages.*?:\s*([A-Za-z]+)/is);
+              if (langMatch) {
+                return langMatch[1].charAt(0).toUpperCase() + langMatch[1].slice(1).toLowerCase();
+              }
+            }
+          }
+        }
+
+        // Option 1: Check in fields
+        if (booking.fields && booking.fields.language) {
+          return booking.fields.language;
+        }
+
+        // Option 2: Check in product details
+        if (booking.product && booking.product.language) {
+          return booking.product.language;
+        }
+
+        // Option 3: Check title for language indicators
+        const title = (booking.product?.title || booking.title || tour.title || '').toLowerCase();
+        if (title.includes('italian')) return 'Italian';
+        if (title.includes('spanish')) return 'Spanish';
+        if (title.includes('french')) return 'French';
+        if (title.includes('german')) return 'German';
+        if (title.includes('english')) return 'English';
+      }
+    }
+
+    // Return null if no language found - don't assume
+    return null;
+  } catch (error) {
+    return null;
+  }
+};
+
 const Tours = () => {
   const [tours, setTours] = useState([]);
   const [guides, setGuides] = useState([]);
@@ -107,22 +167,39 @@ const Tours = () => {
   const [error, setError] = useState(null);
   const [editingNotes, setEditingNotes] = useState({});
   const [editingGuides, setEditingGuides] = useState({});
+  const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
   const [showAllDates, setShowAllDates] = useState(false);
+  const [pagination, setPagination] = useState({
+    current_page: 1,
+    per_page: 50,
+    total: 0,
+    total_pages: 0,
+    has_next: false,
+    has_prev: false
+  });
 
-  const toursPerPage = 20;
+  const toursPerPage = 50;
 
   // Load data function
-  const loadData = async (forceRefresh = false) => {
+  const loadData = async (forceRefresh = false, page = 1) => {
     try {
       setLoading(true);
       setError(null);
-      const [toursData, guidesData] = await Promise.all([
-        mysqlDB.fetchTours(forceRefresh),
+      const [toursResponse, guidesData] = await Promise.all([
+        mysqlDB.fetchTours(forceRefresh, page, toursPerPage),
         mysqlDB.fetchGuides()
       ]);
 
-      setTours(toursData || []);
+      // Handle paginated response
+      if (toursResponse && toursResponse.data) {
+        setTours(toursResponse.data || []);
+        setPagination(toursResponse.pagination);
+      } else {
+        // Fallback for non-paginated response (backward compatibility)
+        setTours(toursResponse || []);
+      }
+
       setGuides(guidesData || []);
 
     } catch (err) {
@@ -134,12 +211,18 @@ const Tours = () => {
 
   // Handle refresh button click
   const handleRefresh = async () => {
-    await loadData(true); // Force refresh
+    await loadData(true, currentPage); // Force refresh on current page
+  };
+
+  // Handle page change
+  const handlePageChange = async (newPage) => {
+    setCurrentPage(newPage);
+    await loadData(false, newPage);
   };
 
   // Initial load
   useEffect(() => {
-    loadData();
+    loadData(false, currentPage);
   }, []);
 
   // Memoized filtered and grouped tours by date
@@ -151,12 +234,11 @@ const Tours = () => {
       'Uffizi Gallery Priority Entrance Tickets',
       'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
     ];
+    // Completely exclude ticket products - they belong in Priority Tickets page only
     filtered = filtered.filter(tour => {
       const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
-      // Keep tour if it's NOT a ticket product OR if it's from Bokun (real booking)
-      return !isTicketProduct || tour.external_source === 'bokun';
-    }
-    );
+      return !isTicketProduct; // Exclude ALL ticket products regardless of source
+    });
 
     // Filter by guide
     if (selectedGuideId !== 'all') {
@@ -174,24 +256,40 @@ const Tours = () => {
       });
     }
 
-    // Group tours by date
+    // Helper function to get time period
+    const getTimePeriod = (time) => {
+      const hour = parseInt(time.split(':')[0]);
+      if (hour < 12) return 'Morning (6:00 - 11:59)';
+      if (hour < 17) return 'Afternoon (12:00 - 16:59)';
+      return 'Evening (17:00 - 23:59)';
+    };
+
+    // Group tours by date, then by time period
     const grouped = {};
     filtered.forEach(tour => {
       const tourDate = getBookingDate(tour);
+      const tourTime = getBookingTime(tour);
+      const timePeriod = getTimePeriod(tourTime);
+
       if (!grouped[tourDate]) {
-        grouped[tourDate] = [];
+        grouped[tourDate] = {};
       }
-      grouped[tourDate].push(tour);
+      if (!grouped[tourDate][timePeriod]) {
+        grouped[tourDate][timePeriod] = [];
+      }
+      grouped[tourDate][timePeriod].push(tour);
     });
 
-    // Sort tours within each date group by time
+    // Sort tours within each time period by time
     Object.keys(grouped).forEach(date => {
-      grouped[date].sort((a, b) => {
-        const timeA = getBookingTime(a);
-        const timeB = getBookingTime(b);
-        const dateTimeA = new Date(`${getBookingDate(a)}T${timeA}`);
-        const dateTimeB = new Date(`${getBookingDate(b)}T${timeB}`);
-        return dateTimeA - dateTimeB;
+      Object.keys(grouped[date]).forEach(period => {
+        grouped[date][period].sort((a, b) => {
+          const timeA = getBookingTime(a);
+          const timeB = getBookingTime(b);
+          const dateTimeA = new Date(`${getBookingDate(a)}T${timeA}`);
+          const dateTimeB = new Date(`${getBookingDate(b)}T${timeB}`);
+          return dateTimeA - dateTimeB;
+        });
       });
     });
 
@@ -208,9 +306,17 @@ const Tours = () => {
       return dateA - dateB;
     });
 
+    // Sort time periods within each date (Morning, Afternoon, Evening)
+    const periodOrder = ['Morning (6:00 - 11:59)', 'Afternoon (12:00 - 16:59)', 'Evening (17:00 - 23:59)'];
+
     return sortedDates.map(date => ({
       date,
-      tours: grouped[date]
+      periods: periodOrder
+        .filter(period => grouped[date][period])
+        .map(period => ({
+          period,
+          tours: grouped[date][period]
+        }))
     }));
   }, [tours, selectedGuideId, filterDate, showAllDates]);
 
@@ -220,9 +326,11 @@ const Tours = () => {
     let totalParticipants = 0;
 
     groupedTours.forEach(group => {
-      allTours = [...allTours, ...group.tours];
-      group.tours.forEach(tour => {
-        totalParticipants += getParticipantCount(tour);
+      group.periods.forEach(periodGroup => {
+        allTours = [...allTours, ...periodGroup.tours];
+        periodGroup.tours.forEach(tour => {
+          totalParticipants += getParticipantCount(tour);
+        });
       });
     });
 
@@ -232,10 +340,6 @@ const Tours = () => {
       allTours
     };
   }, [groupedTours]);
-
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-  };
 
   // Handle notes editing
   const handleNotesChange = (tourId, notes) => {
@@ -417,7 +521,12 @@ const Tours = () => {
             groupedTours.map((dateGroup) => {
               const dateObj = new Date(dateGroup.date);
               const isToday = format(new Date(), 'yyyy-MM-dd') === dateGroup.date;
-              const dateParticipants = dateGroup.tours.reduce((total, tour) => total + getParticipantCount(tour), 0);
+              const dateParticipants = dateGroup.periods.reduce((total, periodGroup) =>
+                total + periodGroup.tours.reduce((sum, tour) => sum + getParticipantCount(tour), 0), 0
+              );
+              const dateTourCount = dateGroup.periods.reduce((total, periodGroup) =>
+                total + periodGroup.tours.length, 0
+              );
 
               return (
                 <div key={dateGroup.date} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
@@ -435,38 +544,56 @@ const Tours = () => {
                         )}
                       </div>
                       <div className="text-sm text-gray-600">
-                        {dateGroup.tours.length} tours • {dateParticipants} PAX
+                        {dateTourCount} tours • {dateParticipants} PAX
                       </div>
                     </div>
                   </div>
 
-                  {/* Tours Table */}
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
-                            Time
-                          </th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                            Channel
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-96">
-                            Tour
-                          </th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
-                            People
-                          </th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                            Guide
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Notes
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {dateGroup.tours.map((tour) => {
+                  {/* Time Periods */}
+                  {dateGroup.periods.map((periodGroup, periodIndex) => (
+                    <div key={`${dateGroup.date}-${periodGroup.period}`}>
+                      {/* Time Period Header */}
+                      <div className="bg-gray-100 px-6 py-2 border-b border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-sm font-semibold text-gray-700">
+                            {periodGroup.period}
+                          </h4>
+                          <div className="text-xs text-gray-600">
+                            {periodGroup.tours.length} tours • {periodGroup.tours.reduce((sum, tour) => sum + getParticipantCount(tour), 0)} PAX
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tours Table */}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                                Time
+                              </th>
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                                Channel
+                              </th>
+                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-96">
+                                Tour
+                              </th>
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                                Language
+                              </th>
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                                People
+                              </th>
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                                Guide
+                              </th>
+                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Notes
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {periodGroup.tours.map((tour) => {
                           const guideName = guides.find(g => g.id == tour.guide_id)?.name || 'Unassigned';
                           return (
                             <tr key={tour.id} className="hover:bg-gray-50">
@@ -482,6 +609,11 @@ const Tours = () => {
                                 <div className="break-words">
                                   {tour.title}
                                 </div>
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded">
+                                  {getTourLanguage(tour)}
+                                </span>
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {getParticipantCount(tour)} PAX
@@ -601,13 +733,85 @@ const Tours = () => {
                               </td>
                             </tr>
                           );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               );
             })
+          )}
+
+          {/* Pagination Controls */}
+          {pagination.total_pages > 1 && (
+            <Card>
+              <div className="px-6 py-4">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  {/* Pagination Info */}
+                  <div className="text-sm text-gray-700">
+                    Showing <span className="font-medium">{((pagination.current_page - 1) * pagination.per_page) + 1}</span> to{' '}
+                    <span className="font-medium">
+                      {Math.min(pagination.current_page * pagination.per_page, pagination.total)}
+                    </span> of{' '}
+                    <span className="font-medium">{pagination.total}</span> tours
+                  </div>
+
+                  {/* Pagination Buttons */}
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={!pagination.has_prev || loading}
+                    >
+                      Previous
+                    </Button>
+
+                    {/* Page Numbers */}
+                    <div className="flex items-center space-x-1">
+                      {Array.from({ length: Math.min(5, pagination.total_pages) }, (_, i) => {
+                        let pageNum;
+                        if (pagination.total_pages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= pagination.total_pages - 2) {
+                          pageNum = pagination.total_pages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => handlePageChange(pageNum)}
+                            disabled={loading}
+                            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                              currentPage === pageNum
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={!pagination.has_next || loading}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
           )}
 
           {/* Summary */}

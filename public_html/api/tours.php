@@ -90,13 +90,32 @@ if (is_numeric($lastSegment)) {
 // Handle requests based on method
 switch ($method) {
     case 'GET':
-        // Get all tours with guide names and payment information
+        // Get pagination parameters from query string
+        $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+        $perPage = isset($_GET['per_page']) ? max(1, min(100, intval($_GET['per_page']))) : 50;
+        $offset = ($page - 1) * $perPage;
+
+        // Get total count for pagination metadata
+        $countSql = "SELECT COUNT(*) as total FROM tours";
+        $countResult = $conn->query($countSql);
+        $totalRecords = 0;
+
+        if ($countResult) {
+            $countRow = $countResult->fetch_assoc();
+            $totalRecords = intval($countRow['total']);
+        }
+
+        // Get all tours with guide names and payment information (with pagination)
         $sql = "SELECT t.*, g.name as guide_name
                 FROM tours t
                 LEFT JOIN guides g ON t.guide_id = g.id
-                ORDER BY t.date ASC, t.time ASC";
+                ORDER BY t.date DESC, t.time DESC
+                LIMIT ? OFFSET ?";
 
-        $result = $conn->query($sql);
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ii", $perPage, $offset);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
         if ($result) {
             $tours = [];
@@ -128,7 +147,22 @@ switch ($method) {
 
                 $tours[] = $row;
             }
-            echo json_encode($tours);
+
+            // Calculate pagination metadata
+            $totalPages = ceil($totalRecords / $perPage);
+
+            // Return paginated response with metadata
+            echo json_encode([
+                'data' => $tours,
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $totalRecords,
+                    'total_pages' => $totalPages,
+                    'has_next' => $page < $totalPages,
+                    'has_prev' => $page > 1
+                ]
+            ]);
         } else {
             header("HTTP/1.1 500 Internal Server Error");
             echo json_encode(["error" => "Failed to get tours: " . $conn->error]);
@@ -270,16 +304,25 @@ switch ($method) {
             $bindValues[] = $data['time'];
         }
         
-        if (isset($data['guideId'])) {
+        // Handle both guideId and guide_id for backward compatibility
+        if (isset($data['guideId']) || isset($data['guide_id'])) {
             $setFields[] = "guide_id = ?";
+            $guideValue = isset($data['guide_id']) ? $data['guide_id'] : $data['guideId'];
             // Convert empty string to NULL for database
-            if ($data['guideId'] === '' || $data['guideId'] === null) {
+            if ($guideValue === '' || $guideValue === null) {
                 $bindTypes .= "s";
                 $bindValues[] = null;
             } else {
                 $bindTypes .= "i";
-                $bindValues[] = $data['guideId'];
+                $bindValues[] = $guideValue;
             }
+        }
+
+        // Handle notes field
+        if (isset($data['notes'])) {
+            $setFields[] = "notes = ?";
+            $bindTypes .= "s";
+            $bindValues[] = $data['notes'];
         }
         
         if (isset($data['booking_channel'])) {

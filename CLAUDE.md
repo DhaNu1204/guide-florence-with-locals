@@ -18,11 +18,16 @@ A comprehensive tour guide management system for Florence, Italy that integrates
 4. **Bokun Integration**: Dedicated page for automatic sync of bookings from Bokun (separated from tours)
 5. **Authentication**: Role-based access control (admin/viewer)
 6. **Ticket Management**: Museum entrance ticket inventory system for Uffizi and Accademia
-7. **Modern UI/UX**: 100% mobile responsive with sidebar navigation and compact card layouts
-8. **Real-time Updates**: Live data synchronization with fallback localStorage support
-9. **✅ Cancelled Booking Sync**: Automatic synchronization of cancelled bookings with red visual indicators
-10. **✅ Rescheduling Support**: Complete detection and tracking of rescheduled tours with audit trail
-11. **✅ Cache Management**: Force refresh functionality to ensure latest data display
+7. **Priority Tickets**: Dedicated page for museum ticket bookings with inline notes editing
+8. **Modern UI/UX**: 100% mobile responsive with sidebar navigation and compact card layouts
+9. **Real-time Updates**: Live data synchronization with fallback localStorage support
+10. **✅ Cancelled Booking Sync**: Automatic synchronization of cancelled bookings with red visual indicators
+11. **✅ Rescheduling Support**: Complete detection and tracking of rescheduled tours with audit trail
+12. **✅ Cache Management**: Force refresh functionality to ensure latest data display
+13. **✅ Multi-Channel Language Detection**: Automatic tour language extraction from Bokun API (Viator, GetYourGuide, and other booking channels)
+14. **✅ Smart Payment Status**: Intelligent payment tracking distinguishing between customer platform payments and guide payments
+15. **✅ Ticket Product Filtering**: Automatic exclusion of museum entrance tickets from tour management views
+16. **✅ Inline Notes Editing**: Click-to-edit notes functionality with save/cancel controls across Tours and Priority Tickets pages
 
 ## Project Structure
 ```
@@ -44,6 +49,7 @@ guide-florence-with-locals/
 │   │   ├── Guides.jsx          # Guide management with multi-language support
 │   │   ├── Payments.jsx        # Payment tracking with calendar date filtering
 │   │   ├── Tickets.jsx         # Museum ticket inventory management
+│   │   ├── PriorityTickets.jsx # Museum ticket bookings with inline notes editing
 │   │   ├── EditTour.jsx        # Tour editing interface
 │   │   ├── BokunIntegration.jsx # Dedicated Bokun integration page
 │   │   └── Login.jsx           # Authentication
@@ -93,7 +99,12 @@ guide-florence-with-locals/
 #### Tables with Record Counts (Production Active ✅):
   - `users` (1 record) - Authentication and roles
   - `guides` (3+ records) - Guide profiles with email and multi-language support
-  - `tours` (50+ records) - Tour bookings with guide assignments (includes 47 Bokun synced tours)
+  - `tours` (132+ records) - Tour bookings with guide assignments, language detection, and payment tracking
+    - **New Columns**:
+      - `language VARCHAR(50)` - Automatically extracted from Bokun booking data
+      - `notes TEXT` - Inline editable notes for tour/ticket details (used by Tours and Priority Tickets pages)
+    - **Language Sources**: Viator (notes field), GetYourGuide (rate titles), product details
+    - **Notes Column**: Full CRUD operations via inline editing with save/cancel controls
   - `tickets` (3 records) - Museum entrance ticket inventory (Uffizi/Accademia)
   - `bokun_config` (1 record) - Bokun API configuration (production credentials)
   - `sessions` (3+ records) - User session management
@@ -112,6 +123,76 @@ guide-florence-with-locals/
 - **Environment**: .env.production configured for production API URLs
 
 ## Recent Major Updates
+
+### ✅ CRITICAL BUG FIXES & UI ENHANCEMENTS (2025-10-19)
+- **Dashboard Chronological Sorting**: ✅ COMPLETED - Fixed Unassigned Tours and Upcoming Tours sorting
+  - **Issue**: Tours were only sorted by date, not time, causing incorrect display order
+  - **Fix Location**: `src/components/Dashboard.jsx` lines 86-91 (Unassigned Tours), lines 108-113 (Upcoming Tours)
+  - **Solution**: Implemented combined date+time sorting: `new Date(a.date + ' ' + a.time)` for accurate chronological order
+  - **Result**: Tours now display in true chronological sequence (e.g., 19/10 10:00, 19/10 17:00, 19/10 17:30, 21/10 09:30)
+
+- **Tours Page CRUD Operations Fix**: ✅ COMPLETED - Resolved guide assignment and notes persistence
+  - **Issue**: Guide assignments and notes were not saving to database despite correct frontend implementation
+  - **Root Cause**: Backend `tours.php` PUT handler (lines 307-326) missing field handling for `guide_id` and `notes`
+  - **Fix Applied**:
+    - Added backward-compatible handling for both `guideId` (camelCase) and `guide_id` (snake_case)
+    - Added complete `notes` field handling in PUT request
+    - Implemented proper NULL value handling for guide assignments
+  - **Testing**: Verified with curl - both fields now persist correctly to database
+  - **Files Modified**: `public_html/api/tours.php` lines 307-326
+
+- **Priority Tickets Page Redesign**: ✅ COMPLETED - Enhanced museum ticket booking management
+  - **Removed**: Confirmation column (bokun_confirmation_code/external_id display)
+  - **Added**: Notes column with full inline CRUD functionality
+  - **Features Implemented**:
+    - Click-to-edit notes interface with textarea expansion
+    - Save (green checkmark) and Cancel (red X) buttons
+    - Real-time database persistence using `updateTour()` API
+    - Visual feedback: "Click to add notes..." placeholder for empty notes
+    - Hover effects for improved user experience
+  - **Column Width Balancing**: Optimized table layout for better readability
+    - Date: 100px, Time: 70px, Museum: 130px, Customer: 120px
+    - Contact: 180px (wider for email addresses)
+    - Participants: 90px, Booking Channel: 120px
+    - Notes: Flexible width (expands to fill remaining space)
+  - **Database Integration**: Uses existing `notes` column in `tours` table (no schema changes required)
+  - **Files Modified**:
+    - `src/pages/PriorityTickets.jsx` - Complete component update
+    - Added state management: `editingNotes`, `savingChanges`
+    - Added CRUD functions: `saveNotes()`, `handleNotesChange()`, `cancelNotesEdit()`
+  - **Icons Added**: FiSave, FiX from react-icons/fi
+
+- **Authentication Session Fix**: ✅ COMPLETED - Resolved login failure
+  - **Issue**: 500 Internal Server Error during login - sessions table INSERT missing `session_id` field
+  - **Fix Location**: `public_html/api/auth.php` line 56
+  - **Solution**: Added `session_id` field to both INSERT statement and parameter binding
+  - **Result**: Login now works successfully, permanent fix applied
+
+### ✅ AUTOMATIC LANGUAGE DETECTION & PAYMENT STATUS INTELLIGENCE (2025-10-15)
+- **Multi-Channel Language Extraction**: ✅ COMPLETED - Automatic tour language detection from Bokun API
+  - **Method 1 (Viator)**: Extract from booking notes using regex pattern `GUIDE : English`
+  - **Method 2 (GetYourGuide)**: Match rateId to product rate titles (Italian Tour, Spanish Tour, etc.)
+  - **Method 3**: Check field locations for language indicators
+  - **Method 4**: Parse product title for language keywords
+  - Added `language VARCHAR(50)` column to tours database table
+  - Successfully extracted and updated 132+ tours with accurate language data
+  - Language badges displayed in Tours page, Dashboard (Upcoming Tours, Unassigned Tours)
+  - No default values - only displays actual detected language to prevent incorrect guide assignments
+- **Smart Payment Status Logic**: ✅ COMPLETED - Fixed payment tracking confusion
+  - Corrected distinction between customer platform payments (Bokun INVOICED) vs guide payments
+  - All Bokun-synced tours now correctly start as 'unpaid' for guide payment tracking
+  - Reset 127 existing tours from incorrect "paid" status to proper "unpaid" status
+  - Payment system now accurately tracks what guides need to be paid
+- **Ticket Product Filtering**: ✅ COMPLETED - Intelligent filtering of non-tour products
+  - Excluded "Uffizi Gallery Priority Entrance Tickets" from Tours page display
+  - Excluded "Skip the Line: Accademia Gallery Priority Entry Ticket" from Tours page
+  - Added filtering to Dashboard Unassigned Tours section
+  - Added filtering to Payment Record form to prevent ticket product selection
+  - Maintains ticket products in database for inventory management while hiding from tour workflows
+- **Enhanced Data Handling**: ✅ COMPLETED - Improved robustness
+  - Fixed PaymentRecordForm to handle paginated getTours() response properly
+  - Added safety checks for undefined ticket locations in Tickets page
+  - Improved error handling and null checks throughout
 
 ### ✅ CANCELLED BOOKING SYNC & RESCHEDULING SUPPORT (2025-09-30)
 - **Cancelled Booking Synchronization**: ✅ COMPLETED - Fixed sync to include cancelled bookings from Bokun API
@@ -350,18 +431,19 @@ npm run dev
 ## Current Feature Status
 
 ### ✅ Fully Implemented & Live on Production
-- **Tour Management**: Create, edit, delete, status updates ✅ LIVE
+- **Tour Management**: Create, edit, delete, status updates with inline notes editing ✅ LIVE
 - **Guide Management**: Multi-language support ✅ LIVE
 - **Payment System**: Complete tracking with Italian timezone support ✅ LIVE
 - **Payment Reports**: Calendar-based date range filtering ✅ LIVE
 - **Guide Analytics**: Payment summaries and analytics ✅ LIVE
 - **Ticket Management**: Museum inventory system (Uffizi/Accademia) ✅ LIVE
+- **Priority Tickets**: Museum ticket bookings with inline notes CRUD ✅ LIVE
 - **Authentication**: User authentication and role-based access ✅ LIVE
 - **Responsive UI**: Modern design across all devices ✅ LIVE
 - **Database Operations**: All relationships and data integrity ✅ LIVE
 - **API Endpoints**: Proper error handling and validation ✅ LIVE
 - **Bokun Integration**: Live synchronization with 47 bookings ✅ LIVE
-- **Dashboard**: Real-time data display with proper filtering ✅ LIVE
+- **Dashboard**: Real-time data display with chronological sorting ✅ LIVE
 
 ### ✅ Production Deployment Completed
 - **Environment Configuration**: .env.production with correct API URLs ✅
@@ -402,14 +484,18 @@ npm run dev
 ## Testing & Quality Assurance
 
 ### Tested Components
-- ✅ All CRUD operations for Tours, Guides, and Tickets
-- ✅ User authentication and authorization
+- ✅ All CRUD operations for Tours, Guides, Tickets, and Priority Tickets
+- ✅ User authentication and authorization (session management fixed)
 - ✅ Responsive design across devices
 - ✅ Database connection and query performance
 - ✅ API endpoint functionality and error handling
 - ✅ Frontend-backend data synchronization
 - ✅ Bokun API integration (authentication working, awaiting permissions)
 - ✅ Museum ticket inventory management system
+- ✅ Priority Tickets inline notes editing (full CRUD verified)
+- ✅ Dashboard chronological sorting (date + time combined)
+- ✅ Tours page guide assignment and notes persistence
+- ✅ Table column width balancing and UI optimization
 
 ### Test Coverage
 - **API Endpoints**: 100% of core functionality tested
@@ -500,6 +586,22 @@ npm run dev
 - **Database Schema**: Enhanced tours table with rescheduling support columns
 - **Frontend UX**: Improved user experience with tooltips and detailed status information
 
+### 🎯 Phase 6: Intelligent Data Extraction & Business Logic - **COMPLETED** ✅
+- **Multi-Channel Language Detection**: Automatic extraction from Viator, GetYourGuide, and other booking platforms
+- **Smart Payment Tracking**: Distinction between customer payments and guide payments
+- **Product Type Intelligence**: Automatic filtering of ticket products from tour management workflows
+- **Data Validation**: Enhanced null checks and error handling across all components
+- **Accurate Guide Assignment**: Language-based filtering prevents mismatched guide assignments
+
+### 🎯 Phase 7: Critical Bug Fixes & UX Polish - **COMPLETED** ✅ (Oct 19, 2025)
+- **Dashboard Sorting Enhancement**: Fixed chronological sorting combining date AND time for accurate display order
+- **Tours CRUD Operations**: Resolved guide assignment and notes persistence issues in backend API
+- **Priority Tickets Redesign**: Complete page overhaul with inline notes editing and balanced column widths
+- **Authentication Fix**: Corrected session table INSERT statement for successful login
+- **Table Layout Optimization**: Balanced column widths across Priority Tickets page (Date: 100px, Time: 70px, Museum: 130px, Customer: 120px, Contact: 180px, Participants: 90px, Booking Channel: 120px, Notes: flexible)
+- **Inline Notes CRUD**: Full create, read, update, delete functionality for notes with save/cancel controls
+- **User Experience**: Click-to-edit interface with visual feedback and hover effects
+
 ## Support & Maintenance
 
 ### Documentation
@@ -536,4 +638,4 @@ npm run dev
 
 ---
 
-**Project Status**: ✅ **FULLY DEPLOYED AND OPERATIONAL WITH ADVANCED BOOKING MANAGEMENT** - Live production site at https://withlocals.deetech.cc with all core functionality working perfectly. Modern, responsive UI with comprehensive tour and guide management capabilities. Bokun API integration successfully synchronized 47 bookings with complete cancelled booking support and rescheduling detection. Payment system, dashboard, and all features fully operational on production server. Advanced booking management includes real-time status indicators, audit trails, and cache management for optimal user experience.
+**Project Status**: ✅ **FULLY DEPLOYED AND OPERATIONAL WITH INTELLIGENT DATA EXTRACTION & ENHANCED UX** - Live production site at https://withlocals.deetech.cc with all core functionality working perfectly. Modern, responsive UI with comprehensive tour and guide management capabilities. Recent critical updates (Oct 19, 2025): Dashboard chronological sorting fixed, Tours page CRUD operations resolved, Priority Tickets redesigned with inline notes editing, and authentication session management corrected. Bokun API integration successfully synchronized 132+ bookings with automatic multi-channel language detection (Viator, GetYourGuide), complete cancelled booking support, and rescheduling detection. Smart payment tracking system distinguishes between customer platform payments and guide payments for accurate financial management. Intelligent product filtering automatically excludes museum ticket inventory from tour workflows. Full inline CRUD operations for notes across Tours and Priority Tickets pages with optimized column layouts. All features fully operational on production server with enhanced data validation, error handling, and improved user experience.

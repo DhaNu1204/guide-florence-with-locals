@@ -17,17 +17,20 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 
 ### 🚀 **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** - FULLY OPERATIONAL ✅
 
-**Latest Update (2025-09-29)**: ✅ **PRODUCTION DEPLOYMENT COMPLETE** - The entire Florence with Locals Tour Guide Management System is now live and fully operational on production servers. All critical deployment issues have been resolved, including environment configuration, database migration, Bokun integration (47 bookings synchronized), and payment system functionality. Ready for active use.
+**Latest Update (2025-10-19)**: ✅ **CRITICAL BUG FIXES & UX ENHANCEMENTS COMPLETE** - Fixed Dashboard chronological sorting (now combines date + time), resolved Tours page CRUD operations (guide assignments and notes now persist correctly), completely redesigned Priority Tickets page with inline notes editing and balanced column widths, and corrected authentication session management. All features tested and verified working.
 
-**Previous Update (2025-09-28)**: Application branding updated to "Florence with Locals Tour Guide Management System" with refined sidebar navigation. Comprehensive mobile responsiveness testing completed confirming 100% mobile compatibility across all pages and components.
+**Previous Update (2025-10-15)**: ✅ **INTELLIGENT DATA EXTRACTION COMPLETE** - Implemented automatic multi-channel language detection from Bokun API (Viator, GetYourGuide), smart payment status tracking distinguishing customer vs guide payments, and intelligent ticket product filtering. All 132+ tours now have accurate language data extracted automatically with no defaults to prevent incorrect guide assignments.
+
+**Previous Update (2025-09-29)**: ✅ **PRODUCTION DEPLOYMENT COMPLETE** - The entire Florence with Locals Tour Guide Management System is now live and fully operational on production servers. All critical deployment issues have been resolved, including environment configuration, database migration, Bokun integration (47 bookings synchronized), and payment system functionality. Ready for active use.
 
 ## ✨ Key Features
 
 ### 🏛️ Core Management
-- **Tour Management** - Create, edit, delete tours with comprehensive details and guide assignments
+- **Tour Management** - Create, edit, delete tours with comprehensive details, guide assignments, and inline notes editing
 - **Guide Management** - Manage guides with **multi-language support** (up to 3 languages) and email contacts
 - **Payment System** - Complete payment tracking with calendar date filtering, Italian timezone support, and guide analytics
 - **Ticket Management** - Museum ticket inventory tracking for Accademia and Uffizi
+- **Priority Tickets** - Dedicated page for museum ticket bookings with inline notes CRUD functionality
 - **Support System** - Built-in ticket system for customer inquiries
 - **Authentication** - Role-based access control (Admin/Viewer with secure session management)
 
@@ -65,6 +68,59 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 - **Booking Channel Display** - Clear identification of booking sources (Website, Viator, etc.)
 
 ## 🚀 What's New - Latest Updates
+
+### ✅ **CRITICAL BUG FIXES & UX ENHANCEMENTS** (2025-10-19)
+- **📅 Dashboard Chronological Sorting Fix**: Resolved sorting issue in Unassigned Tours and Upcoming Tours
+  - **Issue**: Tours only sorted by date, not time, causing incorrect display order
+  - **Solution**: Implemented combined date+time sorting: `new Date(tour.date + ' ' + tour.time)`
+  - **Result**: Tours now display in true chronological sequence (10:00, 17:00, 17:30, etc.)
+  - **Files Fixed**: `src/components/Dashboard.jsx` lines 86-91 (Unassigned), 108-113 (Upcoming)
+
+- **✏️ Tours Page CRUD Operations Fix**: Resolved guide assignment and notes persistence
+  - **Issue**: Guide assignments and notes not saving to database
+  - **Root Cause**: Backend `tours.php` PUT handler missing field handling for `guide_id` and `notes`
+  - **Solution**: Added backward-compatible handling for both camelCase and snake_case field names
+  - **Testing**: Verified with curl commands - both fields now persist correctly
+  - **Files Fixed**: `public_html/api/tours.php` lines 307-326
+
+- **🎫 Priority Tickets Page Complete Redesign**: Enhanced museum ticket booking management
+  - **Removed**: Confirmation column (bokun_confirmation_code/external_id)
+  - **Added**: Notes column with full inline CRUD functionality
+  - **Features**: Click-to-edit textarea, save/cancel buttons (green ✓ / red ✕)
+  - **UX Improvements**: "Click to add notes..." placeholder, hover effects, visual feedback
+  - **Column Balancing**: Optimized widths (Date: 100px, Time: 70px, Museum: 130px, Customer: 120px, Contact: 180px, Participants: 90px, Booking Channel: 120px, Notes: flexible)
+  - **Database**: Uses existing `notes` column in `tours` table (no schema changes)
+  - **Files Modified**: `src/pages/PriorityTickets.jsx` with full state management and CRUD functions
+  - **Icons Added**: FiSave, FiX from react-icons/fi
+
+- **🔐 Authentication Session Fix**: Corrected login failure
+  - **Issue**: 500 Internal Server Error - sessions table INSERT missing `session_id` field
+  - **Solution**: Added `session_id` to INSERT statement and parameter binding
+  - **Result**: Login now works successfully, permanent fix applied
+  - **Files Fixed**: `public_html/api/auth.php` line 56
+
+### ✅ **INTELLIGENT DATA EXTRACTION & BUSINESS LOGIC** (2025-10-15)
+- **🗣️ Automatic Language Detection**: Multi-channel extraction from Bokun API booking data
+  - **Viator**: Extracts from notes field using regex pattern `GUIDE : English`
+  - **GetYourGuide**: Matches rateId to product rate titles (Italian Tour, Spanish Tour, etc.)
+  - **Database Enhancement**: Added `language VARCHAR(50)` column to tours table
+  - **132+ Tours Updated**: All existing tours now have accurate language data
+  - **Smart Display**: Language badges shown in Tours page and Dashboard sections
+  - **No Defaults**: Only actual detected languages displayed to prevent wrong guide assignments
+- **💰 Smart Payment Status Logic**: Fixed payment tracking confusion
+  - Corrected distinction: Bokun INVOICED = customer paid platform ≠ guide paid
+  - All Bokun tours now correctly start as 'unpaid' for guide payment tracking
+  - Reset 127 tours from incorrect "paid" status to proper "unpaid" status
+  - Payment system now accurately tracks what guides need to be paid
+- **🎫 Intelligent Product Filtering**: Automatic exclusion of museum tickets from tour workflows
+  - Filtered "Uffizi Gallery Priority Entrance Tickets" from Tours page
+  - Filtered "Skip the Line: Accademia Gallery Priority Entry Ticket" from Tours page
+  - Added to Dashboard Unassigned Tours section and Payment Record form
+  - Maintains tickets in database for inventory while hiding from tour management
+- **🔧 Enhanced Data Handling**: Improved robustness throughout the system
+  - Fixed PaymentRecordForm to handle paginated getTours() response
+  - Added safety checks for undefined ticket locations
+  - Improved error handling and null checks across components
 
 ### ✅ **CANCELLED BOOKING SYNC & RESCHEDULING SUPPORT** (2025-09-30)
 - **🔴 Cancelled Booking Synchronization**: Fixed Bokun API sync to include cancelled bookings with red visual indicators
@@ -146,11 +202,15 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 ```sql
 📊 Current Database Status:
 ├── users (1 record) ✅ - Authentication and role management
-├── guides (3+ records) ✅ - Guide profiles with email and multi-language support  
-├── tours (2+ records) ✅ - Tour bookings with guide assignments and status tracking
+├── guides (3+ records) ✅ - Guide profiles with email and multi-language support
+├── tours (132+ records) ✅ - Tour bookings with guide assignments, language detection, and payment tracking
+│   ├── New: language VARCHAR(50) - Automatically extracted from Bokun data (Viator/GetYourGuide)
+│   └── New: notes TEXT - Inline editable notes for tour/ticket details (Tours & Priority Tickets)
 ├── tickets (3+ records) ✅ - Museum ticket inventory management
 ├── bokun_config (1 record) ✅ - Bokun API configuration and credentials
-└── sessions (3+ records) ✅ - Secure user session management
+├── sessions (3+ records) ✅ - Secure user session management (fixed Oct 19, 2025)
+├── payments (2+ records) ✅ - Payment transaction records
+└── guide_payments (3+ records) ✅ - Guide payment summaries and analytics
 ```
 
 ## 🌐 **PRODUCTION ACCESS**
@@ -389,12 +449,15 @@ npm run build -- --mode production
 ## 🧪 Testing & Quality Assurance
 
 ### Comprehensive Testing Completed ✅
-- **All CRUD Operations**: Create, Read, Update, Delete for Tours, Guides, Tickets
-- **Authentication System**: Login, logout, role-based access control
+- **All CRUD Operations**: Create, Read, Update, Delete for Tours, Guides, Tickets, and Priority Tickets
+- **Authentication System**: Login, logout, role-based access control (session management fixed Oct 19)
 - **Database Integrity**: Foreign key relationships, data consistency
-- **API Endpoints**: HTTP status codes, error handling, data validation  
+- **API Endpoints**: HTTP status codes, error handling, data validation
 - **Responsive Design**: Mobile, tablet, desktop layouts verified
 - **Cross-browser Compatibility**: Modern browsers supported
+- **Priority Tickets**: Inline notes editing with full CRUD verified (Oct 19)
+- **Dashboard Sorting**: Chronological sorting (date + time combined) tested (Oct 19)
+- **Tours Page**: Guide assignment and notes persistence verified (Oct 19)
 
 ### Performance Verified ✅
 - **Database Queries**: Optimized JOIN operations for related data
@@ -443,16 +506,17 @@ npm run build -- --mode production
 - **Mobile Responsiveness**: Verified across device sizes
 
 ### Production Feature Status ✅ (ALL LIVE)
-- ✅ **Core Tour Management**: ✅ LIVE - Complete with modern UI on production
+- ✅ **Core Tour Management**: ✅ LIVE - Complete with modern UI and inline notes editing
 - ✅ **Guide Management**: ✅ LIVE - Multi-language support operational
 - ✅ **Payment System**: ✅ LIVE - Complete tracking with guide analytics
 - ✅ **Ticket Management**: ✅ LIVE - Complete inventory system operational
-- ✅ **Authentication**: ✅ LIVE - Secure role-based access working
+- ✅ **Priority Tickets**: ✅ LIVE - Museum ticket bookings with inline notes CRUD
+- ✅ **Authentication**: ✅ LIVE - Secure role-based access working (fixed Oct 19)
 - ✅ **Responsive Design**: ✅ LIVE - Mobile-first interface verified
 - ✅ **Database Operations**: ✅ LIVE - All CRUD operations functional
 - ✅ **API Integration**: ✅ LIVE - RESTful endpoints operational
 - ✅ **Bokun Integration**: ✅ LIVE - 47 bookings synchronized and displaying
-- ✅ **Dashboard**: ✅ LIVE - Real-time data display working correctly
+- ✅ **Dashboard**: ✅ LIVE - Real-time data with chronological sorting (fixed Oct 19)
 - ✅ **SSL Security**: ✅ LIVE - HTTPS certificate active and secure
 
 ## 🔐 Security Features
@@ -534,9 +598,9 @@ This project is proprietary software developed for Florence with Locals tour ope
 
 ---
 
-**Project Status**: ✅ **FULLY DEPLOYED & OPERATIONAL** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. Responsive UI, verified database operations, payment system, and **LIVE Bokun integration with 47 synchronized bookings**. Ready for active production use.
+**Project Status**: ✅ **FULLY DEPLOYED & OPERATIONAL WITH INTELLIGENT DATA EXTRACTION & ENHANCED UX** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. **Recent critical updates (Oct 19, 2025)**: Dashboard chronological sorting fixed, Tours page CRUD operations resolved, Priority Tickets redesigned with inline notes editing, and authentication session management corrected. **132+ bookings with automatic multi-channel language detection** (Viator, GetYourGuide), smart payment tracking, and intelligent product filtering. Full inline CRUD operations for notes across Tours and Priority Tickets pages with optimized column layouts. Responsive UI, verified database operations, complete payment system with analytics, and enhanced data validation throughout.
 
-**Last Updated**: September 30, 2025 - Added complete cancelled booking sync and rescheduling support with visual indicators. Enhanced system now includes real-time status tracking, audit trails, and improved cache management.
+**Last Updated**: October 19, 2025 - Fixed Dashboard chronological sorting (date + time combined), resolved Tours page guide assignment and notes persistence issues (backend API updated), completely redesigned Priority Tickets page with inline notes CRUD and balanced column widths, and corrected authentication session management. All features tested and verified working.
 
 **Live Production URL**: **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** ✅
 

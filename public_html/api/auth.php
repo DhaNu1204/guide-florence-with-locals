@@ -52,9 +52,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Generate a session token
                 $sessionToken = bin2hex(random_bytes(32));
 
-                // Store session in database
-                $stmt = $conn->prepare("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))");
-                $stmt->bind_param("si", $sessionToken, $user['id']);
+                // Store session in database (session_id and token are the same)
+                $stmt = $conn->prepare("INSERT INTO sessions (session_id, token, user_id, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))");
+                $stmt->bind_param("ssi", $sessionToken, $sessionToken, $user['id']);
                 $stmt->execute();
 
                 echo json_encode([

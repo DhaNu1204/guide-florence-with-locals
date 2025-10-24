@@ -19,12 +19,8 @@ import { getTours, getGuides } from '../services/mysqlDB';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
-    totalTours: 0,
-    activeTours: 0,
-    totalGuides: 0,
-    upcomingTours: 0,
-    unpaidTours: 0,
-    todayTours: 0
+    unassignedTours: 0,
+    unpaidTours: 0
   });
   const [recentTours, setRecentTours] = useState([]);
   const [upcomingTours, setUpcomingTours] = useState([]);
@@ -40,15 +36,19 @@ const Dashboard = () => {
     setLoading(true);
     try {
       // Load tours data with optional force refresh
-      const toursData = await getTours(forceRefresh);
+      const toursResponse = await getTours(forceRefresh);
       const guidesData = await getGuides();
-      
+
+      // Extract tours array from paginated response
+      const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
+
       if (toursData && guidesData) {
-        // Filter out ticket products (not actual tours) - BUT keep Bokun synced bookings
+        // Ticket products to exclude (not actual tours that need guides)
         const ticketProducts = [
           'Uffizi Gallery Priority Entrance Tickets',
           'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
         ];
+
         const filteredTours = toursData.filter(tour => {
           const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
           // Keep tour if it's NOT a ticket product OR if it's from Bokun (real booking)
@@ -73,13 +73,22 @@ const Dashboard = () => {
             // Only show tours from today onwards
             if (tourDate < today) return false;
 
+            // Exclude ticket products (they don't need guides)
+            const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
+            if (isTicketProduct) return false;
+
             // Only show unassigned tours (no guide assigned)
             const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
 
             // Show only unassigned tours
             return !hasGuide;
           })
-          .sort((a, b) => new Date(a.date) - new Date(b.date)) // Sort by date ascending (earliest first)
+          .sort((a, b) => {
+            // Sort by date AND time (chronological order)
+            const dateA = new Date(a.date + ' ' + a.time);
+            const dateB = new Date(b.date + ' ' + b.time);
+            return dateA - dateB;
+          })
           .slice(0, 10);
 
         const upcoming = filteredTours
@@ -89,11 +98,20 @@ const Dashboard = () => {
             const tourDate = new Date(tour.date);
             if (tourDate < now) return false; // Must be future tours
 
+            // Exclude ticket products (they don't need guides)
+            const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
+            if (isTicketProduct) return false;
+
             // Show all upcoming tours regardless of guide assignment or payment status
             return true;
           })
-          .sort((a, b) => new Date(a.date) - new Date(b.date))
-          .slice(0, 5);
+          .sort((a, b) => {
+            // Sort by date AND time (chronological order)
+            const dateA = new Date(a.date + ' ' + a.time);
+            const dateB = new Date(b.date + ' ' + b.time);
+            return dateA - dateB;
+          })
+          .slice(0, 15);
           
         setRecentTours(recent);
         setUpcomingTours(upcoming);
@@ -109,22 +127,32 @@ const Dashboard = () => {
 
   const calculateStats = (tours, guides) => {
     const now = new Date();
-    const today = new Date().toDateString();
-    
-    const totalTours = tours.length;
-    const activeTours = tours.filter(tour => !tour.cancelled).length;
-    const totalGuides = guides.length;
-    
-    const upcomingTours = tours.filter(tour => {
+    now.setHours(0, 0, 0, 0); // Reset to start of day
+
+    // Count unassigned tours for future dates only
+    const unassignedTours = tours.filter(tour => {
+      if (tour.cancelled) return false;
+
       const tourDate = new Date(tour.date);
-      return !tour.cancelled && tourDate >= now;
+      tourDate.setHours(0, 0, 0, 0);
+
+      // Only future tours
+      if (tourDate < now) return false;
+
+      // Check if guide is not assigned
+      const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
+      return !hasGuide;
     }).length;
-    
-    // Count tours with unpaid or partial payment status
+
+    // Count tours with unpaid or partial payment status (past tours only)
     const unpaidTours = tours.filter(tour => {
       if (tour.cancelled) return false;
+
       const tourDate = new Date(tour.date);
-      if (tourDate >= now) return false; // Only count past tours
+      tourDate.setHours(0, 0, 0, 0);
+
+      // Only count past tours
+      if (tourDate >= now) return false;
 
       // Check enhanced payment status
       if (tour.payment_status) {
@@ -133,51 +161,13 @@ const Dashboard = () => {
       // Fallback to legacy paid field
       return !tour.paid;
     }).length;
-    
-    const todayTours = tours.filter(tour => 
-      !tour.cancelled && new Date(tour.date).toDateString() === today
-    ).length;
 
     setStats({
-      totalTours,
-      activeTours,
-      totalGuides,
-      upcomingTours,
-      unpaidTours,
-      todayTours
+      unassignedTours,
+      unpaidTours
     });
   };
 
-  const quickActions = [
-    {
-      title: 'Add New Tour',
-      description: 'Schedule a new guided tour',
-      icon: FiPlus,
-      color: 'blue',
-      link: '/tours#add'
-    },
-    {
-      title: 'Payment Management',
-      description: 'Record and track payments',
-      icon: FiDollarSign,
-      color: 'green',
-      link: '/payments'
-    },
-    {
-      title: 'Manage Guides',
-      description: 'View and edit guide information',
-      icon: FiUsers,
-      color: 'purple',
-      link: '/guides'
-    },
-    {
-      title: 'Ticket Inventory',
-      description: 'Manage museum tickets',
-      icon: FiTag,
-      color: 'orange',
-      link: '/tickets'
-    }
-  ];
 
   if (loading) {
     return (
@@ -238,61 +228,37 @@ const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatsCard
-          title="Total Tours"
-          value={stats.totalTours}
-          icon={FiCalendar}
-          color="blue"
-        />
-        <StatsCard
-          title="Active Tours"
-          value={stats.activeTours}
-          icon={FiClock}
-          color="green"
-        />
-        <StatsCard
-          title="Total Guides"
-          value={stats.totalGuides}
-          icon={FiUsers}
-          color="purple"
-        />
-        <StatsCard
-          title="Upcoming"
-          value={stats.upcomingTours}
-          icon={FiTrendingUp}
-          color="orange"
-        />
-        <StatsCard
-          title="Today's Tours"
-          value={stats.todayTours}
-          icon={FiMapPin}
-          color="blue"
-        />
-        <StatsCard
-          title="Unpaid"
-          value={stats.unpaidTours}
-          icon={FiDollarSign}
-          color={stats.unpaidTours > 0 ? "red" : "green"}
-        />
-      </div>
-
-      {/* Quick Actions */}
-      <Card>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {quickActions.map((action) => (
-            <Link key={action.link} to={action.link}>
-              <ActionCard
-                title={action.title}
-                description={action.description}
-                icon={action.icon}
-                color={action.color}
-              />
-            </Link>
-          ))}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Unassigned Tours</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.unassignedTours}</p>
+              <p className="text-xs text-gray-500 mt-1">Future tours without guide</p>
+            </div>
+            <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+              <FiAlertCircle className="text-orange-600 text-xl" />
+            </div>
+          </div>
         </div>
-      </Card>
+
+        <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Unpaid Tours</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.unpaidTours}</p>
+              <p className="text-xs text-gray-500 mt-1">Past tours pending payment</p>
+            </div>
+            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+              stats.unpaidTours > 0 ? 'bg-red-100' : 'bg-green-100'
+            }`}>
+              <FiDollarSign className={`text-xl ${
+                stats.unpaidTours > 0 ? 'text-red-600' : 'text-green-600'
+              }`} />
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Recent Activity and Upcoming Tours */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -325,6 +291,11 @@ const Dashboard = () => {
                       <span>{new Date(tour.date).toLocaleDateString('en-GB')}</span>
                       <span>{tour.time}</span>
                       <span>{tour.guide_name || 'Unassigned'}</span>
+                      {tour.language && (
+                        <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-medium rounded">
+                          🗣️ {tour.language}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {tour.booking_channel && (
@@ -369,6 +340,11 @@ const Dashboard = () => {
                       <span>{new Date(tour.date).toLocaleDateString('en-GB')}</span>
                       <span>{tour.time}</span>
                       <span>{tour.guide_name || 'Unassigned'}</span>
+                      {tour.language && (
+                        <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-medium rounded">
+                          🗣️ {tour.language}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -398,26 +374,6 @@ const Dashboard = () => {
         </Card>
       </div>
 
-      {/* Call to Action - if no tours exist */}
-      {stats.totalTours === 0 && (
-        <Card className="text-center py-12">
-          <FiCalendar className="text-4xl text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No tours yet</h3>
-          <p className="text-gray-600 mb-6">Get started by adding your first tour or importing from Bokun</p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/tours#add">
-              <Button variant="primary" icon={FiPlus}>
-                Add New Tour
-              </Button>
-            </Link>
-            <Link to="/tours#bokun">
-              <Button variant="outline" icon={FiRefreshCw}>
-                Sync from Bokun
-              </Button>
-            </Link>
-          </div>
-        </Card>
-      )}
     </div>
   );
 };
