@@ -105,10 +105,12 @@ const PriorityTickets = () => {
           return isTicketProduct && !tour.cancelled;
         });
 
-        // Sort by date (most recent first)
-        const sortedTickets = tickets.sort((a, b) =>
-          new Date(b.date) - new Date(a.date)
-        );
+        // Sort by date and time (earliest first - morning bookings at top)
+        const sortedTickets = tickets.sort((a, b) => {
+          const dateTimeA = new Date(a.date + ' ' + a.time);
+          const dateTimeB = new Date(b.date + ' ' + b.time);
+          return dateTimeA - dateTimeB; // Ascending order (earliest first)
+        });
 
         setTicketBookings(sortedTickets);
         calculateStats(sortedTickets);
