@@ -9,6 +9,7 @@ import Tickets from './pages/Tickets';
 import Payments from './pages/Payments';
 import EditTour from './pages/EditTour';
 import BokunIntegration from './pages/BokunIntegration';
+import PriorityTickets from './pages/PriorityTickets';
 import Login from './pages/Login';
 import { PageTitleProvider } from './contexts/PageTitleContext';
 import BokunAutoSyncProvider from './components/BokunAutoSyncProvider';
@@ -95,6 +96,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <ModernLayout>
               <BokunIntegration />
+            </ModernLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/priority-tickets"
+        element={
+          <ProtectedRoute>
+            <ModernLayout>
+              <PriorityTickets />
             </ModernLayout>
           </ProtectedRoute>
         }

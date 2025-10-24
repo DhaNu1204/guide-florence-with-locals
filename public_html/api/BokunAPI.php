@@ -254,7 +254,21 @@ class BokunAPI {
         $endpoint = '/activity.json/' . $activityId . '/availabilities?start=' . $startDate . '&end=' . $endDate . '&currency=' . $currency;
         return $this->makeRequest('GET', $endpoint);
     }
-    
+
+    /**
+     * Get activity/product details
+     */
+    public function getProduct($productId) {
+        return $this->makeRequest('GET', '/activity.json/' . $productId);
+    }
+
+    /**
+     * Make a public API request (for testing/exploration)
+     */
+    public function makePublicRequest($method, $endpoint, $data = null) {
+        return $this->makeRequest($method, $endpoint, $data);
+    }
+
     /**
      * Transform Bokun booking to our tour format
      */
@@ -335,13 +349,103 @@ class BokunAPI {
             $totalAmount = floatval($booking['paidAmount']);
         }
 
-        // Map payment status
+        // Map payment status - IMPORTANT: This is for GUIDE payment, not customer payment
+        // All Bokun bookings should start as 'unpaid' for guide payment tracking
+        // The Bokun paymentStatus (INVOICED/PAID) refers to customer payment to the booking platform,
+        // NOT payment to the tour guide. Guide payment must be recorded separately.
         $paymentStatus = 'unpaid';
-        if (isset($booking['paymentStatus'])) {
-            if ($booking['paymentStatus'] === 'PAID' || $booking['paymentStatus'] === 'INVOICED') {
-                $paymentStatus = 'paid';
-            } elseif ($booking['paymentStatus'] === 'PARTIALLY_PAID') {
-                $paymentStatus = 'partial';
+
+        // Extract language information from notes
+        $language = null;
+
+        // Check in booking notes for "Booking languages" or "GUIDE" language
+        if (isset($productBooking['notes']) && is_array($productBooking['notes'])) {
+            foreach ($productBooking['notes'] as $note) {
+                if (isset($note['body'])) {
+                    $noteBody = $note['body'];
+
+                    // Look for "GUIDE : English" or similar patterns
+                    if (preg_match('/GUIDE\s*:\s*([A-Za-z]+)/i', $noteBody, $matches)) {
+                        $language = ucfirst(strtolower($matches[1]));
+                        break;
+                    }
+
+                    // Look for "Booking languages:" section
+                    if (preg_match('/Booking languages.*?:\s*([A-Za-z]+)/is', $noteBody, $matches)) {
+                        $language = ucfirst(strtolower($matches[1]));
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Method 2: Check rate title for language (especially for GetYourGuide bookings)
+        if (!$language && isset($productBooking['fields']['rateId']) && isset($productBooking['product']['id'])) {
+            $rateId = $productBooking['fields']['rateId'];
+            $productId = $productBooking['product']['id'];
+
+            try {
+                // Fetch product details to get rate information
+                $productDetails = $this->getProduct($productId);
+
+                if (isset($productDetails['rates']) && is_array($productDetails['rates'])) {
+                    foreach ($productDetails['rates'] as $rate) {
+                        if (isset($rate['id']) && $rate['id'] == $rateId && isset($rate['title'])) {
+                            $rateTitle = strtolower($rate['title']);
+
+                            // Check if rate title contains language identifier
+                            if (strpos($rateTitle, 'italian') !== false) {
+                                $language = 'Italian';
+                                break;
+                            } elseif (strpos($rateTitle, 'spanish') !== false) {
+                                $language = 'Spanish';
+                                break;
+                            } elseif (strpos($rateTitle, 'french') !== false) {
+                                $language = 'French';
+                                break;
+                            } elseif (strpos($rateTitle, 'german') !== false) {
+                                $language = 'German';
+                                break;
+                            } elseif (strpos($rateTitle, 'english') !== false) {
+                                $language = 'English';
+                                break;
+                            } else {
+                                // If rate title doesn't contain language keyword, assume English for default rate
+                                $language = 'English';
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // Log error but continue processing
+                error_log("Failed to fetch product details for language extraction: " . $e->getMessage());
+            }
+        }
+
+        // Method 3: Check in other booking field locations
+        if (!$language) {
+            if (isset($productBooking['fields']['language'])) {
+                $language = $productBooking['fields']['language'];
+            } elseif (isset($productBooking['product']['language'])) {
+                $language = $productBooking['product']['language'];
+            } elseif (isset($booking['language'])) {
+                $language = $booking['language'];
+            }
+        }
+
+        // Method 4: Extract from product title as last resort
+        if (!$language) {
+            $titleLower = strtolower($productTitle);
+            if (strpos($titleLower, 'italian') !== false) {
+                $language = 'Italian';
+            } elseif (strpos($titleLower, 'spanish') !== false) {
+                $language = 'Spanish';
+            } elseif (strpos($titleLower, 'french') !== false) {
+                $language = 'French';
+            } elseif (strpos($titleLower, 'german') !== false) {
+                $language = 'German';
+            } elseif (strpos($titleLower, 'english') !== false) {
+                $language = 'English';
             }
         }
 
@@ -356,6 +460,7 @@ class BokunAPI {
             'date' => $date,
             'time' => $time,
             'duration' => $duration,
+            'language' => $language,
             'description' => null, // Can be filled from notes later
             'customer_name' => $this->getCustomerName($booking),
             'customer_email' => $customer['email'] ?? null,

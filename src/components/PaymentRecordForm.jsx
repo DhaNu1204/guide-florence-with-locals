@@ -50,7 +50,10 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
     try {
       // Load tours using the cached service (forces fresh data from server)
       console.log('PaymentRecordForm: Loading fresh tour data from mysqlDB service');
-      const toursData = await getTours(true); // Force refresh to get latest data
+      const toursResponse = await getTours(true); // Force refresh to get latest data
+
+      // Extract tours array from paginated response
+      const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
       setTours(toursData);
 
       // Load guides using the cached service
@@ -78,6 +81,17 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
     const filtered = tours.filter(tour => {
       // Check if tour is on the selected date
       if (tour.date !== dateString) return false;
+
+      // Exclude ticket products (they don't need guide payments)
+      const ticketProducts = [
+        'Uffizi Gallery Priority Entrance Tickets',
+        'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
+      ];
+      const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
+      if (isTicketProduct) {
+        console.log(`Tour ${tour.id} excluded: ticket product`);
+        return false;
+      }
 
       // Check if tour is cancelled - exclude cancelled tours
       if (tour.cancelled === true || tour.cancelled === 1) {
