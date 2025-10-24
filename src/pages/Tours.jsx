@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import mysqlDB from '../services/mysqlDB';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
+import BookingDetailsModal from '../components/BookingDetailsModal';
 
 // Helper functions moved outside component to prevent dependency loops
 const isToday = (tourDate, tourTime) => {
@@ -170,6 +171,8 @@ const Tours = () => {
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
   const [showAllDates, setShowAllDates] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTour, setSelectedTour] = useState(null);
   const [pagination, setPagination] = useState({
     current_page: 1,
     per_page: 50,
@@ -413,6 +416,27 @@ const Tours = () => {
     }
   };
 
+  const handleRowClick = (tour) => {
+    setSelectedTour(tour);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedTour(null);
+  };
+
+  const handleUpdateNotesFromModal = async (tourId, newNotes) => {
+    await mysqlDB.updateTour(tourId, { notes: newNotes });
+
+    // Update local state
+    setTours(prev =>
+      prev.map(tour =>
+        tour.id === tourId ? { ...tour, notes: newNotes } : tour
+      )
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -596,7 +620,11 @@ const Tours = () => {
                             {periodGroup.tours.map((tour) => {
                           const guideName = guides.find(g => g.id == tour.guide_id)?.name || 'Unassigned';
                           return (
-                            <tr key={tour.id} className="hover:bg-gray-50">
+                            <tr
+                              key={tour.id}
+                              className="hover:bg-gray-50 cursor-pointer"
+                              onClick={() => handleRowClick(tour)}
+                            >
                               <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                 {getBookingTime(tour)}
                               </td>
@@ -618,7 +646,7 @@ const Tours = () => {
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {getParticipantCount(tour)} PAX
                               </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                   {editingGuides[tour.id] !== undefined ? (
                                     <div className="flex items-center gap-2">
@@ -667,7 +695,7 @@ const Tours = () => {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-900">
+                              <td className="px-6 py-4 text-sm text-gray-900" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-start gap-2">
                                   <div className="flex flex-col gap-2 flex-1">
                                     {editingNotes[tour.id] !== undefined ? (
@@ -829,6 +857,14 @@ const Tours = () => {
           )}
         </div>
       </div>
+
+      {/* Booking Details Modal */}
+      <BookingDetailsModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        ticket={selectedTour}
+        onUpdateNotes={handleUpdateNotesFromModal}
+      />
     </div>
   );
 };
