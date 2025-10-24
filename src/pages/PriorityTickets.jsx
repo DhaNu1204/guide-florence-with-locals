@@ -2,7 +2,53 @@ import React, { useState, useEffect } from 'react';
 import { FiCalendar, FiUsers, FiTag, FiRefreshCw, FiAlertCircle, FiSave, FiX } from 'react-icons/fi';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
+import BookingDetailsModal from '../components/BookingDetailsModal';
 import { getTours, updateTour } from '../services/mysqlDB';
+
+// Helper function to extract participant breakdown (adults/children) from bokun_data
+// NOTE: INFANT tickets are FREE and not counted (they don't need museum tickets)
+const getParticipantBreakdown = (tour) => {
+  try {
+    if (tour.bokun_data) {
+      const bokunData = JSON.parse(tour.bokun_data);
+      if (bokunData.productBookings && bokunData.productBookings[0] && bokunData.productBookings[0].fields) {
+        const priceCategoryBookings = bokunData.productBookings[0].fields.priceCategoryBookings;
+
+        if (priceCategoryBookings && Array.isArray(priceCategoryBookings)) {
+          let adults = 0;
+          let children = 0;
+
+          priceCategoryBookings.forEach(category => {
+            const quantity = category.quantity || 0;
+            const ticketCategory = category.pricingCategory?.ticketCategory || '';
+
+            if (ticketCategory === 'ADULT') {
+              adults += quantity;
+            } else if (ticketCategory === 'CHILD') {
+              // Only count CHILD, NOT INFANT (infants are free)
+              children += quantity;
+            }
+            // INFANT is intentionally ignored - they don't need tickets
+          });
+
+          return { adults, children, total: adults + children };
+        }
+
+        // Fallback to totalParticipants if priceCategoryBookings not available
+        const total = bokunData.productBookings[0].fields.totalParticipants || parseInt(tour.participants) || 0;
+        return { adults: total, children: 0, total };
+      }
+    }
+
+    // Final fallback to tour.participants field
+    const total = parseInt(tour.participants) || 0;
+    return { adults: total, children: 0, total };
+  } catch (error) {
+    console.error('Error parsing participant breakdown:', error);
+    const total = parseInt(tour.participants) || 0;
+    return { adults: total, children: 0, total };
+  }
+};
 
 const PriorityTickets = () => {
   const [ticketBookings, setTicketBookings] = useState([]);
@@ -23,6 +69,8 @@ const PriorityTickets = () => {
   });
   const [editingNotes, setEditingNotes] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
 
   // Ticket product identifiers
   const ticketProducts = [
@@ -199,6 +247,27 @@ const PriorityTickets = () => {
       delete updated[ticketId];
       return updated;
     });
+  };
+
+  const handleRowClick = (ticket) => {
+    setSelectedBooking(ticket);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedBooking(null);
+  };
+
+  const handleUpdateNotesFromModal = async (ticketId, newNotes) => {
+    await updateTour(ticketId, { notes: newNotes });
+
+    // Update local state
+    setTicketBookings(prev =>
+      prev.map(ticket =>
+        ticket.id === ticketId ? { ...ticket, notes: newNotes } : ticket
+      )
+    );
   };
 
   if (loading) {
@@ -387,7 +456,6 @@ const PriorityTickets = () => {
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase w-[70px]">Time</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase w-[130px]">Museum</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase w-[120px]">Customer</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase w-[180px]">Contact</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase w-[90px]">Participants</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase w-[120px]">Booking Channel</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Notes</th>
@@ -395,7 +463,11 @@ const PriorityTickets = () => {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredTickets.map((ticket) => (
-                  <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={ticket.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleRowClick(ticket)}
+                  >
                     <td className="py-3 px-4 text-sm text-gray-900 w-[100px]">
                       {new Date(ticket.date).toLocaleDateString('en-GB')}
                     </td>
@@ -410,22 +482,16 @@ const PriorityTickets = () => {
                     <td className="py-3 px-4 text-sm text-gray-900 w-[120px]">
                       {ticket.customer_name || 'N/A'}
                     </td>
-                    <td className="py-3 px-4 text-sm text-gray-600 w-[180px]">
-                      <div className="text-xs">
-                        {ticket.customer_email && (
-                          <div className="truncate max-w-[160px]" title={ticket.customer_email}>
-                            {ticket.customer_email}
-                          </div>
-                        )}
-                        {ticket.customer_phone && (
-                          <div className="text-gray-500">{ticket.customer_phone}</div>
-                        )}
-                      </div>
-                    </td>
                     <td className="py-3 px-4 text-sm text-gray-900 w-[90px]">
                       <div className="flex items-center">
                         <FiUsers className="mr-1 text-gray-400" />
-                        {ticket.participants || 'N/A'}
+                        {(() => {
+                          const breakdown = getParticipantBreakdown(ticket);
+                          if (breakdown.children > 0) {
+                            return `${breakdown.adults}A / ${breakdown.children}C`;
+                          }
+                          return `${breakdown.adults || breakdown.total || 'N/A'}`;
+                        })()}
                       </div>
                     </td>
                     <td className="py-3 px-4 w-[120px]">
@@ -437,7 +503,7 @@ const PriorityTickets = () => {
                         <span className="text-sm text-gray-400">Direct</span>
                       )}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                       {editingNotes[ticket.id] !== undefined ? (
                         <div className="flex items-start space-x-2">
                           <textarea
@@ -482,6 +548,14 @@ const PriorityTickets = () => {
           </div>
         )}
       </Card>
+
+      {/* Booking Details Modal */}
+      <BookingDetailsModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        ticket={selectedBooking}
+        onUpdateNotes={handleUpdateNotesFromModal}
+      />
     </div>
   );
 };
