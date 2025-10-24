@@ -80,8 +80,16 @@ const ModernLayout = ({ children }) => {
       borderColor: 'border-green-500'
     },
     {
-      title: 'Tickets',
+      title: 'Priority Tickets',
       icon: FiTag,
+      path: '/priority-tickets',
+      color: 'text-pink-600',
+      bgColor: 'bg-pink-50',
+      borderColor: 'border-pink-500'
+    },
+    {
+      title: 'Tickets',
+      icon: BsBoxSeam,
       path: '/tickets',
       color: 'text-orange-600',
       bgColor: 'bg-orange-50',

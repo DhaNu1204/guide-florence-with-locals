@@ -143,7 +143,7 @@ function syncBookings($startDate = null, $endDate = null) {
                     // Update existing tour with rescheduling information
                     $stmt = $conn->prepare("
                         UPDATE tours SET
-                        title = ?, date = ?, time = ?, duration = ?,
+                        title = ?, date = ?, time = ?, duration = ?, language = ?,
                         customer_name = ?, customer_email = ?, customer_phone = ?,
                         participants = ?, booking_channel = ?, total_amount_paid = ?,
                         expected_amount = ?, payment_status = ?, paid = ?,
@@ -154,8 +154,8 @@ function syncBookings($startDate = null, $endDate = null) {
                         WHERE id = ?
                     ");
                     $rescheduledFlag = ($isRescheduled || $existing['rescheduled']) ? 1 : 0;
-                    $stmt->bind_param("sssssssisddsiississi",
-                        $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'],
+                    $stmt->bind_param("ssssssssisddsiississi",
+                        $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['booking_channel'], $tourData['total_amount_paid'],
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
@@ -166,20 +166,20 @@ function syncBookings($startDate = null, $endDate = null) {
                     // Insert new tour
                     $stmt = $conn->prepare("
                         INSERT INTO tours (
-                            external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration,
+                            external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration, language,
                             customer_name, customer_email, customer_phone, participants,
                             booking_channel, total_amount_paid, expected_amount, payment_status, paid,
                             external_source, needs_guide_assignment, guide_id, cancelled,
                             bokun_data, last_sync, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                     ");
-                    // Count: 22 parameters (external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration,
+                    // Count: 23 parameters (external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration, language,
                     //        customer_name, customer_email, customer_phone, participants, booking_channel, total_amount_paid,
                     //        expected_amount, payment_status, paid, external_source, needs_guide_assignment, guide_id,
                     //        cancelled, bokun_data, last_sync)
-                    $stmt->bind_param("ssssssssssisddsisiiiss",
+                    $stmt->bind_param("sssssssssssisddsisiiiss",
                         $tourData['external_id'], $tourData['bokun_booking_id'], $tourData['bokun_confirmation_code'],
-                        $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'],
+                        $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['booking_channel'], $tourData['total_amount_paid'],
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
@@ -200,8 +200,8 @@ function syncBookings($startDate = null, $endDate = null) {
             }
         }
         
-        // Update last sync date - use correct column name from production database
-        $conn->query("UPDATE bokun_config SET last_sync_date = NOW()");
+        // Update last sync timestamp
+        $conn->query("UPDATE bokun_config SET last_sync = NOW()");
         
         return [
             'success' => true,

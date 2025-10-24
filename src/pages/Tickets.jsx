@@ -1245,11 +1245,11 @@ const Tickets = () => {
                                     <tr key={ticket.id} className="hover:bg-gray-50">
                                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                          ticket.location.toLowerCase() === 'uffizi' 
-                                            ? 'bg-blue-100 text-blue-800' 
+                                          ticket.location && ticket.location.toLowerCase() === 'uffizi'
+                                            ? 'bg-blue-100 text-blue-800'
                                             : 'bg-green-100 text-green-800'
                                         }`}>
-                                          {ticket.location}
+                                          {ticket.location || 'Unknown'}
                                         </span>
                                       </td>
                                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">

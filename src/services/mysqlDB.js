@@ -83,16 +83,16 @@ export const updateGuide = async (guideId, guideData) => {
 };
 
 // TOURS OPERATIONS
-export const getTours = async (forceRefresh = false) => {
+export const getTours = async (forceRefresh = false, page = 1, perPage = 50) => {
   // Check if we need to force a refresh
   if (forceRefresh) {
     clearTourCache();
   }
-  
+
   // Check for cached data and its freshness
   let cachedData = null;
   let isCacheStale = true;
-  
+
   try {
     const storedData = localStorage.getItem(STORAGE_KEY);
     if (storedData) {
@@ -109,34 +109,35 @@ export const getTours = async (forceRefresh = false) => {
   } catch (error) {
     console.warn('Error reading from cache:', error);
   }
-  
+
   // If we have fresh cached data and aren't forcing a refresh, use it
   if (cachedData && !forceRefresh && !isCacheStale) {
     return cachedData;
   }
-  
+
   // Otherwise fetch from the server
   try {
     console.log('Fetching fresh tour data from server');
-    const response = await axios.get(addCacheBuster(`${API_BASE_URL}/tours.php`));
-    
+    const url = `${API_BASE_URL}/tours.php?page=${page}&per_page=${perPage}`;
+    const response = await axios.get(addCacheBuster(url));
+
     // CRITICAL: Use server data as the source of truth
-    const serverTours = response.data;
-    
+    const serverResponse = response.data;
+
     // Store in cache with timestamp
     try {
       const cacheData = {
         timestamp: Date.now(),
-        data: serverTours
+        data: serverResponse
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cacheData));
       // Also update legacy key for backwards compatibility
-      localStorage.setItem('tours', JSON.stringify(serverTours));
+      localStorage.setItem('tours', JSON.stringify(serverResponse));
     } catch (localError) {
       console.warn('Could not save tours to localStorage:', localError);
     }
-    
-    return serverTours;
+
+    return serverResponse;
   } catch (error) {
     console.error('Error fetching tours from server:', error);
     
