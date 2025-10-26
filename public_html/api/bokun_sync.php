@@ -84,12 +84,13 @@ function syncBookings($startDate = null, $endDate = null) {
         return ['error' => 'Bokun sync is not configured or disabled'];
     }
     
-    // Default to next 14 days if no dates provided (to catch more bookings)
+    // Default to past 7 days and next 30 days to catch recent and upcoming bookings
+    // This ensures we don't miss any recent bookings that were just made
     if (!$startDate) {
-        $startDate = date('Y-m-d');
+        $startDate = date('Y-m-d', strtotime('-7 days'));  // Start from 7 days ago
     }
     if (!$endDate) {
-        $endDate = date('Y-m-d', strtotime('+14 days'));
+        $endDate = date('Y-m-d', strtotime('+30 days'));  // Next 30 days
     }
     
     try {

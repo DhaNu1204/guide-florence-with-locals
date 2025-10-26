@@ -323,9 +323,19 @@ class BokunAPI {
             $timestamp = is_numeric($booking['startTime']) ? $booking['startTime'] / 1000 : strtotime($booking['startTime']);
             $date = date('Y-m-d', $timestamp);
             $time = date('H:i', $timestamp);
-        } elseif (isset($booking['creationDate'])) {
-            // Use creation date as fallback for tour date
-            $date = date('Y-m-d', $booking['creationDate'] / 1000);
+        }
+
+        // CRITICAL: Do NOT use creationDate as tour date!
+        // creationDate is when the booking was MADE, not when the tour happens.
+        // If no tour date found, log error and skip this booking.
+        if (!$date) {
+            error_log("BokunAPI WARNING: No tour date found for booking " . ($booking['confirmationCode'] ?? 'unknown'));
+            error_log("BokunAPI: Available fields: " . json_encode(array_keys($booking)));
+            if (isset($productBooking)) {
+                error_log("BokunAPI: ProductBooking fields: " . json_encode(array_keys($productBooking)));
+            }
+            // Set a flag or throw exception - don't import bookings without tour dates
+            throw new Exception("No tour date found for booking " . ($booking['confirmationCode'] ?? 'unknown'));
         }
 
         // Extract duration - convert to string format for database

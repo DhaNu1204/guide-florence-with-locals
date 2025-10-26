@@ -63,7 +63,7 @@ const PriorityTickets = () => {
     accademiaTickets: 0
   });
   const [filters, setFilters] = useState({
-    date: new Date().toISOString().split('T')[0], // Default to today's date
+    date: '', // Empty = show all dates (changed from defaulting to today)
     location: '',
     bookingChannel: ''
   });
