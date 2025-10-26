@@ -83,7 +83,7 @@ function getAllPayments($conn) {
                 t.customer_name,
                 g.name as guide_name,
                 g.email as guide_email
-            FROM payment_transactions pt
+            FROM payments pt
             JOIN tours t ON pt.tour_id = t.id
             JOIN guides g ON pt.guide_id = g.id
             ORDER BY pt.payment_date DESC, pt.created_at DESC";
@@ -123,7 +123,7 @@ function getPaymentById($conn, $payment_id) {
                                 t.customer_name,
                                 g.name as guide_name,
                                 g.email as guide_email
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN tours t ON pt.tour_id = t.id
                             JOIN guides g ON pt.guide_id = g.id
                             WHERE pt.id = ?");
@@ -157,7 +157,7 @@ function getPaymentsByTour($conn, $tour_id) {
                                 pt.created_at,
                                 g.name as guide_name,
                                 g.email as guide_email
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN guides g ON pt.guide_id = g.id
                             WHERE pt.tour_id = ?
                             ORDER BY pt.payment_date DESC, pt.created_at DESC");
@@ -242,7 +242,7 @@ function createPayment($conn) {
     }
 
     // Insert payment transaction
-    $stmt = $conn->prepare("INSERT INTO payment_transactions
+    $stmt = $conn->prepare("INSERT INTO payments
                             (tour_id, guide_id, amount, payment_method, payment_date, payment_time, transaction_reference, notes)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
@@ -294,7 +294,7 @@ function updatePayment($conn, $payment_id) {
     $input = json_decode(file_get_contents('php://input'), true);
 
     // Check if payment exists
-    $stmt = $conn->prepare("SELECT id FROM payment_transactions WHERE id = ?");
+    $stmt = $conn->prepare("SELECT id FROM payments WHERE id = ?");
     $stmt->bind_param("i", $payment_id);
     $stmt->execute();
     if (!$stmt->get_result()->fetch_assoc()) {
@@ -353,7 +353,7 @@ function updatePayment($conn, $payment_id) {
         return;
     }
 
-    $sql = "UPDATE payment_transactions SET " . implode(", ", $update_fields) . " WHERE id = ?";
+    $sql = "UPDATE payments SET " . implode(", ", $update_fields) . " WHERE id = ?";
     $values[] = $payment_id;
     $types .= "i";
 
@@ -373,7 +373,7 @@ function updatePayment($conn, $payment_id) {
  */
 function deletePayment($conn, $payment_id) {
     // Get tour_id before deletion for updating status
-    $stmt = $conn->prepare("SELECT tour_id FROM payment_transactions WHERE id = ?");
+    $stmt = $conn->prepare("SELECT tour_id FROM payments WHERE id = ?");
     $stmt->bind_param("i", $payment_id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -387,7 +387,7 @@ function deletePayment($conn, $payment_id) {
     $tour_id = $payment['tour_id'];
 
     // Delete payment
-    $stmt = $conn->prepare("DELETE FROM payment_transactions WHERE id = ?");
+    $stmt = $conn->prepare("DELETE FROM payments WHERE id = ?");
     $stmt->bind_param("i", $payment_id);
 
     if ($stmt->execute()) {

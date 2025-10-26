@@ -16,7 +16,7 @@
 A comprehensive tour guide management system for Florence, Italy that integrates with Bokun API for automatic booking synchronization and guide assignment. Features a modern, responsive UI with complete CRUD operations and role-based access control.
 
 **Production Status**: ✅ FULLY OPERATIONAL at https://withlocals.deetech.cc
-**Last Critical Update**: October 26, 2025 - Tour date bug fixed, Bokun sync date range optimized
+**Last Critical Update**: October 26, 2025 - Tour date bug fixed, Bokun sync optimized, Payments page fixed (database views + table name correction)
 
 ## Tech Stack
 

@@ -108,7 +108,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
                                 t.time as tour_time,
                                 t.customer_name,
                                 t.payment_status as tour_payment_status
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.guide_id = ?
                             ORDER BY pt.payment_date DESC, pt.created_at DESC");
@@ -134,7 +134,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
                                 SUM(CASE WHEN pt.payment_method = 'cash' THEN pt.amount ELSE 0 END) as cash_amount,
                                 SUM(CASE WHEN pt.payment_method = 'bank_transfer' THEN pt.amount ELSE 0 END) as bank_amount,
                                 AVG(pt.amount) as avg_payment
-                            FROM payment_transactions pt
+                            FROM payments pt
                             WHERE pt.guide_id = ?
                             GROUP BY YEAR(pt.payment_date), MONTH(pt.payment_date)
                             ORDER BY year DESC, month DESC
@@ -234,7 +234,7 @@ function getGuidePaymentsByPeriod($conn, $guide_id, $period) {
                                 t.date as tour_date,
                                 t.time as tour_time,
                                 t.customer_name
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.guide_id = ?
                               AND YEAR(pt.payment_date) = ?
@@ -290,7 +290,7 @@ function getPaymentOverview($conn) {
                                 AVG(amount) as avg_payment,
                                 MIN(payment_date) as first_payment,
                                 MAX(payment_date) as last_payment
-                            FROM payment_transactions");
+                            FROM payments");
 
     if ($result && $row = $result->fetch_assoc()) {
         $stats['overall'] = [
@@ -307,7 +307,7 @@ function getPaymentOverview($conn) {
                                 payment_method,
                                 COUNT(*) as count,
                                 SUM(amount) as total_amount
-                            FROM payment_transactions
+                            FROM payments
                             GROUP BY payment_method
                             ORDER BY total_amount DESC");
 
@@ -342,7 +342,7 @@ function getPaymentOverview($conn) {
                                 DATE(payment_date) as date,
                                 COUNT(*) as payment_count,
                                 SUM(amount) as daily_amount
-                            FROM payment_transactions
+                            FROM payments
                             WHERE payment_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                             GROUP BY DATE(payment_date)
                             ORDER BY date DESC");
