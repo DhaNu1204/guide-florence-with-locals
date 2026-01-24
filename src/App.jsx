@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ModernLayout from './components/Layout/ModernLayout';
 import Dashboard from './components/Dashboard';
@@ -115,17 +116,35 @@ function AppRoutes() {
   );
 }
 
+// Fallback component for Sentry error boundary
+const ErrorFallback = ({ error, resetError }) => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="bg-white p-8 rounded-lg shadow-lg max-w-md text-center">
+      <h2 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h2>
+      <p className="text-gray-600 mb-4">An unexpected error occurred. Our team has been notified.</p>
+      <button
+        onClick={resetError}
+        className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition"
+      >
+        Try Again
+      </button>
+    </div>
+  </div>
+);
+
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <PageTitleProvider>
-          <BokunAutoSyncProvider>
-            <AppRoutes />
-          </BokunAutoSyncProvider>
-        </PageTitleProvider>
-      </AuthProvider>
-    </Router>
+    <Sentry.ErrorBoundary fallback={ErrorFallback} showDialog>
+      <Router>
+        <AuthProvider>
+          <PageTitleProvider>
+            <BokunAutoSyncProvider>
+              <AppRoutes />
+            </BokunAutoSyncProvider>
+          </PageTitleProvider>
+        </AuthProvider>
+      </Router>
+    </Sentry.ErrorBoundary>
   );
 }
 

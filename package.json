@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@sentry/react": "^10.36.0",
     "axios": "^1.8.4",
     "date-fns": "^4.1.0",
     "react": "^18.2.0",
