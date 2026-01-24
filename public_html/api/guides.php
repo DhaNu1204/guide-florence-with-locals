@@ -28,121 +28,128 @@ if ($method === 'GET') {
     }
 }
 
-// Add a new guide
+// Add a new guide - SECURITY: Using prepared statements to prevent SQL injection
 else if ($method === 'POST') {
     // Get POST data
     $data = json_decode($raw_data, true);
-    
+
     error_log("Decoded JSON data for guide: " . print_r($data, true));
-    
+
     if (!$data) {
         http_response_code(400);
         echo json_encode(['error' => 'Invalid request data']);
         exit();
     }
-    
-    // Extract guide data with defaults
-    $name = $conn->real_escape_string($data['name'] ?? '');
-    $phone = $conn->real_escape_string($data['phone'] ?? '');
-    $email = $conn->real_escape_string($data['email'] ?? '');
-    $languages = $conn->real_escape_string($data['languages'] ?? '');
-    $bio = $conn->real_escape_string($data['bio'] ?? '');
-    $photo_url = $conn->real_escape_string($data['photo_url'] ?? '');
-    
-    // Validate required fields
+
+    // Extract and sanitize guide data
+    $name = trim($data['name'] ?? '');
+    $phone = trim($data['phone'] ?? '');
+    $email = trim($data['email'] ?? '');
+    $languages = trim($data['languages'] ?? '');
+    $bio = trim($data['bio'] ?? '');
+    $photo_url = trim($data['photo_url'] ?? '');
+
+    // Input validation
     if (empty($name)) {
         http_response_code(400);
         echo json_encode(['error' => 'Name is required']);
         exit();
     }
-    
+
+    if (strlen($name) > 255) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Name too long (max 255 characters)']);
+        exit();
+    }
+
+    // Validate email format if provided
+    if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid email format']);
+        exit();
+    }
+
     // Check if we're updating an existing guide
     if (isset($data['id']) && !empty($data['id'])) {
         $id = intval($data['id']);
-        
-        // Update existing guide
-        $sql = "UPDATE guides SET name = '$name', phone = '$phone'";
-        
-        // Conditionally add other fields if they exist
-        if (!empty($email)) $sql .= ", email = '$email'";
-        if (!empty($languages)) $sql .= ", languages = '$languages'";
-        if (!empty($bio)) $sql .= ", bio = '$bio'";
-        if (!empty($photo_url)) $sql .= ", photo_url = '$photo_url'";
-        
-        $sql .= " WHERE id = $id";
-        
-        if ($conn->query($sql)) {
-            // Return the updated guide
-            $sql = "SELECT * FROM guides WHERE id = $id";
-            $result = $conn->query($sql);
+
+        // SECURITY: Update using prepared statement
+        $stmt = $conn->prepare("UPDATE guides SET name = ?, phone = ?, email = ?, languages = ?, bio = ?, photo_url = ? WHERE id = ?");
+        $stmt->bind_param("ssssssi", $name, $phone, $email, $languages, $bio, $photo_url, $id);
+
+        if ($stmt->execute()) {
+            // Return the updated guide using prepared statement
+            $stmt = $conn->prepare("SELECT * FROM guides WHERE id = ?");
+            $stmt->bind_param("i", $id);
+            $stmt->execute();
+            $result = $stmt->get_result();
             $guide = $result->fetch_assoc();
-            
+
             echo json_encode($guide);
         } else {
             http_response_code(500);
-            echo json_encode(['error' => 'Failed to update guide: ' . $conn->error, 'sql' => $sql]);
+            echo json_encode(['error' => 'Failed to update guide']);
+            error_log("Guide update error: " . $stmt->error);
         }
     } else {
-        // Insert new guide
-        $sql = "INSERT INTO guides (name, phone";
-        $values = "('$name', '$phone'";
-        
-        // Conditionally add other fields if they exist
-        if (!empty($email)) { $sql .= ", email"; $values .= ", '$email'"; }
-        if (!empty($languages)) { $sql .= ", languages"; $values .= ", '$languages'"; }
-        if (!empty($bio)) { $sql .= ", bio"; $values .= ", '$bio'"; }
-        if (!empty($photo_url)) { $sql .= ", photo_url"; $values .= ", '$photo_url'"; }
-        
-        $sql .= ") VALUES " . $values . ")";
-        
-        if ($conn->query($sql)) {
+        // SECURITY: Insert using prepared statement
+        $stmt = $conn->prepare("INSERT INTO guides (name, phone, email, languages, bio, photo_url) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssss", $name, $phone, $email, $languages, $bio, $photo_url);
+
+        if ($stmt->execute()) {
             $guide_id = $conn->insert_id;
-            
-            // Return the created guide
-            $sql = "SELECT * FROM guides WHERE id = $guide_id";
-            $result = $conn->query($sql);
+
+            // Return the created guide using prepared statement
+            $stmt = $conn->prepare("SELECT * FROM guides WHERE id = ?");
+            $stmt->bind_param("i", $guide_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
             $guide = $result->fetch_assoc();
-            
+
             http_response_code(201); // Created
             echo json_encode($guide);
         } else {
             http_response_code(500);
-            echo json_encode(['error' => 'Failed to add guide: ' . $conn->error, 'sql' => $sql]);
+            echo json_encode(['error' => 'Failed to add guide']);
+            error_log("Guide insert error: " . $stmt->error);
         }
     }
 }
 
-// Delete a guide
+// Delete a guide - SECURITY: Using prepared statements
 else if ($method === 'DELETE') {
     // Extract ID from URL
     $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     $pathSegments = explode('/', rtrim($path, '/'));
     $id = intval(end($pathSegments));
-    
-    if (!$id) {
+
+    if (!$id || $id <= 0) {
         http_response_code(400);
         echo json_encode(['error' => 'Invalid guide ID']);
         exit();
     }
-    
+
     error_log("Deleting guide with ID: $id");
-    
-    // Check if guide is associated with any tours
-    $sql = "SELECT COUNT(*) as count FROM tours WHERE guide_id = $id";
-    $result = $conn->query($sql);
+
+    // SECURITY: Check if guide is associated with any tours using prepared statement
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM tours WHERE guide_id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $row = $result->fetch_assoc();
-    
+
     if ($row['count'] > 0) {
         http_response_code(400);
         echo json_encode(['error' => 'Cannot delete guide with associated tours']);
         exit();
     }
-    
-    // Delete the guide
-    $sql = "DELETE FROM guides WHERE id = $id";
-    
-    if ($conn->query($sql)) {
-        if ($conn->affected_rows > 0) {
+
+    // SECURITY: Delete the guide using prepared statement
+    $stmt = $conn->prepare("DELETE FROM guides WHERE id = ?");
+    $stmt->bind_param("i", $id);
+
+    if ($stmt->execute()) {
+        if ($stmt->affected_rows > 0) {
             echo json_encode(['message' => 'Guide deleted successfully']);
         } else {
             http_response_code(404);
@@ -150,7 +157,8 @@ else if ($method === 'DELETE') {
         }
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to delete guide: ' . $conn->error]);
+        echo json_encode(['error' => 'Failed to delete guide']);
+        error_log("Guide delete error: " . $stmt->error);
     }
 }
 
