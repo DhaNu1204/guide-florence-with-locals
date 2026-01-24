@@ -5,6 +5,7 @@ import mysqlDB from '../services/mysqlDB';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
+import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 
 // Helper functions moved outside component to prevent dependency loops
 const isToday = (tourDate, tourTime) => {
@@ -230,18 +231,9 @@ const Tours = () => {
 
   // Memoized filtered and grouped tours by date
   const groupedTours = useMemo(() => {
-    let filtered = tours;
-
-    // Filter out ticket products (not actual tours) - BUT keep Bokun synced bookings
-    const ticketProducts = [
-      'Uffizi Gallery Priority Entrance Tickets',
-      'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
-    ];
-    // Completely exclude ticket products - they belong in Priority Tickets page only
-    filtered = filtered.filter(tour => {
-      const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
-      return !isTicketProduct; // Exclude ALL ticket products regardless of source
-    });
+    // Filter out ticket products using smart keyword detection from tourFilters utility
+    // Tickets don't need guide assignment and belong in Priority Tickets page
+    let filtered = filterToursOnly(tours);
 
     // Filter by guide
     if (selectedGuideId !== 'all') {

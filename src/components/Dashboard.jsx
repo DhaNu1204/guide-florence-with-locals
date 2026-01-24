@@ -2,22 +2,37 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FiCalendar,
-  FiUsers,
-  FiTag,
-  FiDollarSign,
-  FiTrendingUp,
   FiClock,
-  FiMapPin,
-  FiRefreshCw,
-  FiPlus,
+  FiDollarSign,
   FiEye,
-  FiAlertCircle
+  FiAlertCircle,
+  FiRefreshCw
 } from 'react-icons/fi';
-import Card, { StatsCard, ActionCard, TourCard } from './UI/Card';
+import Card from './UI/Card';
 import Button from './UI/Button';
 import { getTours, getGuides } from '../services/mysqlDB';
+import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
+import { useBokunSync } from '../hooks/useBokunAutoSync';
+
+// Helper function to format time ago
+const formatTimeAgo = (date) => {
+  if (!date) return 'Never';
+
+  const now = new Date();
+  const syncDate = new Date(date);
+  const diffMs = now - syncDate;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  if (diffHours < 24) return `${diffHours} hr ago`;
+  return syncDate.toLocaleDateString();
+};
 
 const Dashboard = () => {
+  const { lastSync, isSyncing, syncNow, error: syncError } = useBokunSync();
+
   const [stats, setStats] = useState({
     unassignedTours: 0,
     unpaidTours: 0
@@ -26,7 +41,6 @@ const Dashboard = () => {
   const [upcomingTours, setUpcomingTours] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   useEffect(() => {
     loadDashboardData();
@@ -43,23 +57,14 @@ const Dashboard = () => {
       const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
 
       if (toursData && guidesData) {
-        // Ticket products to exclude (not actual tours that need guides)
-        const ticketProducts = [
-          'Uffizi Gallery Priority Entrance Tickets',
-          'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
-        ];
-
-        const filteredTours = toursData.filter(tour => {
-          const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
-          // Keep tour if it's NOT a ticket product OR if it's from Bokun (real booking)
-          return !isTicketProduct || tour.external_source === 'bokun';
-        });
+        // Filter out ticket products using smart keyword detection
+        // Tickets don't need guide assignment
+        const filteredTours = filterToursOnly(toursData);
 
         calculateStats(filteredTours, guidesData);
 
         // Get recent and upcoming tours
         const now = new Date();
-        const today = new Date().toDateString();
 
         const recent = filteredTours
           .filter(tour => {
@@ -67,15 +72,13 @@ const Dashboard = () => {
             if (tour.cancelled) return false;
 
             const tourDate = new Date(tour.date);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0); // Reset to start of day for comparison
+            const todayDate = new Date();
+            todayDate.setHours(0, 0, 0, 0); // Reset to start of day for comparison
 
             // Only show tours from today onwards
-            if (tourDate < today) return false;
+            if (tourDate < todayDate) return false;
 
-            // Exclude ticket products (they don't need guides)
-            const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
-            if (isTicketProduct) return false;
+            // Ticket products already filtered out by filterToursOnly above
 
             // Only show unassigned tours (no guide assigned)
             const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
@@ -98,9 +101,7 @@ const Dashboard = () => {
             const tourDate = new Date(tour.date);
             if (tourDate < now) return false; // Must be future tours
 
-            // Exclude ticket products (they don't need guides)
-            const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
-            if (isTicketProduct) return false;
+            // Ticket products already filtered out by filterToursOnly above
 
             // Show all upcoming tours regardless of guide assignment or payment status
             return true;
@@ -121,7 +122,6 @@ const Dashboard = () => {
       setError('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
-      setLastRefresh(new Date());
     }
   };
 
@@ -179,6 +179,32 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header with Sync Status */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="flex items-center space-x-3 text-sm text-gray-500">
+          <span>Last sync: {formatTimeAgo(lastSync)}</span>
+          <button
+            onClick={syncNow}
+            disabled={isSyncing}
+            className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${
+              isSyncing ? 'text-blue-500' : 'text-gray-500 hover:text-gray-700'
+            }`}
+            title={isSyncing ? 'Syncing...' : 'Sync now'}
+          >
+            <FiRefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Sync Error Alert */}
+      {syncError && (
+        <div className="bg-orange-50 border border-orange-200 text-orange-700 px-4 py-2 rounded-lg flex items-center text-sm">
+          <FiAlertCircle className="mr-2 flex-shrink-0" />
+          <span>Sync error: {syncError}</span>
+        </div>
+      )}
+
       {/* Error Alert */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start">
@@ -195,38 +221,6 @@ const Dashboard = () => {
           </button>
         </div>
       )}
-      {/* Welcome Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold mb-2">Welcome to Florence with Locals Tour Guide Management System</h1>
-            <p className="text-blue-100 text-sm md:text-base">
-              Manage your tours, guides, and bookings efficiently
-            </p>
-            <p className="text-blue-200 text-xs mt-2">
-              Last updated: {lastRefresh.toLocaleTimeString()}
-            </p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={FiRefreshCw}
-              onClick={() => loadDashboardData(true)}
-              disabled={loading}
-              className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30"
-            >
-              Refresh
-            </Button>
-            <div className="hidden md:block">
-              <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                <FiMapPin className="text-2xl" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
