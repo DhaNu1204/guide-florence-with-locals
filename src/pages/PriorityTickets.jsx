@@ -4,6 +4,7 @@ import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
 import { getTours, updateTour } from '../services/mysqlDB';
+import { filterTicketsOnly } from '../utils/tourFilters';
 
 // Helper function to extract participant breakdown (adults/children) from bokun_data
 // NOTE: INFANT tickets are FREE and not counted (they don't need museum tickets)
@@ -72,12 +73,6 @@ const PriorityTickets = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
 
-  // Ticket product identifiers
-  const ticketProducts = [
-    'Uffizi Gallery Priority Entrance Tickets',
-    'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
-  ];
-
   useEffect(() => {
     loadTicketBookings();
   }, []);
@@ -97,13 +92,9 @@ const PriorityTickets = () => {
       const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
 
       if (toursData) {
-        // Filter only ticket products
-        const tickets = toursData.filter(tour => {
-          const isTicketProduct = ticketProducts.some(ticket =>
-            tour.title && tour.title.includes(ticket)
-          );
-          return isTicketProduct && !tour.cancelled;
-        });
+        // Filter only ticket products using smart keyword detection from tourFilters utility
+        // Then exclude cancelled bookings
+        const tickets = filterTicketsOnly(toursData).filter(tour => !tour.cancelled);
 
         // Sort by date and time (earliest first - morning bookings at top)
         const sortedTickets = tickets.sort((a, b) => {

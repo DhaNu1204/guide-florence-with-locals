@@ -33,7 +33,7 @@ class BokunAutoSyncService {
       return;
     }
 
-    console.log('🔄 Initializing Bokun Auto-Sync Service');
+    console.log('Initializing Bokun Auto-Sync Service');
 
     // Perform initial sync if enabled
     if (this.config.onStartupSync) {
@@ -57,7 +57,7 @@ class BokunAutoSyncService {
         this.performSync('periodic');
       }, this.config.intervalMinutes * 60 * 1000);
 
-      console.log(`📅 Scheduled Bokun sync every ${this.config.intervalMinutes} minutes`);
+      console.log(`Scheduled Bokun sync every ${this.config.intervalMinutes} minutes`);
     }
   }
 
@@ -80,6 +80,7 @@ class BokunAutoSyncService {
   }
 
   // Check if we should sync on focus (avoid too frequent syncs)
+  // Uses 15-minute interval as specified in requirements
   shouldSyncOnFocus() {
     if (!this.lastSyncTime) return true;
 
@@ -87,27 +88,29 @@ class BokunAutoSyncService {
     const now = new Date();
     const minutesSinceLastSync = (now - lastSync) / (1000 * 60);
 
-    return minutesSinceLastSync > 5; // Only sync if last sync was more than 5 minutes ago
+    // Only sync if last sync was more than 15 minutes ago (as per requirements)
+    return minutesSinceLastSync >= 15;
   }
 
   // Perform the actual sync
   async performSync(trigger = 'manual') {
     if (this.syncInProgress) {
-      console.log('⏭️ Sync already in progress, skipping');
+      console.log('Sync already in progress, skipping');
       return;
     }
 
     try {
       this.syncInProgress = true;
       const API_BASE = import.meta.env.VITE_API_URL || '/api';
-      const token = localStorage.getItem('token');
+      // Check both possible token keys for compatibility
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
 
       if (!token) {
-        console.log('❌ No auth token, skipping sync');
+        console.log('No auth token, skipping sync');
         return;
       }
 
-      console.log(`🔄 Starting Bokun sync (trigger: ${trigger})`);
+      console.log(`Starting Bokun sync (trigger: ${trigger})`);
       this.notifyListeners({ type: 'sync_started', trigger });
 
       // Check if sync is enabled
@@ -116,19 +119,20 @@ class BokunAutoSyncService {
       });
 
       if (!configResponse.data?.sync_enabled) {
-        console.log('⏸️ Bokun sync is disabled');
+        console.log('Bokun sync is disabled');
+        this.notifyListeners({
+          type: 'sync_skipped',
+          trigger,
+          reason: 'Sync is disabled in configuration'
+        });
         return;
       }
 
-      // Perform the sync
-      const response = await axios.post(`${API_BASE}/bokun_sync.php?action=sync`, {
-        start_date: format(new Date(), 'yyyy-MM-dd'),
-        end_date: format(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'),
-        auto_sync: true
-      }, {
+      // Perform the sync using GET as specified in the requirements
+      // GET /api/bokun_sync.php?action=sync
+      const response = await axios.get(`${API_BASE}/bokun_sync.php?action=sync`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -137,7 +141,7 @@ class BokunAutoSyncService {
         this.lastSyncTime = new Date().toISOString();
         localStorage.setItem('bokun_last_sync', this.lastSyncTime);
 
-        console.log(`✅ Bokun sync completed: ${synced_count} new bookings (${total_bookings} total)`);
+        console.log(`Bokun sync completed: ${synced_count} synced bookings (${total_bookings} total)`);
 
         this.notifyListeners({
           type: 'sync_completed',
@@ -152,7 +156,7 @@ class BokunAutoSyncService {
           this.showNewBookingsNotification(synced_count);
         }
       } else {
-        console.log('⚠️ Bokun sync failed:', response.data.error);
+        console.log('Bokun sync failed:', response.data.error);
         this.notifyListeners({
           type: 'sync_failed',
           trigger,
@@ -160,7 +164,7 @@ class BokunAutoSyncService {
         });
       }
     } catch (error) {
-      console.log('❌ Bokun sync error:', error.message);
+      console.log('Bokun sync error:', error.message);
       this.notifyListeners({
         type: 'sync_failed',
         trigger,
@@ -226,7 +230,7 @@ class BokunAutoSyncService {
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
-      console.log('⏹️ Bokun auto-sync stopped');
+      console.log('Bokun auto-sync stopped');
     }
   }
 

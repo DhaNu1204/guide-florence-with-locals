@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
+import { filterToursOnly } from '../utils/tourFilters';
 
 const BokunSync = () => {
   const [config, setConfig] = useState({
@@ -41,7 +42,10 @@ const BokunSync = () => {
       const response = await axios.get(`${API_BASE}/bokun_sync.php?action=unassigned`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      setUnassignedTours(response.data);
+      // Filter out ticket products - they don't need guide assignment
+      // Tickets belong in the Priority Tickets page
+      const filteredTours = filterToursOnly(response.data);
+      setUnassignedTours(filteredTours);
     } catch (error) {
       console.error('Error loading unassigned tours:', error);
     }

@@ -7,6 +7,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { format } from "date-fns";
 import { FiSave, FiDollarSign, FiCalendar, FiUser, FiClock } from 'react-icons/fi';
 import { getTours, getGuides } from '../services/mysqlDB.js';
+import { isTicketProduct } from '../utils/tourFilters';
 
 const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) => {
   // Get current date and time in Italian timezone
@@ -82,13 +83,9 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
       // Check if tour is on the selected date
       if (tour.date !== dateString) return false;
 
-      // Exclude ticket products (they don't need guide payments)
-      const ticketProducts = [
-        'Uffizi Gallery Priority Entrance Tickets',
-        'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
-      ];
-      const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
-      if (isTicketProduct) {
+      // Exclude ticket products using smart keyword detection from tourFilters utility
+      // Tickets don't need guide payments
+      if (isTicketProduct(tour)) {
         console.log(`Tour ${tour.id} excluded: ticket product`);
         return false;
       }
