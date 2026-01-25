@@ -92,12 +92,57 @@ switch ($method) {
     case 'GET':
         // Get pagination parameters from query string
         $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-        $perPage = isset($_GET['per_page']) ? max(1, min(100, intval($_GET['per_page']))) : 50;
+        $perPage = isset($_GET['per_page']) ? max(1, min(500, intval($_GET['per_page']))) : 50;
         $offset = ($page - 1) * $perPage;
 
-        // Get total count for pagination metadata
-        $countSql = "SELECT COUNT(*) as total FROM tours";
-        $countResult = $conn->query($countSql);
+        // Get optional date filter parameter (YYYY-MM-DD format)
+        $filterDate = isset($_GET['date']) ? $_GET['date'] : null;
+        $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
+        $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
+
+        // Build WHERE clause for filtering
+        $whereConditions = [];
+        $whereParams = [];
+        $whereTypes = "";
+
+        if ($upcoming) {
+            // Show tours from today onwards for the next 60 days
+            $today = date('Y-m-d');
+            $endDate = date('Y-m-d', strtotime('+60 days'));
+            $whereConditions[] = "t.date >= ?";
+            $whereConditions[] = "t.date <= ?";
+            $whereParams[] = $today;
+            $whereParams[] = $endDate;
+            $whereTypes .= "ss";
+        } elseif ($filterDate) {
+            // Validate date format
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filterDate)) {
+                $whereConditions[] = "t.date = ?";
+                $whereParams[] = $filterDate;
+                $whereTypes .= "s";
+            }
+        }
+
+        if ($guideId) {
+            $whereConditions[] = "t.guide_id = ?";
+            $whereParams[] = $guideId;
+            $whereTypes .= "i";
+        }
+
+        $whereClause = count($whereConditions) > 0
+            ? "WHERE " . implode(" AND ", $whereConditions)
+            : "";
+
+        // Get total count for pagination metadata (with filters)
+        $countSql = "SELECT COUNT(*) as total FROM tours t $whereClause";
+        if (count($whereParams) > 0) {
+            $countStmt = $conn->prepare($countSql);
+            $countStmt->bind_param($whereTypes, ...$whereParams);
+            $countStmt->execute();
+            $countResult = $countStmt->get_result();
+        } else {
+            $countResult = $conn->query($countSql);
+        }
         $totalRecords = 0;
 
         if ($countResult) {
@@ -105,15 +150,20 @@ switch ($method) {
             $totalRecords = intval($countRow['total']);
         }
 
-        // Get all tours with guide names and payment information (with pagination)
+        // Get all tours with guide names and payment information (with pagination and filters)
         $sql = "SELECT t.*, g.name as guide_name
                 FROM tours t
                 LEFT JOIN guides g ON t.guide_id = g.id
-                ORDER BY t.date DESC, t.time DESC
+                $whereClause
+                ORDER BY t.date ASC, t.time ASC
                 LIMIT ? OFFSET ?";
 
+        // Add pagination params to the end
+        $allParams = array_merge($whereParams, [$perPage, $offset]);
+        $allTypes = $whereTypes . "ii";
+
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("ii", $perPage, $offset);
+        $stmt->bind_param($allTypes, ...$allParams);
         $stmt->execute();
         $result = $stmt->get_result();
 

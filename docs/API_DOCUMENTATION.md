@@ -24,12 +24,33 @@
 - **Tickets**: `/api/tickets.php` - Museum ticket inventory management (Uffizi/Accademia)
 - **Authentication**: `/api/auth.php` - Login/logout functionality
 
+## Tours API Parameters
+
+### GET /api/tours.php
+
+| Parameter | Type | Default | Max | Description |
+|-----------|------|---------|-----|-------------|
+| page | int | 1 | - | Page number for pagination |
+| per_page | int | 50 | 500 | Records per page (max 500) |
+| date | string | - | - | Filter by specific date (YYYY-MM-DD) |
+| guide_id | int | - | - | Filter by guide ID |
+| upcoming | bool | false | - | Show tours from today + 60 days only |
+
+**Example**: `/api/tours.php?upcoming=true&per_page=500`
+
 ## Bokun Integration APIs
 
 - **Test Connection**: `/api/bokun_sync.php?action=test`
 - **Sync Bookings**: `/api/bokun_sync.php?action=sync`
+- **Get Config**: `/api/bokun_sync.php?action=config`
 - **Get Unassigned**: `/api/bokun_sync.php?action=unassigned`
 - **Auto-Assign Guide**: `/api/bokun_sync.php?action=auto-assign`
+
+### Auto-Sync Behavior
+- Syncs automatically every 15 minutes for admin users
+- Syncs on app startup (if last sync > 15 minutes ago)
+- Syncs when app regains focus (if last sync > 15 minutes ago)
+- Status indicator shows sync progress in bottom-right corner
 
 ## Utility APIs
 
