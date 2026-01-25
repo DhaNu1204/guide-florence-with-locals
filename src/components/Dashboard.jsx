@@ -49,8 +49,9 @@ const Dashboard = () => {
   const loadDashboardData = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      // Load tours data with optional force refresh
-      const toursResponse = await getTours(forceRefresh);
+      // Load tours data with upcoming filter to get future tours only
+      // This ensures we get 2026+ data instead of old 2025 records
+      const toursResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
       const guidesData = await getGuides();
 
       // Extract tours array from paginated response
