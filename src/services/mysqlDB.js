@@ -83,42 +83,69 @@ export const updateGuide = async (guideId, guideData) => {
 };
 
 // TOURS OPERATIONS
-export const getTours = async (forceRefresh = false, page = 1, perPage = 50) => {
+export const getTours = async (forceRefresh = false, page = 1, perPage = 50, filters = {}) => {
   // Check if we need to force a refresh
   if (forceRefresh) {
     clearTourCache();
   }
 
-  // Check for cached data and its freshness
+  // Build cache key based on filters
+  const filterKey = JSON.stringify(filters);
+  const cacheKeyWithFilters = `${STORAGE_KEY}_${filterKey}`;
+
+  // Skip cache if filters are applied (always fetch fresh for filtered queries)
+  // Include upcoming as a filter since it changes the query behavior
+  const hasFilters = filters.date || filters.guide_id || filters.upcoming;
+
+  console.log('[getTours] hasFilters:', hasFilters, 'filters:', filters);
+
+  // Check for cached data and its freshness (only for unfiltered queries)
   let cachedData = null;
   let isCacheStale = true;
 
-  try {
-    const storedData = localStorage.getItem(STORAGE_KEY);
-    if (storedData) {
-      const parsed = JSON.parse(storedData);
-      // Only use cache if it has a timestamp and isn't expired
-      if (parsed.timestamp && (Date.now() - parsed.timestamp < STORAGE_EXPIRY_MS)) {
-        cachedData = parsed.data;
-        isCacheStale = false;
-        console.log('Using fresh cached tour data');
-      } else {
-        console.log('Cached tour data is stale, fetching fresh data');
+  if (!hasFilters) {
+    console.log('[getTours] Using cache check (no filters applied)');
+    try {
+      const storedData = localStorage.getItem(STORAGE_KEY);
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        // Only use cache if it has a timestamp and isn't expired
+        if (parsed.timestamp && (Date.now() - parsed.timestamp < STORAGE_EXPIRY_MS)) {
+          cachedData = parsed.data;
+          isCacheStale = false;
+          console.log('Using fresh cached tour data');
+        } else {
+          console.log('Cached tour data is stale, fetching fresh data');
+        }
       }
+    } catch (error) {
+      console.warn('Error reading from cache:', error);
     }
-  } catch (error) {
-    console.warn('Error reading from cache:', error);
-  }
 
-  // If we have fresh cached data and aren't forcing a refresh, use it
-  if (cachedData && !forceRefresh && !isCacheStale) {
-    return cachedData;
+    // If we have fresh cached data and aren't forcing a refresh, use it
+    if (cachedData && !forceRefresh && !isCacheStale) {
+      return cachedData;
+    }
   }
 
   // Otherwise fetch from the server
   try {
-    console.log('Fetching fresh tour data from server');
-    const url = `${API_BASE_URL}/tours.php?page=${page}&per_page=${perPage}`;
+    console.log('Fetching fresh tour data from server', { page, perPage, filters });
+
+    // Build URL with query parameters
+    let url = `${API_BASE_URL}/tours.php?page=${page}&per_page=${perPage}`;
+
+    // Add optional filters
+    if (filters.date) {
+      url += `&date=${encodeURIComponent(filters.date)}`;
+    }
+    if (filters.guide_id) {
+      url += `&guide_id=${encodeURIComponent(filters.guide_id)}`;
+    }
+    if (filters.upcoming) {
+      url += `&upcoming=true`;
+    }
+
     const response = await axios.get(addCacheBuster(url));
 
     // CRITICAL: Use server data as the source of truth
@@ -361,6 +388,62 @@ const updateLocalTourCache = (tourId, updates) => {
   }
 };
 
+// BOKUN SYNC OPERATIONS
+export const syncBokun = async (startDate = null, endDate = null, syncType = 'manual') => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/bokun_sync.php?action=sync`, {
+      start_date: startDate,
+      end_date: endDate,
+      type: syncType,
+      triggered_by: 'user'
+    });
+
+    // Clear tour cache after sync to ensure fresh data
+    clearTourCache();
+
+    return response.data;
+  } catch (error) {
+    console.error('Error syncing from Bokun:', error);
+    throw error;
+  }
+};
+
+export const fullSyncBokun = async () => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/bokun_sync.php?action=full-sync`, {
+      triggered_by: 'user'
+    });
+
+    // Clear tour cache after sync to ensure fresh data
+    clearTourCache();
+
+    return response.data;
+  } catch (error) {
+    console.error('Error running full Bokun sync:', error);
+    throw error;
+  }
+};
+
+export const getSyncHistory = async (limit = 20) => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/bokun_sync.php?action=sync-history&limit=${limit}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching sync history:', error);
+    throw error;
+  }
+};
+
+export const getSyncInfo = async () => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/bokun_sync.php?action=sync-info`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching sync info:', error);
+    throw error;
+  }
+};
+
 // Default export object for backwards compatibility
 const mysqlDB = {
   // Tours operations
@@ -376,7 +459,13 @@ const mysqlDB = {
   fetchGuides: getGuides,
   addGuide,
   updateGuide,
-  deleteGuide
+  deleteGuide,
+
+  // Bokun sync operations
+  syncBokun,
+  fullSyncBokun,
+  getSyncHistory,
+  getSyncInfo
 };
 
 export default mysqlDB;

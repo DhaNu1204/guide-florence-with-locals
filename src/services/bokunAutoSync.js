@@ -130,7 +130,9 @@ class BokunAutoSyncService {
 
       // Perform the sync using GET as specified in the requirements
       // GET /api/bokun_sync.php?action=sync
-      const response = await axios.get(`${API_BASE}/bokun_sync.php?action=sync`, {
+      // Pass sync type for proper logging (auto/manual/startup/periodic)
+      const syncType = trigger === 'manual' ? 'manual' : 'auto';
+      const response = await axios.get(`${API_BASE}/bokun_sync.php?action=sync&type=${syncType}&triggered_by=${trigger}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

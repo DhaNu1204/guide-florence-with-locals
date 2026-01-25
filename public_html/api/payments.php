@@ -231,14 +231,32 @@ function createPayment($conn) {
         return;
     }
 
-    // Validate tour and guide exist
-    $stmt = $conn->prepare("SELECT id FROM tours WHERE id = ? AND guide_id = ?");
-    $stmt->bind_param("ii", $input['tour_id'], $input['guide_id']);
+    // Validate tour exists
+    $stmt = $conn->prepare("SELECT id, guide_id FROM tours WHERE id = ?");
+    $stmt->bind_param("i", $input['tour_id']);
+    $stmt->execute();
+    $tour_result = $stmt->get_result()->fetch_assoc();
+    if (!$tour_result) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid tour ID']);
+        return;
+    }
+
+    // Validate guide exists
+    $stmt = $conn->prepare("SELECT id FROM guides WHERE id = ?");
+    $stmt->bind_param("i", $input['guide_id']);
     $stmt->execute();
     if (!$stmt->get_result()->fetch_assoc()) {
         http_response_code(400);
-        echo json_encode(['error' => 'Invalid tour ID or guide ID mismatch']);
+        echo json_encode(['error' => 'Invalid guide ID']);
         return;
+    }
+
+    // If tour has no guide assigned, update it with the selected guide
+    if ($tour_result['guide_id'] === null || $tour_result['guide_id'] === '') {
+        $update_stmt = $conn->prepare("UPDATE tours SET guide_id = ? WHERE id = ?");
+        $update_stmt->bind_param("ii", $input['guide_id'], $input['tour_id']);
+        $update_stmt->execute();
     }
 
     // Insert payment transaction

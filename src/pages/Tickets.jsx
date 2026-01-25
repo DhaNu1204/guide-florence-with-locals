@@ -132,8 +132,7 @@ const Tickets = () => {
       setIsLoading(true);
       setError(null);
       const data = await getTickets();
-      console.log('Tickets retrieved:', data);
-      
+
       if (Array.isArray(data)) {
         setTickets(data);
       } else {

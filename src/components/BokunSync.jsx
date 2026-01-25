@@ -15,12 +15,21 @@ const BokunSync = () => {
   const [syncing, setSyncing] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageDuration, setMessageDuration] = useState(5000);
   const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
   useEffect(() => {
     loadConfig();
     loadUnassignedTours();
   }, []);
+
+  // Auto-clear messages with proper cleanup to prevent memory leaks
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => setMessage(''), messageDuration);
+      return () => clearTimeout(timer); // Cleanup on unmount or message change
+    }
+  }, [message, messageDuration]);
 
   const loadConfig = async () => {
     try {
@@ -55,96 +64,87 @@ const BokunSync = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(`${API_BASE}/bokun_sync.php?action=config`, config, {
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
+      setMessageDuration(3000);
       setMessage('Configuration saved successfully');
       setShowConfig(false);
-      setTimeout(() => setMessage(''), 3000);
     } catch (error) {
+      setMessageDuration(5000);
       setMessage('Error saving configuration');
       console.error('Error saving config:', error);
     }
   };
 
   const testConnection = async () => {
+    setMessageDuration(10000); // Show connection test results longer
     setMessage('Testing Bokun API connection...');
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_BASE}/bokun_sync.php?action=test`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      
-      console.log('Bokun test response:', response.data);
-      
+
       if (response.data.success) {
-        setMessage(`✅ Bokun API connection successful! (${response.data.base_url})`);
+        setMessage(`Bokun API connection successful! (${response.data.base_url})`);
       } else {
-        let errorMsg = '❌ Connection failed: ' + (response.data.error || 'Unknown error');
-        
-        // Add debug information if available
-        if (response.data.debug_info) {
-          console.log('Bokun debug info:', response.data.debug_info);
-        }
-        if (response.data.debug) {
-          console.log('Bokun system debug:', response.data.debug);
-        }
+        let errorMsg = 'Connection failed: ' + (response.data.error || 'Unknown error');
+
         if (response.data.error_code) {
           errorMsg += ` (Code: ${response.data.error_code})`;
         }
-        
+
         // Add solution if provided
         if (response.data.solution) {
-          errorMsg += `\n\n💡 Solution: ${response.data.solution}`;
+          errorMsg += `\n\nSolution: ${response.data.solution}`;
         }
-        
+
         setMessage(errorMsg);
       }
     } catch (error) {
       console.error('Error testing connection:', error);
-      console.error('Response data:', error.response?.data);
-      
-      let errorMsg = '❌ Connection test error: ' + error.message;
+
+      let errorMsg = 'Connection test error: ' + error.message;
       if (error.response?.status) {
         errorMsg += ` (HTTP ${error.response.status})`;
       }
-      
+
       setMessage(errorMsg);
     }
-    
-    setTimeout(() => setMessage(''), 10000); // Show error longer
   };
 
   const syncBookings = async () => {
     setSyncing(true);
+    setMessageDuration(5000);
     setMessage('Syncing bookings from Bokun...');
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(`${API_BASE}/bokun_sync.php?action=sync`, {
         start_date: format(new Date(), 'yyyy-MM-dd'),
         end_date: format(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
       }, {
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.data.success) {
         const { synced_count, total_bookings, start_date, end_date, errors } = response.data;
-        let message = `✅ Synced ${synced_count} bookings`;
+        let msg = `Synced ${synced_count} bookings`;
         if (total_bookings > 0) {
-          message += ` (${total_bookings} found in Bokun)`;
+          msg += ` (${total_bookings} found in Bokun)`;
         }
-        message += `\n📅 Date range: ${start_date} to ${end_date}`;
+        msg += `\nDate range: ${start_date} to ${end_date}`;
         if (errors && errors.length > 0) {
-          message += `\n⚠️ ${errors.length} errors occurred`;
+          msg += `\n${errors.length} errors occurred`;
         }
-        setMessage(message);
+        setMessage(msg);
         loadUnassignedTours();
       } else {
         setMessage(response.data.error || 'Sync failed');
@@ -154,22 +154,22 @@ const BokunSync = () => {
       console.error('Error syncing:', error);
     } finally {
       setSyncing(false);
-      setTimeout(() => setMessage(''), 5000);
     }
   };
 
   const autoAssignGuide = async (tourId) => {
+    setMessageDuration(3000);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(`${API_BASE}/bokun_sync.php?action=auto-assign`, {
         tour_id: tourId
       }, {
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.data.success) {
         setMessage(`Assigned guide: ${response.data.guide.name}`);
         loadUnassignedTours();
@@ -180,7 +180,6 @@ const BokunSync = () => {
       setMessage('Error assigning guide');
       console.error('Error:', error);
     }
-    setTimeout(() => setMessage(''), 3000);
   };
 
   return (

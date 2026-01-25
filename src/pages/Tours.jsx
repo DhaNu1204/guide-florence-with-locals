@@ -72,29 +72,57 @@ const getBookingTime = (tour) => {
 // Helper function to extract booking date from bokun_data
 const getBookingDate = (tour) => {
   try {
+    // First, try to use the tour.date field directly (most reliable from database)
+    if (tour.date) {
+      // Handle various date formats
+      const dateStr = tour.date;
+      // If it's already in YYYY-MM-DD format, return as-is
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return dateStr;
+      }
+      // If it's a full ISO string or timestamp, extract the date part
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        // Use local date to avoid timezone issues
+        const year = parsed.getFullYear();
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+
+    // Fallback: try to extract from bokun_data
     if (tour.bokun_data) {
-      const bokunData = JSON.parse(tour.bokun_data);
+      const bokunData = typeof tour.bokun_data === 'string'
+        ? JSON.parse(tour.bokun_data)
+        : tour.bokun_data;
+
       if (bokunData.productBookings && bokunData.productBookings[0]) {
         // Try to get startDateTime first (more precise)
         const startDateTime = bokunData.productBookings[0].startDateTime;
         if (startDateTime) {
-          // Convert from Unix timestamp (milliseconds) to date
           const date = new Date(startDateTime);
-          return date.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
         }
 
         // Fallback to startDate
         const startDate = bokunData.productBookings[0].startDate;
         if (startDate) {
-          // Convert from Unix timestamp (milliseconds) to date
           const date = new Date(startDate);
-          return date.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
         }
       }
     }
-    // Fallback to tour.date if no Bokun data available
-    return tour.date || '';
+
+    return '';
   } catch (error) {
+    console.error('Error parsing tour date:', error, tour);
     return tour.date || '';
   }
 };
@@ -171,7 +199,7 @@ const Tours = () => {
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
-  const [showAllDates, setShowAllDates] = useState(false);
+  const [showUpcoming, setShowUpcoming] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTour, setSelectedTour] = useState(null);
   const [pagination, setPagination] = useState({
@@ -185,13 +213,19 @@ const Tours = () => {
 
   const toursPerPage = 50;
 
-  // Load data function
-  const loadData = async (forceRefresh = false, page = 1) => {
+  // Load data function with server-side filtering
+  const loadData = async (forceRefresh = false, page = 1, filters = {}) => {
     try {
       setLoading(true);
       setError(null);
+
+      // Build filters for the API
+      const apiFilters = {
+        ...filters
+      };
+
       const [toursResponse, guidesData] = await Promise.all([
-        mysqlDB.fetchTours(forceRefresh, page, toursPerPage),
+        mysqlDB.fetchTours(forceRefresh, page, toursPerPage, apiFilters),
         mysqlDB.fetchGuides()
       ]);
 
@@ -207,49 +241,51 @@ const Tours = () => {
       setGuides(guidesData || []);
 
     } catch (err) {
+      console.error('Load error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // Build current filters object
+  const getCurrentFilters = () => {
+    const filters = {};
+    if (!showUpcoming && filterDate) {
+      filters.date = format(filterDate, 'yyyy-MM-dd');
+    }
+    if (showUpcoming) {
+      filters.upcoming = true;
+    }
+    if (selectedGuideId !== 'all') {
+      filters.guide_id = selectedGuideId;
+    }
+    return filters;
+  };
+
   // Handle refresh button click
   const handleRefresh = async () => {
-    await loadData(true, currentPage); // Force refresh on current page
+    await loadData(true, currentPage, getCurrentFilters());
   };
 
   // Handle page change
   const handlePageChange = async (newPage) => {
     setCurrentPage(newPage);
-    await loadData(false, newPage);
+    await loadData(false, newPage, getCurrentFilters());
   };
 
-  // Initial load
+  // Load data when filters change
   useEffect(() => {
-    loadData(false, currentPage);
-  }, []);
+    setCurrentPage(1); // Reset to page 1 when filters change
+    loadData(false, 1, getCurrentFilters());
+  }, [filterDate, showUpcoming, selectedGuideId]);
 
   // Memoized filtered and grouped tours by date
+  // Note: Date and guide filtering is now done on the server side for efficiency
   const groupedTours = useMemo(() => {
     // Filter out ticket products using smart keyword detection from tourFilters utility
     // Tickets don't need guide assignment and belong in Priority Tickets page
     let filtered = filterToursOnly(tours);
-
-    // Filter by guide
-    if (selectedGuideId !== 'all') {
-      filtered = filtered.filter(tour =>
-        tour.guide_id && tour.guide_id.toString() === selectedGuideId.toString()
-      );
-    }
-
-    // If specific date is selected, filter by that date
-    if (filterDate && !showAllDates) {
-      const filterDateStr = format(filterDate, "yyyy-MM-dd");
-      filtered = filtered.filter(tour => {
-        const tourDate = getBookingDate(tour);
-        return tourDate === filterDateStr;
-      });
-    }
 
     // Helper function to get time period
     const getTimePeriod = (time) => {
@@ -313,7 +349,7 @@ const Tours = () => {
           tours: grouped[date][period]
         }))
     }));
-  }, [tours, selectedGuideId, filterDate, showAllDates]);
+  }, [tours]); // Only depends on tours - filtering is done server-side
 
   // Calculate total tours and participants from grouped data
   const totalData = useMemo(() => {
@@ -492,17 +528,17 @@ const Tours = () => {
                   value={filterDate ? format(filterDate, 'yyyy-MM-dd') : ''}
                   onChange={(e) => {
                     setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
-                    setShowAllDates(false);
+                    setShowUpcoming(false);
                   }}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   onClick={() => {
                     setFilterDate(new Date());
-                    setShowAllDates(false);
+                    setShowUpcoming(false);
                   }}
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    !showAllDates && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+                    !showUpcoming && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
@@ -510,14 +546,15 @@ const Tours = () => {
                   Today
                 </button>
                 <button
-                  onClick={() => setShowAllDates(!showAllDates)}
+                  onClick={() => setShowUpcoming(!showUpcoming)}
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    showAllDates
+                    showUpcoming
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
+                  title="Show tours for the next 60 days"
                 >
-                  All Dates
+                  Upcoming
                 </button>
               </div>
             </div>
