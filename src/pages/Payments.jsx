@@ -6,7 +6,7 @@ import PaymentRecordForm from '../components/PaymentRecordForm';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format } from "date-fns";
-import { FiDollarSign, FiTrendingUp, FiUsers, FiCalendar, FiDownload, FiPlus, FiFilter, FiRefreshCw, FiAlertCircle, FiCheckCircle, FiAlertTriangle, FiX, FiEdit2, FiCheck, FiXCircle } from 'react-icons/fi';
+import { FiDollarSign, FiTrendingUp, FiUsers, FiCalendar, FiDownload, FiPlus, FiFilter, FiRefreshCw, FiAlertCircle, FiCheckCircle, FiAlertTriangle, FiX, FiEdit2, FiCheck, FiXCircle, FiTrash2 } from 'react-icons/fi';
 
 const Payments = () => {
   const { setPageTitle } = usePageTitle();
@@ -228,6 +228,42 @@ const Payments = () => {
     }
   };
 
+  const deletePayment = async (paymentId, tourTitle) => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete this payment for "${tourTitle}"?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+      const response = await fetch(`${API_BASE_URL}/payments.php?id=${paymentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        // Reload guide details to show updated data
+        await loadGuideDetails(selectedGuide);
+        // Also reload the main payment data to update summaries
+        await loadPaymentData();
+        showNotification('Payment deleted successfully!', 'success');
+      } else {
+        showNotification(result.error || 'Failed to delete payment', 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting payment:', error);
+      showNotification('Network error. Please try again.', 'error');
+    }
+  };
+
   const paymentMethods = [
     { value: 'cash', label: 'Cash' },
     { value: 'bank_transfer', label: 'Bank Transfer' },
@@ -236,18 +272,33 @@ const Payments = () => {
     { value: 'other', label: 'Other' }
   ];
 
-  const downloadReport = async (period = '30') => {
+  const downloadReport = async (period = '30', startDate = null, endDate = null, guideId = null) => {
     try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (period * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+      // Use provided dates or fall back to period-based calculation
+      let reportStartDate, reportEndDate;
+
+      if (startDate && endDate) {
+        // Use explicitly provided dates
+        reportStartDate = startDate;
+        reportEndDate = endDate;
+      } else {
+        // Fall back to period-based calculation
+        reportEndDate = new Date().toISOString().split('T')[0];
+        reportStartDate = new Date(Date.now() - (period * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+      }
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      const url = `${API_BASE_URL}/payment-reports.php?type=export&format=txt&start_date=${startDate}&end_date=${endDate}`;
+      let url = `${API_BASE_URL}/payment-reports.php?type=export&format=txt&start_date=${reportStartDate}&end_date=${reportEndDate}`;
+
+      // Add guide filter if specified
+      if (guideId) {
+        url += `&guide_id=${guideId}`;
+      }
 
       // Create a temporary link to download the file
       const link = document.createElement('a');
       link.href = url;
-      link.download = `payment-report-${startDate}-to-${endDate}.txt`;
+      link.download = `payment-report-${reportStartDate}-to-${reportEndDate}.txt`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -983,13 +1034,22 @@ const Payments = () => {
                                       </button>
                                     </div>
                                   ) : (
-                                    <button
-                                      onClick={() => startEditTransaction(transaction)}
-                                      className="text-blue-600 hover:text-blue-800"
-                                      title="Edit transaction"
-                                    >
-                                      <FiEdit2 className="w-4 h-4" />
-                                    </button>
+                                    <div className="flex space-x-2">
+                                      <button
+                                        onClick={() => startEditTransaction(transaction)}
+                                        className="text-blue-600 hover:text-blue-800"
+                                        title="Edit transaction"
+                                      >
+                                        <FiEdit2 className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => deletePayment(transaction.id, transaction.tour_title)}
+                                        className="text-red-600 hover:text-red-800"
+                                        title="Delete payment"
+                                      >
+                                        <FiTrash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
                                   )}
                                 </td>
                               </tr>

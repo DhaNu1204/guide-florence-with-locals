@@ -91,9 +91,9 @@ switch($method) {
     case 'POST':
         // Add new ticket
         $data = json_decode(file_get_contents("php://input"), true);
-        
+
         // Validate required fields
-        if (!isset($data['location']) || !isset($data['code']) || 
+        if (!isset($data['location']) || !isset($data['code']) ||
             !isset($data['date']) || !isset($data['quantity'])) {
             echo json_encode(array(
                 "success" => false,
@@ -101,35 +101,35 @@ switch($method) {
             ));
             exit();
         }
-        
-        $location = $conn->real_escape_string($data['location']);
-        $code = $conn->real_escape_string($data['code']);
-        $date = $conn->real_escape_string($data['date']);
-        $time = isset($data['time']) ? $conn->real_escape_string($data['time']) : null;
+
+        $location = $data['location'];
+        $code = $data['code'];
+        $date = $data['date'];
+        $time = isset($data['time']) && !empty($data['time']) ? $data['time'] : null;
         $quantity = intval($data['quantity']);
-        
-        if ($time) {
-            $sql = "INSERT INTO tickets (location, code, date, time, quantity) 
-                    VALUES ('$location', '$code', '$date', '$time', $quantity)";
-        } else {
-            $sql = "INSERT INTO tickets (location, code, date, quantity) 
-                    VALUES ('$location', '$code', '$date', $quantity)";
-        }
-        
-        if ($conn->query($sql)) {
+
+        // Use prepared statement for INSERT
+        $stmt = $conn->prepare("INSERT INTO tickets (location, code, date, time, quantity) VALUES (?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssi", $location, $code, $date, $time, $quantity);
+
+        if ($stmt->execute()) {
             $insertId = $conn->insert_id;
-            
-            // Fetch the newly created ticket
-            $selectSql = "SELECT * FROM tickets WHERE id = $insertId";
-            $result = $conn->query($selectSql);
+            $stmt->close();
+
+            // Fetch the newly created ticket using prepared statement
+            $selectStmt = $conn->prepare("SELECT * FROM tickets WHERE id = ?");
+            $selectStmt->bind_param("i", $insertId);
+            $selectStmt->execute();
+            $result = $selectStmt->get_result();
             $newTicket = $result->fetch_assoc();
-            
+            $selectStmt->close();
+
             // Format the response
             $newTicket['date'] = date('Y-m-d', strtotime($newTicket['date']));
             if ($newTicket['time']) {
                 $newTicket['time'] = date('H:i', strtotime($newTicket['time']));
             }
-            
+
             echo json_encode(array(
                 "success" => true,
                 "message" => "Ticket added successfully",
@@ -138,8 +138,9 @@ switch($method) {
         } else {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Error adding ticket: " . $conn->error
+                "message" => "Error adding ticket: " . $stmt->error
             ));
+            $stmt->close();
         }
         break;
         
@@ -149,7 +150,7 @@ switch($method) {
         $uri = $_SERVER['REQUEST_URI'];
         $uri_parts = explode('/', $uri);
         $id = end($uri_parts);
-        
+
         if (!is_numeric($id)) {
             echo json_encode(array(
                 "success" => false,
@@ -157,12 +158,12 @@ switch($method) {
             ));
             exit();
         }
-        
+
         $id = intval($id);
         $data = json_decode(file_get_contents("php://input"), true);
-        
+
         // Validate required fields
-        if (!isset($data['location']) || !isset($data['code']) || 
+        if (!isset($data['location']) || !isset($data['code']) ||
             !isset($data['date']) || !isset($data['quantity'])) {
             echo json_encode(array(
                 "success" => false,
@@ -170,49 +171,48 @@ switch($method) {
             ));
             exit();
         }
-        
-        $location = $conn->real_escape_string($data['location']);
-        $code = $conn->real_escape_string($data['code']);
-        $date = $conn->real_escape_string($data['date']);
-        $time = isset($data['time']) ? $conn->real_escape_string($data['time']) : null;
+
+        $location = $data['location'];
+        $code = $data['code'];
+        $date = $data['date'];
+        $time = isset($data['time']) && !empty($data['time']) ? $data['time'] : null;
         $quantity = intval($data['quantity']);
-        
-        if ($time) {
-            $sql = "UPDATE tickets SET 
-                    location = '$location',
-                    code = '$code',
-                    date = '$date',
-                    time = '$time',
-                    quantity = $quantity
-                    WHERE id = $id";
-        } else {
-            $sql = "UPDATE tickets SET 
-                    location = '$location',
-                    code = '$code',
-                    date = '$date',
-                    time = NULL,
-                    quantity = $quantity
-                    WHERE id = $id";
-        }
-        
-        if ($conn->query($sql)) {
-            if ($conn->affected_rows > 0) {
-                // Fetch the updated ticket
-                $selectSql = "SELECT * FROM tickets WHERE id = $id";
-                $result = $conn->query($selectSql);
+
+        // Use prepared statement for UPDATE
+        $stmt = $conn->prepare("UPDATE tickets SET location = ?, code = ?, date = ?, time = ?, quantity = ? WHERE id = ?");
+        $stmt->bind_param("ssssii", $location, $code, $date, $time, $quantity, $id);
+
+        if ($stmt->execute()) {
+            $affectedRows = $stmt->affected_rows;
+            $stmt->close();
+
+            if ($affectedRows > 0 || $conn->errno === 0) {
+                // Fetch the updated ticket using prepared statement
+                $selectStmt = $conn->prepare("SELECT * FROM tickets WHERE id = ?");
+                $selectStmt->bind_param("i", $id);
+                $selectStmt->execute();
+                $result = $selectStmt->get_result();
                 $updatedTicket = $result->fetch_assoc();
-                
-                // Format the response
-                $updatedTicket['date'] = date('Y-m-d', strtotime($updatedTicket['date']));
-                if ($updatedTicket['time']) {
-                    $updatedTicket['time'] = date('H:i', strtotime($updatedTicket['time']));
+                $selectStmt->close();
+
+                if ($updatedTicket) {
+                    // Format the response
+                    $updatedTicket['date'] = date('Y-m-d', strtotime($updatedTicket['date']));
+                    if ($updatedTicket['time']) {
+                        $updatedTicket['time'] = date('H:i', strtotime($updatedTicket['time']));
+                    }
+
+                    echo json_encode(array(
+                        "success" => true,
+                        "message" => "Ticket updated successfully",
+                        "ticket" => $updatedTicket
+                    ));
+                } else {
+                    echo json_encode(array(
+                        "success" => false,
+                        "message" => "Ticket not found"
+                    ));
                 }
-                
-                echo json_encode(array(
-                    "success" => true,
-                    "message" => "Ticket updated successfully",
-                    "ticket" => $updatedTicket
-                ));
             } else {
                 echo json_encode(array(
                     "success" => false,
@@ -222,8 +222,9 @@ switch($method) {
         } else {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Error updating ticket: " . $conn->error
+                "message" => "Error updating ticket: " . $stmt->error
             ));
+            $stmt->close();
         }
         break;
         
@@ -233,7 +234,7 @@ switch($method) {
         $uri = $_SERVER['REQUEST_URI'];
         $uri_parts = explode('/', $uri);
         $id = end($uri_parts);
-        
+
         if (!is_numeric($id)) {
             echo json_encode(array(
                 "success" => false,
@@ -241,12 +242,18 @@ switch($method) {
             ));
             exit();
         }
-        
+
         $id = intval($id);
-        $sql = "DELETE FROM tickets WHERE id = $id";
-        
-        if ($conn->query($sql)) {
-            if ($conn->affected_rows > 0) {
+
+        // Use prepared statement for DELETE
+        $stmt = $conn->prepare("DELETE FROM tickets WHERE id = ?");
+        $stmt->bind_param("i", $id);
+
+        if ($stmt->execute()) {
+            $affectedRows = $stmt->affected_rows;
+            $stmt->close();
+
+            if ($affectedRows > 0) {
                 echo json_encode(array(
                     "success" => true,
                     "message" => "Ticket deleted successfully"
@@ -260,8 +267,9 @@ switch($method) {
         } else {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Error deleting ticket: " . $conn->error
+                "message" => "Error deleting ticket: " . $stmt->error
             ));
+            $stmt->close();
         }
         break;
         

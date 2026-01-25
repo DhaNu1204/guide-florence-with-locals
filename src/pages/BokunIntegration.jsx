@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { FiRefreshCw, FiSettings, FiCloud, FiActivity, FiClock, FiCheck } from 'react-icons/fi';
+import { FiRefreshCw, FiSettings, FiCloud, FiActivity, FiClock, FiCheck, FiCalendar, FiDatabase } from 'react-icons/fi';
 import { usePageTitle } from '../contexts/PageTitleContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useBokunAutoSync } from '../hooks/useBokunAutoSync';
+import { fullSyncBokun, getSyncInfo } from '../services/mysqlDB';
 import BokunSync from '../components/BokunSync';
 import BokunMonitor from '../components/BokunMonitor';
 import Card from '../components/UI/Card';
@@ -13,11 +14,51 @@ const BokunIntegration = () => {
   const { isAdmin } = useAuth();
   const { syncStatus, lastSyncEvent, syncNow } = useBokunAutoSync();
   const [activeTab, setActiveTab] = useState('sync');
+  const [fullSyncLoading, setFullSyncLoading] = useState(false);
+  const [fullSyncResult, setFullSyncResult] = useState(null);
+  const [syncInfo, setSyncInfo] = useState(null);
 
   useEffect(() => {
     setPageTitle('Bokun Integration');
     return () => setPageTitle('');
   }, [setPageTitle]);
+
+  // Load sync configuration info
+  useEffect(() => {
+    const loadSyncInfo = async () => {
+      try {
+        const info = await getSyncInfo();
+        setSyncInfo(info);
+      } catch (error) {
+        console.error('Failed to load sync info:', error);
+      }
+    };
+    loadSyncInfo();
+  }, []);
+
+  // Handle full sync (1 year)
+  const handleFullSync = async () => {
+    if (fullSyncLoading) return;
+
+    setFullSyncLoading(true);
+    setFullSyncResult(null);
+
+    try {
+      const result = await fullSyncBokun();
+      setFullSyncResult({
+        success: true,
+        message: `Full sync completed! Found ${result.total_bookings || 0} bookings. Created: ${result.created_count || 0}, Updated: ${result.updated_count || 0}.`,
+        data: result
+      });
+    } catch (error) {
+      setFullSyncResult({
+        success: false,
+        message: error.message || 'Full sync failed'
+      });
+    } finally {
+      setFullSyncLoading(false);
+    }
+  };
 
   if (!isAdmin()) {
     return (
@@ -48,50 +89,96 @@ const BokunIntegration = () => {
       {/* Auto-Sync Status */}
       {syncStatus && (
         <Card className="border-blue-200 bg-blue-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-full ${syncStatus.syncInProgress ? 'bg-yellow-100' : 'bg-green-100'}`}>
-                {syncStatus.syncInProgress ? (
-                  <FiRefreshCw className="w-4 h-4 text-yellow-600 animate-spin" />
-                ) : (
-                  <FiCheck className="w-4 h-4 text-green-600" />
-                )}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium text-blue-900">Auto-Sync Status</h3>
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    syncStatus.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {syncStatus.enabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
-                <p className="text-sm text-blue-700">
-                  {syncStatus.syncInProgress
-                    ? 'Syncing bookings...'
-                    : syncStatus.lastSyncTime
-                      ? `Last sync: ${format(new Date(syncStatus.lastSyncTime), 'MMM d, HH:mm')}`
-                      : 'No sync performed yet'
-                  }
-                  {syncStatus.enabled && (
-                    <span className="ml-2 text-blue-600">
-                      • Auto-sync every {syncStatus.intervalMinutes} minutes
-                    </span>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-full ${syncStatus.syncInProgress || fullSyncLoading ? 'bg-yellow-100' : 'bg-green-100'}`}>
+                  {syncStatus.syncInProgress || fullSyncLoading ? (
+                    <FiRefreshCw className="w-4 h-4 text-yellow-600 animate-spin" />
+                  ) : (
+                    <FiCheck className="w-4 h-4 text-green-600" />
                   )}
-                </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-medium text-blue-900">Auto-Sync Status</h3>
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      syncStatus.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {syncStatus.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-blue-700">
+                    {syncStatus.syncInProgress
+                      ? 'Syncing bookings...'
+                      : fullSyncLoading
+                        ? 'Running full sync (1 year)...'
+                        : syncStatus.lastSyncTime
+                          ? `Last sync: ${format(new Date(syncStatus.lastSyncTime), 'MMM d, HH:mm')}`
+                          : 'No sync performed yet'
+                    }
+                    {syncStatus.enabled && !syncStatus.syncInProgress && !fullSyncLoading && (
+                      <span className="ml-2 text-blue-600">
+                        • Auto-sync every {syncStatus.intervalMinutes} minutes
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={syncNow}
+                  disabled={syncStatus.syncInProgress || fullSyncLoading}
+                  className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                    syncStatus.syncInProgress || fullSyncLoading
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {syncStatus.syncInProgress ? 'Syncing...' : 'Sync Now'}
+                </button>
+                <button
+                  onClick={handleFullSync}
+                  disabled={syncStatus.syncInProgress || fullSyncLoading}
+                  className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                    syncStatus.syncInProgress || fullSyncLoading
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-purple-600 text-white hover:bg-purple-700'
+                  }`}
+                  title="Sync all bookings for the next 12 months"
+                >
+                  {fullSyncLoading ? 'Full Sync...' : 'Full Sync (1 Year)'}
+                </button>
               </div>
             </div>
-            <button
-              onClick={syncNow}
-              disabled={syncStatus.syncInProgress}
-              className={`px-3 py-2 text-sm rounded-lg transition-colors ${
-                syncStatus.syncInProgress
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {syncStatus.syncInProgress ? 'Syncing...' : 'Sync Now'}
-            </button>
+
+            {/* Sync Range Info */}
+            {syncInfo && (
+              <div className="flex flex-wrap gap-4 text-xs text-blue-700 border-t border-blue-200 pt-3">
+                <div className="flex items-center gap-1">
+                  <FiCalendar className="w-3 h-3" />
+                  <span>Regular sync: {syncInfo.default_sync_days} days ({syncInfo.default_date_range?.start} to {syncInfo.default_date_range?.end})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <FiDatabase className="w-3 h-3" />
+                  <span>Full sync: {syncInfo.full_sync_days} days ({syncInfo.full_sync_date_range?.start} to {syncInfo.full_sync_date_range?.end})</span>
+                </div>
+              </div>
+            )}
+
+            {/* Full Sync Result */}
+            {fullSyncResult && (
+              <div className={`text-sm p-3 rounded-lg ${
+                fullSyncResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+              }`}>
+                {fullSyncResult.message}
+                {fullSyncResult.data?.duration_seconds && (
+                  <span className="ml-2 text-xs opacity-75">
+                    (completed in {fullSyncResult.data.duration_seconds}s)
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </Card>
       )}
@@ -159,9 +246,10 @@ const BokunIntegration = () => {
               <ul className="space-y-2 text-sm text-gray-600">
                 <li>• Automatic sync on app startup</li>
                 <li>• Background sync every {syncStatus?.intervalMinutes || 15} minutes</li>
+                <li>• Regular sync: {syncInfo?.default_sync_days || 120} days ahead (4 months)</li>
+                <li>• Full sync: {syncInfo?.full_sync_days || 365} days ahead (1 year)</li>
                 <li>• Smart sync when app regains focus</li>
                 <li>• Real-time notifications for new bookings</li>
-                <li>• Instant sync with manual trigger</li>
               </ul>
             </div>
           </div>

@@ -29,7 +29,7 @@ SELECT
     MAX(pt.payment_date) as last_payment_date
 FROM guides g
 LEFT JOIN tours t ON g.id = t.guide_id
-LEFT JOIN payment_transactions pt ON t.id = pt.tour_id
+LEFT JOIN payments pt ON t.id = pt.tour_id
 GROUP BY g.id, g.name, g.email;
 
 -- ================================================================
@@ -50,7 +50,7 @@ SELECT
     SUM(CASE WHEN pt.payment_method = 'bank_transfer' THEN pt.amount ELSE 0 END) as bank_amount,
     pt.payment_method,
     AVG(pt.amount) as avg_payment_amount
-FROM payment_transactions pt
+FROM payments pt
 JOIN guides g ON pt.guide_id = g.id
 GROUP BY YEAR(pt.payment_date), MONTH(pt.payment_date), g.id, pt.payment_method
 ORDER BY payment_year DESC, payment_month DESC, g.name;

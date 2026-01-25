@@ -304,25 +304,51 @@ class BokunAPI {
         $time = '09:00'; // Default time if not provided
 
         // Try to get date from startDateTime first (this is the actual tour date/time)
+        // IMPORTANT: Bokun timestamps are in UTC, convert to Europe/Rome timezone
+        $romeTimezone = new DateTimeZone('Europe/Rome');
+        $utcTimezone = new DateTimeZone('UTC');
+
         if (isset($productBooking['startDateTime'])) {
-            $timestamp = is_numeric($productBooking['startDateTime']) ? $productBooking['startDateTime'] / 1000 : strtotime($productBooking['startDateTime']);
-            $date = date('Y-m-d', $timestamp);
-            $time = date('H:i', $timestamp);
+            if (is_numeric($productBooking['startDateTime'])) {
+                // Numeric timestamp (milliseconds from epoch)
+                $utcDateTime = new DateTime('@' . intval($productBooking['startDateTime'] / 1000), $utcTimezone);
+            } else {
+                // ISO string format - parse as UTC
+                $utcDateTime = new DateTime($productBooking['startDateTime'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
+            $time = $utcDateTime->format('H:i');
         } elseif (isset($productBooking['startTime'])) {
-            $timestamp = is_numeric($productBooking['startTime']) ? $productBooking['startTime'] / 1000 : strtotime($productBooking['startTime']);
-            $date = date('Y-m-d', $timestamp);
-            $time = date('H:i', $timestamp);
+            if (is_numeric($productBooking['startTime'])) {
+                $utcDateTime = new DateTime('@' . intval($productBooking['startTime'] / 1000), $utcTimezone);
+            } else {
+                $utcDateTime = new DateTime($productBooking['startTime'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
+            $time = $utcDateTime->format('H:i');
         } elseif (isset($productBooking['startDate'])) {
-            $timestamp = is_numeric($productBooking['startDate']) ? $productBooking['startDate'] / 1000 : strtotime($productBooking['startDate']);
-            $date = date('Y-m-d', $timestamp);
+            if (is_numeric($productBooking['startDate'])) {
+                $utcDateTime = new DateTime('@' . intval($productBooking['startDate'] / 1000), $utcTimezone);
+            } else {
+                $utcDateTime = new DateTime($productBooking['startDate'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
             // Try to get time from fields.startTimeStr
             if (isset($productBooking['fields']['startTimeStr'])) {
                 $time = $productBooking['fields']['startTimeStr'];
             }
         } elseif (isset($booking['startTime'])) {
-            $timestamp = is_numeric($booking['startTime']) ? $booking['startTime'] / 1000 : strtotime($booking['startTime']);
-            $date = date('Y-m-d', $timestamp);
-            $time = date('H:i', $timestamp);
+            if (is_numeric($booking['startTime'])) {
+                $utcDateTime = new DateTime('@' . intval($booking['startTime'] / 1000), $utcTimezone);
+            } else {
+                $utcDateTime = new DateTime($booking['startTime'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
+            $time = $utcDateTime->format('H:i');
         }
 
         // CRITICAL: Do NOT use creationDate as tour date!

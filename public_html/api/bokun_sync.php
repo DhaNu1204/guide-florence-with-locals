@@ -75,48 +75,139 @@ function saveBokunConfig($data) {
     }
 }
 
-// Sync bookings from Bokun
-function syncBookings($startDate = null, $endDate = null) {
+// Constants for sync ranges
+define('DEFAULT_SYNC_DAYS', 120);  // 4 months for regular sync
+define('FULL_SYNC_DAYS', 365);     // 1 year for full sync
+define('PAST_DAYS_BUFFER', 7);     // Always include past 7 days
+
+// Log sync operation to database
+function logSyncOperation($syncType, $startDate, $endDate, $status, $stats = [], $errorMessage = null, $triggeredBy = null) {
     global $conn;
-    
+
+    // Check if sync_logs table exists
+    $tableCheck = $conn->query("SHOW TABLES LIKE 'sync_logs'");
+    if ($tableCheck->num_rows === 0) {
+        // Table doesn't exist yet, skip logging
+        return null;
+    }
+
+    $stmt = $conn->prepare("
+        INSERT INTO sync_logs (
+            sync_type, start_date, end_date, status,
+            bookings_found, bookings_synced, bookings_created, bookings_updated, bookings_failed,
+            error_message, triggered_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    ");
+
+    $found = $stats['found'] ?? 0;
+    $synced = $stats['synced'] ?? 0;
+    $created = $stats['created'] ?? 0;
+    $updated = $stats['updated'] ?? 0;
+    $failed = $stats['failed'] ?? 0;
+
+    $stmt->bind_param("ssssiiiisss",
+        $syncType, $startDate, $endDate, $status,
+        $found, $synced, $created, $updated, $failed,
+        $errorMessage, $triggeredBy
+    );
+
+    $stmt->execute();
+    $logId = $conn->insert_id;
+    $stmt->close();
+
+    return $logId;
+}
+
+// Update sync log when completed
+function updateSyncLog($logId, $status, $stats = [], $errorMessage = null, $duration = null) {
+    global $conn;
+
+    if (!$logId) return;
+
+    // Check if sync_logs table exists
+    $tableCheck = $conn->query("SHOW TABLES LIKE 'sync_logs'");
+    if ($tableCheck->num_rows === 0) {
+        return;
+    }
+
+    $stmt = $conn->prepare("
+        UPDATE sync_logs SET
+            status = ?,
+            bookings_found = ?,
+            bookings_synced = ?,
+            bookings_created = ?,
+            bookings_updated = ?,
+            bookings_failed = ?,
+            error_message = ?,
+            duration_seconds = ?,
+            completed_at = NOW()
+        WHERE id = ?
+    ");
+
+    $found = $stats['found'] ?? 0;
+    $synced = $stats['synced'] ?? 0;
+    $created = $stats['created'] ?? 0;
+    $updated = $stats['updated'] ?? 0;
+    $failed = $stats['failed'] ?? 0;
+
+    $stmt->bind_param("siiiissdi",
+        $status, $found, $synced, $created, $updated, $failed,
+        $errorMessage, $duration, $logId
+    );
+
+    $stmt->execute();
+    $stmt->close();
+}
+
+// Sync bookings from Bokun
+function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $triggeredBy = null) {
+    global $conn;
+
+    $startTime = microtime(true);
+
     $config = getBokunConfig();
     if (!$config || !$config['sync_enabled']) {
         return ['error' => 'Bokun sync is not configured or disabled'];
     }
-    
-    // Default to past 7 days and next 30 days to catch recent and upcoming bookings
-    // This ensures we don't miss any recent bookings that were just made
+
+    // Default to past 7 days and next 4 MONTHS (120 days) to catch advance bookings
+    // This allows guide assignment for tours booked months in advance
     if (!$startDate) {
-        $startDate = date('Y-m-d', strtotime('-7 days'));  // Start from 7 days ago
+        $startDate = date('Y-m-d', strtotime('-' . PAST_DAYS_BUFFER . ' days'));
     }
     if (!$endDate) {
-        $endDate = date('Y-m-d', strtotime('+30 days'));  // Next 30 days
+        $endDate = date('Y-m-d', strtotime('+' . DEFAULT_SYNC_DAYS . ' days'));
     }
-    
+
+    // Log sync start
+    $logId = logSyncOperation($syncType, $startDate, $endDate, 'started', [], null, $triggeredBy);
+
     try {
         // Initialize Bokun API
         $bokunAPI = new BokunAPI($config);
-        
+
         // Get bookings from Bokun
-        error_log("Bokun Sync: Requesting bookings from $startDate to $endDate");
+        error_log("Bokun Sync [$syncType]: Requesting bookings from $startDate to $endDate");
         $bookingsResponse = $bokunAPI->getBookings($startDate, $endDate);
         error_log("Bokun Sync: Raw API response: " . json_encode($bookingsResponse));
 
         // getBookings() now returns the items array directly after our fix
         $bookings = $bookingsResponse;
         $totalHits = count($bookings);
-        
+
         error_log("Bokun Sync: Found " . count($bookings) . " bookings to process");
-        
-        $syncedCount = 0;
+
+        $createdCount = 0;
+        $updatedCount = 0;
+        $failedCount = 0;
         $errors = [];
         $apiBookingsCount = count($bookings);
-        
+
         foreach ($bookings as $booking) {
             try {
                 // Transform booking to our tour format
                 $tourData = $bokunAPI->transformBookingToTour($booking);
-                
+
                 // Check if tour already exists and get current date/time for rescheduling detection
                 $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE bokun_booking_id = ? OR external_id = ?");
                 $stmt->bind_param("ss", $tourData['bokun_booking_id'], $tourData['external_id']);
@@ -124,7 +215,10 @@ function syncBookings($startDate = null, $endDate = null) {
                 $existing = $stmt->get_result()->fetch_assoc();
                 $stmt->close();
 
+                $isUpdate = false;
+
                 if ($existing) {
+                    $isUpdate = true;
                     // Check if this is a rescheduling (date or time changed)
                     $isRescheduled = false;
                     $originalDate = $existing['original_date'] ?: $existing['date'];
@@ -188,40 +282,66 @@ function syncBookings($startDate = null, $endDate = null) {
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync']
                     );
                 }
-                
+
                 if ($stmt->execute()) {
-                    $syncedCount++;
+                    if ($isUpdate) {
+                        $updatedCount++;
+                    } else {
+                        $createdCount++;
+                    }
                 } else {
+                    $failedCount++;
                     $errors[] = "Failed to save booking: " . $tourData['external_id'];
                 }
                 $stmt->close();
-                
+
             } catch (Exception $e) {
+                $failedCount++;
                 $errors[] = "Error processing booking: " . $e->getMessage();
             }
         }
-        
+
         // Update last sync timestamp
         $conn->query("UPDATE bokun_config SET last_sync = NOW()");
-        
+
+        // Calculate duration and update sync log
+        $duration = round(microtime(true) - $startTime, 2);
+        $syncedCount = $createdCount + $updatedCount;
+        $stats = [
+            'found' => $apiBookingsCount,
+            'synced' => $syncedCount,
+            'created' => $createdCount,
+            'updated' => $updatedCount,
+            'failed' => $failedCount
+        ];
+        $status = $failedCount > 0 ? ($syncedCount > 0 ? 'partial' : 'failed') : 'completed';
+        $errorMsg = count($errors) > 0 ? implode('; ', array_slice($errors, 0, 5)) : null;
+        updateSyncLog($logId, $status, $stats, $errorMsg, $duration);
+
         return [
             'success' => true,
             'synced_count' => $syncedCount,
+            'created_count' => $createdCount,
+            'updated_count' => $updatedCount,
+            'failed_count' => $failedCount,
             'total_bookings' => $apiBookingsCount,
             'start_date' => $startDate,
             'end_date' => $endDate,
-            'errors' => $errors,
-            'debug_info' => [
-                'api_response_keys' => array_keys($bookingsResponse),
-                'raw_booking_count' => $apiBookingsCount
-            ]
+            'sync_type' => $syncType,
+            'duration_seconds' => $duration,
+            'errors' => $errors
         ];
-        
+
     } catch (Exception $e) {
+        // Log failure
+        $duration = round(microtime(true) - $startTime, 2);
+        updateSyncLog($logId, 'failed', ['found' => 0, 'synced' => 0, 'created' => 0, 'updated' => 0, 'failed' => 0], $e->getMessage(), $duration);
+
         return [
             'error' => 'Bokun API Error: ' . $e->getMessage(),
             'start_date' => $startDate,
-            'end_date' => $endDate
+            'end_date' => $endDate,
+            'sync_type' => $syncType
         ];
     }
 }
@@ -411,6 +531,51 @@ function testBokunConnection() {
     }
 }
 
+// Get sync history logs
+function getSyncHistory($limit = 20) {
+    global $conn;
+
+    // Check if sync_logs table exists
+    $tableCheck = $conn->query("SHOW TABLES LIKE 'sync_logs'");
+    if ($tableCheck->num_rows === 0) {
+        return ['logs' => [], 'table_exists' => false];
+    }
+
+    $stmt = $conn->prepare("
+        SELECT * FROM sync_logs
+        ORDER BY created_at DESC
+        LIMIT ?
+    ");
+    $stmt->bind_param("i", $limit);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    $logs = [];
+    while ($row = $result->fetch_assoc()) {
+        $logs[] = $row;
+    }
+    $stmt->close();
+
+    return ['logs' => $logs, 'table_exists' => true];
+}
+
+// Get sync configuration info
+function getSyncInfo() {
+    return [
+        'default_sync_days' => DEFAULT_SYNC_DAYS,
+        'full_sync_days' => FULL_SYNC_DAYS,
+        'past_days_buffer' => PAST_DAYS_BUFFER,
+        'default_date_range' => [
+            'start' => date('Y-m-d', strtotime('-' . PAST_DAYS_BUFFER . ' days')),
+            'end' => date('Y-m-d', strtotime('+' . DEFAULT_SYNC_DAYS . ' days'))
+        ],
+        'full_sync_date_range' => [
+            'start' => date('Y-m-d', strtotime('-' . PAST_DAYS_BUFFER . ' days')),
+            'end' => date('Y-m-d', strtotime('+' . FULL_SYNC_DAYS . ' days'))
+        ]
+    ];
+}
+
 // Handle requests
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
@@ -422,11 +587,11 @@ switch ($method) {
                 $config = getBokunConfig();
                 echo json_encode($config ?: ['configured' => false]);
                 break;
-                
+
             case 'unassigned':
                 echo json_encode(getUnassignedTours());
                 break;
-                
+
             case 'test':
                 echo json_encode(testBokunConnection());
                 break;
@@ -434,38 +599,59 @@ switch ($method) {
             case 'sync':
                 $startDate = $_GET['start_date'] ?? null;
                 $endDate = $_GET['end_date'] ?? null;
-                echo json_encode(syncBookings($startDate, $endDate));
+                $syncType = $_GET['type'] ?? 'manual';
+                $triggeredBy = $_GET['triggered_by'] ?? 'user';
+                echo json_encode(syncBookings($startDate, $endDate, $syncType, $triggeredBy));
+                break;
+
+            case 'sync-history':
+                $limit = intval($_GET['limit'] ?? 20);
+                echo json_encode(getSyncHistory($limit));
+                break;
+
+            case 'sync-info':
+                echo json_encode(getSyncInfo());
                 break;
 
             default:
                 echo json_encode(['error' => 'Invalid action']);
         }
         break;
-        
+
     case 'POST':
         $data = json_decode(file_get_contents('php://input'), true);
-        
+
         switch ($action) {
             case 'config':
                 echo json_encode(saveBokunConfig($data));
                 break;
-                
+
             case 'sync':
                 $startDate = $data['start_date'] ?? null;
                 $endDate = $data['end_date'] ?? null;
-                echo json_encode(syncBookings($startDate, $endDate));
+                $syncType = $data['type'] ?? 'manual';
+                $triggeredBy = $data['triggered_by'] ?? 'user';
+                echo json_encode(syncBookings($startDate, $endDate, $syncType, $triggeredBy));
                 break;
-                
+
+            case 'full-sync':
+                // Full sync: 1 year ahead for comprehensive guide assignment
+                $startDate = date('Y-m-d', strtotime('-' . PAST_DAYS_BUFFER . ' days'));
+                $endDate = date('Y-m-d', strtotime('+' . FULL_SYNC_DAYS . ' days'));
+                $triggeredBy = $data['triggered_by'] ?? 'user';
+                echo json_encode(syncBookings($startDate, $endDate, 'full', $triggeredBy));
+                break;
+
             case 'auto-assign':
                 $tourId = $data['tour_id'] ?? 0;
                 echo json_encode(autoAssignGuide($tourId));
                 break;
-                
+
             default:
                 echo json_encode(['error' => 'Invalid action']);
         }
         break;
-        
+
     default:
         http_response_code(405);
         echo json_encode(['error' => 'Method not allowed']);
