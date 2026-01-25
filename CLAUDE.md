@@ -253,6 +253,169 @@ When the user asks you to work on this project:
    - Check `docs/DEVELOPMENT_GUIDE.md` for commands
    - Read `docs/PROJECT_STATUS.md` for overall status
 
+## 🚀 Deployment Process
+
+### Quick Deploy Command
+Ask Claude Code to: *"Create a special agent to do the deployment process step by step"*
+
+### Manual Deployment Steps
+
+1. **Build Frontend**
+   ```bash
+   cd guide-florence-with-locals
+   npm run build
+   ```
+
+2. **Deploy Backend (PHP files)**
+   ```bash
+   scp -P 65002 public_html/api/*.php u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/api/
+   ```
+
+3. **Deploy Frontend**
+   ```bash
+   scp -P 65002 -r dist/* u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/
+   ```
+
+4. **Verify Deployment**
+   ```bash
+   curl -s "https://withlocals.deetech.cc/api/tours.php?upcoming=true&per_page=10"
+   ```
+
+### Production Server Details
+| Property | Value |
+|----------|-------|
+| SSH Host | 82.25.82.111 |
+| SSH Port | 65002 |
+| SSH User | u803853690 |
+| Web Root | /home/u803853690/domains/deetech.cc/public_html/withlocals |
+| URL | https://withlocals.deetech.cc |
+
+## 🏗️ Architecture Overview
+
+### Auto-Sync System
+```
+src/
+├── components/BokunAutoSyncProvider.jsx  # Provider wrapper + status indicator
+├── hooks/useBokunAutoSync.jsx            # React hook for sync state
+└── services/bokunAutoSync.js             # Sync service class
+```
+
+**Sync Triggers:**
+- On app startup (if last sync > 15 minutes ago)
+- Every 15 minutes (periodic interval)
+- On app focus/visibility change
+
+### API Utilities (NEW - Jan 2026)
+```
+public_html/api/
+├── BaseAPI.php      # Base class for consistent API responses
+├── EnvLoader.php    # Environment variable loader
+├── Logger.php       # Centralized error logging
+└── Validator.php    # Input validation helper
+```
+
+### Ticket Detection Keywords
+Located in `src/utils/tourFilters.js`:
+- "Entry Ticket"
+- "Entrance Ticket" (added Jan 2026)
+- "Priority Ticket"
+- "Skip the Line"
+- "Skip-the-Line"
+
+### API Pagination
+- **Default**: 50 records per page
+- **Maximum**: 500 records per page (increased Jan 2026)
+- **Upcoming Filter**: `?upcoming=true` returns today + 60 days
+
+## 🔮 Future Development Roadmap
+
+### Planned Features
+| Feature | Priority | Status |
+|---------|----------|--------|
+| Push notifications for new bookings | High | Planned |
+| Guide availability calendar | High | Planned |
+| Advanced reporting & analytics | Medium | Planned |
+| Customer communication portal | Medium | Planned |
+| Mobile app (React Native) | Low | Future |
+| Multi-location support | Low | Future |
+
+### Technical Improvements
+| Improvement | Priority | Description |
+|-------------|----------|-------------|
+| Database indexing | High | Add indexes for frequently queried columns |
+| API rate limiting | Medium | Prevent abuse and optimize performance |
+| Caching layer (Redis) | Medium | Reduce database load |
+| Unit tests | Medium | Jest for frontend, PHPUnit for backend |
+| CI/CD pipeline | Low | GitHub Actions for automated deployment |
+| TypeScript migration | Low | Type safety for frontend |
+
+### Known Issues to Address
+1. **Large dataset pagination** - Consider infinite scroll for 500+ records
+2. **Offline support** - Service worker for offline viewing
+3. **Real-time updates** - WebSocket for live booking notifications
+4. **Multi-tenant support** - Support for multiple tour companies
+
+## 📁 New Files Added (Jan 2026)
+
+### Backend Utilities
+| File | Purpose |
+|------|---------|
+| `BaseAPI.php` | Standardized JSON responses, error handling |
+| `EnvLoader.php` | Load environment variables from .env files |
+| `Logger.php` | File-based error logging with rotation |
+| `Validator.php` | Input sanitization and validation |
+
+### Database Migrations
+| File | Purpose |
+|------|---------|
+| `database/add_missing_indexes.sql` | Performance optimization |
+| `database/migrations/create_sync_logs_table.sql` | Sync history tracking |
+
+### Configuration
+| File | Purpose |
+|------|---------|
+| `.env.example` | Template for environment configuration |
+
+## 🔧 Common Development Tasks
+
+### Add New Ticket Detection Keyword
+Edit `src/utils/tourFilters.js`:
+```javascript
+const TICKET_KEYWORDS = [
+  'Entry Ticket',
+  'Entrance Ticket',
+  'Priority Ticket',
+  'Skip the Line',
+  'Skip-the-Line',
+  'YOUR_NEW_KEYWORD'  // Add here
+];
+```
+
+### Extend Auto-Sync Interval
+Edit `src/hooks/useBokunAutoSync.jsx`:
+```javascript
+const SYNC_INTERVAL_MS = 15 * 60 * 1000; // Change 15 to desired minutes
+```
+
+### Add New API Endpoint
+1. Create `public_html/api/your-endpoint.php`
+2. Use BaseAPI pattern:
+```php
+<?php
+require_once 'config.php';
+require_once 'BaseAPI.php';
+
+$api = new BaseAPI();
+// Your logic here
+$api->sendSuccess($data);
+```
+
+### Database Schema Changes
+1. Update local database first
+2. Test thoroughly
+3. Create migration SQL in `database/migrations/`
+4. Apply to production via SSH
+
 ## Support
 
 For troubleshooting and common issues, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
@@ -266,5 +429,6 @@ For troubleshooting and common issues, see [TROUBLESHOOTING.md](docs/TROUBLESHOO
 **Last Updated**: January 25, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: ✅ Fully Operational
+**Last Deployment**: January 25, 2026 01:14 UTC
 
 **📌 Remember**: When working on this project, always read the relevant documentation files in `docs/` folder to understand the complete context before making changes.
