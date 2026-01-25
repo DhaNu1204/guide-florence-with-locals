@@ -16,7 +16,7 @@
 A comprehensive tour guide management system for Florence, Italy that integrates with Bokun API for automatic booking synchronization and guide assignment. Features a modern, responsive UI with complete CRUD operations and role-based access control.
 
 **Production Status**: ✅ FULLY OPERATIONAL at https://withlocals.deetech.cc
-**Last Critical Update**: October 26, 2025 - Tour date bug fixed, Bokun sync optimized, Payments page fixed (database views + table name correction)
+**Last Critical Update**: January 25, 2026 - Priority Tickets page fixed (API pagination limit increased to 500, upcoming filter added), Auto-sync verified operational
 
 ## Tech Stack
 
@@ -46,7 +46,9 @@ A comprehensive tour guide management system for Florence, Italy that integrates
 15. **✅ Ticket Product Filtering**: Automatic exclusion of museum entrance tickets from tour management views
 16. **✅ Booking Details Modal**: Comprehensive modal showing all booking information with 6 detailed sections (Oct 24, 2025)
 17. **✅ Participant Breakdown**: Adults/children display extracted from Bokun API (INFANT excluded)
-18. **✅ Priority Tickets Enhancements**: Default to today's date, morning bookings first, click-to-view details
+18. **✅ Priority Tickets Enhancements**: Upcoming filter (today + 60 days), morning bookings first, click-to-view details
+19. **✅ Automatic Bokun Sync**: Background sync every 15 minutes, on startup, and on app focus (Jan 25, 2026)
+20. **✅ Enhanced Ticket Detection**: Added "Entrance Ticket" keyword for better Uffizi ticket detection
 
 ## Project Structure
 
@@ -182,7 +184,9 @@ For detailed setup instructions, see [ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SET
    - Sessions table has `token` column (fixed Oct 25, 2025)
 
 3. **Recent Critical Fixes** (Read `docs/CHANGELOG.md` for full details):
-   - ✅ Priority Tickets default date filter (shows all dates now)
+   - ✅ Priority Tickets API fix (per_page max increased to 500, upcoming filter added) - Jan 25, 2026
+   - ✅ Automatic Bokun sync verified operational (15-min interval, startup, focus)
+   - ✅ Enhanced ticket detection ("Entrance Ticket" keyword added)
    - ✅ Dashboard chronological sorting (date + time combined)
    - ✅ Tours CRUD operations (guide assignment & notes persistence)
    - ✅ Authentication session management working
@@ -202,10 +206,12 @@ For detailed setup instructions, see [ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SET
 - **Admin Login**: dhanu / Kandy@123
 
 ### Active Features
-- ✅ Bokun API Integration (47+ bookings synced)
+- ✅ Bokun API Integration (266+ bookings synced)
+- ✅ Automatic Bokun sync every 15 minutes
 - ✅ Multi-language guide management
 - ✅ Payment tracking with Italian timezone
 - ✅ Museum ticket inventory (Uffizi/Accademia)
+- ✅ Priority Tickets with upcoming filter
 - ✅ Booking details modal (6 sections)
 - ✅ Cancelled booking sync with visual indicators
 - ✅ Rescheduling detection with audit trail
@@ -257,7 +263,7 @@ For troubleshooting and common issues, see [TROUBLESHOOTING.md](docs/TROUBLESHOO
 
 ---
 
-**Last Updated**: October 25, 2025
+**Last Updated**: January 25, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: ✅ Fully Operational
 

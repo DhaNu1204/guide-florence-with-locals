@@ -24,10 +24,12 @@
 
 ### Ticket Management ✅ LIVE
 - Museum inventory system (Uffizi/Accademia)
-- Priority ticket bookings
+- Priority ticket bookings with `upcoming` filter
+- **Enhanced ticket detection** (Entry Ticket, Entrance Ticket, Priority Ticket, Skip the Line)
 - Inline notes CRUD
-- Participant breakdown display
+- Participant breakdown display (Adults/Children)
 - Customer contact information
+- Booking details modal with 6 sections
 
 ### Authentication ✅ LIVE
 - User authentication
@@ -51,7 +53,10 @@
 - CORS configuration
 
 ### Bokun Integration ✅ LIVE
-- Live synchronization with 47+ bookings
+- Live synchronization with 266+ bookings
+- **Automatic background sync every 15 minutes**
+- Sync on app startup and focus
+- Non-intrusive sync status indicator
 - Automatic language detection
 - Cancelled booking support
 - Rescheduling detection

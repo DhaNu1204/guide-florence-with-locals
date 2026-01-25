@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FiCalendar, FiUsers, FiTag, FiRefreshCw, FiAlertCircle, FiSave, FiX } from 'react-icons/fi';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FiCalendar, FiUsers, FiTag, FiAlertCircle, FiSave, FiX } from 'react-icons/fi';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
@@ -56,13 +56,6 @@ const PriorityTickets = () => {
   const [filteredTickets, setFilteredTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [stats, setStats] = useState({
-    totalTickets: 0,
-    upcomingTickets: 0,
-    uffiziTickets: 0,
-    accademiaTickets: 0
-  });
   const [filters, setFilters] = useState({
     date: '', // Empty = show all dates (changed from defaulting to today)
     location: '',
@@ -86,15 +79,17 @@ const PriorityTickets = () => {
     setError(null);
 
     try {
-      const toursResponse = await getTours(forceRefresh);
+      // Fetch upcoming bookings only (from today + 60 days) with higher limit
+      // Using upcoming=true filter ensures we get future tickets, not old 2025 data
+      const toursResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
 
       // Extract tours array from paginated response
       const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
 
       if (toursData) {
         // Filter only ticket products using smart keyword detection from tourFilters utility
-        // Then exclude cancelled bookings
-        const tickets = filterTicketsOnly(toursData).filter(tour => !tour.cancelled);
+        // Keep cancelled bookings to show them with a badge (similar to Tours.jsx)
+        const tickets = filterTicketsOnly(toursData);
 
         // Sort by date and time (earliest first - morning bookings at top)
         const sortedTickets = tickets.sort((a, b) => {
@@ -104,44 +99,43 @@ const PriorityTickets = () => {
         });
 
         setTicketBookings(sortedTickets);
-        calculateStats(sortedTickets);
       }
     } catch (err) {
       console.error('Error loading ticket bookings:', err);
       setError('Failed to load ticket bookings. Please try again.');
     } finally {
       setLoading(false);
-      setLastRefresh(new Date());
     }
   };
 
-  const calculateStats = (tickets) => {
+  // Memoized stats calculation to prevent unnecessary recalculations
+  const stats = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
-    const totalTickets = tickets.length;
+    const totalTickets = ticketBookings.length;
 
-    const upcomingTickets = tickets.filter(ticket => {
+    const upcomingTickets = ticketBookings.filter(ticket => {
       const ticketDate = new Date(ticket.date);
       ticketDate.setHours(0, 0, 0, 0);
       return ticketDate >= now;
     }).length;
 
-    const uffiziTickets = tickets.filter(ticket =>
+    const uffiziTickets = ticketBookings.filter(ticket =>
       ticket.title && ticket.title.includes('Uffizi')
     ).length;
 
-    const accademiaTickets = tickets.filter(ticket =>
+    const accademiaTickets = ticketBookings.filter(ticket =>
       ticket.title && ticket.title.includes('Accademia')
     ).length;
 
-    setStats({
+    return {
       totalTickets,
       upcomingTickets,
       uffiziTickets,
       accademiaTickets
-    });
-  };
+    };
+  }, [ticketBookings]);
 
   const getTicketType = (title) => {
     if (title.includes('Uffizi')) return 'Uffizi Gallery';
@@ -190,7 +184,7 @@ const PriorityTickets = () => {
 
   const clearFilters = () => {
     setFilters({
-      date: new Date().toISOString().split('T')[0], // Reset to today's date
+      date: '', // Reset to show all dates (consistent with initial state)
       location: '',
       bookingChannel: ''
     });
@@ -273,38 +267,6 @@ const PriorityTickets = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold mb-2">Priority Ticket Bookings</h1>
-            <p className="text-blue-100 text-sm md:text-base">
-              Museum entrance tickets for Uffizi and Accademia Gallery
-            </p>
-            <p className="text-blue-200 text-xs mt-2">
-              Last updated: {lastRefresh.toLocaleTimeString()}
-            </p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={FiRefreshCw}
-              onClick={() => loadTicketBookings(true)}
-              disabled={loading}
-              className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30"
-            >
-              Refresh
-            </Button>
-            <div className="hidden md:block">
-              <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                <FiTag className="text-2xl" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Error Alert */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start">
@@ -458,7 +420,7 @@ const PriorityTickets = () => {
                 {filteredTickets.map((ticket) => (
                   <tr
                     key={ticket.id}
-                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    className={`hover:bg-gray-50 transition-colors cursor-pointer ${ticket.cancelled ? 'bg-red-50' : ''}`}
                     onClick={() => handleRowClick(ticket)}
                   >
                     <td className="py-3 px-4 text-sm text-gray-900 w-[100px]">
@@ -468,9 +430,16 @@ const PriorityTickets = () => {
                       {ticket.time}
                     </td>
                     <td className="py-3 px-4 w-[130px]">
-                      <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${getTicketTypeBadgeColor(ticket.title)}`}>
-                        {getTicketType(ticket.title)}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${getTicketTypeBadgeColor(ticket.title)}`}>
+                          {getTicketType(ticket.title)}
+                        </span>
+                        {ticket.cancelled && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            Cancelled
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-900 w-[120px]">
                       {ticket.customer_name || 'N/A'}

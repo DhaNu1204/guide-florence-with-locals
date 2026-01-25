@@ -10,6 +10,7 @@
  */
 const TICKET_KEYWORDS = [
   'Entry Ticket',
+  'Entrance Ticket',  // Matches "Uffizi Gallery Priority Entrance Tickets"
   'Priority Ticket',
   'Skip the Line',
   'Skip-the-Line'

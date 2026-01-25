@@ -1,5 +1,69 @@
 # Changelog - Recent Major Updates
 
+## ✅ PRIORITY TICKETS PAGE FIX & AUTO-SYNC (2026-01-25)
+
+### Priority Tickets API Pagination & Filter Fix
+✅ COMPLETED - Fixed Priority Tickets page not displaying today's 9 bookings
+
+- **Issue**: Priority Tickets page showing 0 tickets despite 9 bookings existing for today (2026-01-25)
+  - 7 Uffizi tickets, 1 Accademia ticket, 1 Uffizi tour not visible
+  - Page was fetching old 2025 records instead of new 2026 data
+- **Root Cause 1**: API per_page limit capped at 100
+  - `tours.php` line 95: `min(100, intval($_GET['per_page']))`
+  - Database sorted by `date ASC`, so old 2025 records (IDs 1-164) returned first
+  - New 2026 records (IDs 165-266) were cut off by the 100 limit
+- **Root Cause 2**: PriorityTickets.jsx not using `upcoming` filter
+  - Was fetching ALL records instead of future bookings only
+  - Old 2025 records filled the response before 2026 data
+- **Fix Applied**:
+  - Increased API per_page max from 100 to 500 in `tours.php` line 95
+  - Updated `PriorityTickets.jsx` to use `upcoming: true` filter
+  - Now fetches only bookings from today + 60 days forward
+- **Ticket Detection Enhancement**:
+  - Added "Entrance Ticket" to TICKET_KEYWORDS in `tourFilters.js`
+  - Now properly detects "Uffizi Gallery Priority Entrance Tickets"
+- **Immediate Result**:
+  - ✅ All 9 bookings for today (2026-01-25) now visible
+  - ✅ 7 Uffizi tickets displayed correctly
+  - ✅ 1 Accademia ticket displayed correctly
+  - ✅ 1 Uffizi tour displayed correctly
+- **Files Changed**:
+  - MODIFIED: `public_html/api/tours.php` (line 95 - increased per_page max to 500)
+  - MODIFIED: `src/pages/PriorityTickets.jsx` (line 84 - added upcoming filter)
+  - MODIFIED: `src/utils/tourFilters.js` (added "Entrance Ticket" keyword)
+- **Priority**: 🔴 CRITICAL - Priority Tickets page was showing no data
+- **Deployment Status**: ✅ READY FOR PRODUCTION
+
+### Automatic Bokun Sync System
+✅ VERIFIED OPERATIONAL - Auto-sync infrastructure already in place and working
+
+- **Auto-Sync Features**:
+  - Syncs on app startup (if last sync > 15 minutes ago)
+  - Periodic sync every 15 minutes while app is active
+  - Syncs on app focus/visibility change (if > 15 minutes since last sync)
+  - Non-intrusive status indicator in bottom-right corner
+  - Toast notifications when new bookings are synced
+- **Components**:
+  - `src/components/BokunAutoSyncProvider.jsx` - Provider component with status indicator
+  - `src/hooks/useBokunAutoSync.jsx` - React hook for sync state management
+  - `src/services/bokunAutoSync.js` - Service class handling sync logic
+- **Integration**: Already wrapped in App.jsx around all routes
+- **Admin Only**: Auto-sync only runs for authenticated admin users
+- **Files Verified**:
+  - `src/App.jsx` - BokunAutoSyncProvider wrapping all routes
+  - `src/components/BokunAutoSyncProvider.jsx` - Status indicator component
+  - `src/hooks/useBokunAutoSync.jsx` - Hook with 15-minute interval
+  - `src/services/bokunAutoSync.js` - Sync service with focus/visibility listeners
+
+### Debug Files Cleanup
+✅ COMPLETED - Removed temporary investigation files
+
+- Removed: `public_html/api/today_tickets.php`
+- Removed: `public_html/api/check_2026.php`
+- Removed: `public_html/api/db_check.php`
+- Removed: `public_html/api/bokun_debug.php`
+- Removed: `verify_sync.cjs`
+
 ## ✅ PRODUCTION PAYMENTS PAGE FIX (2025-10-26)
 
 ### Payment System Database Views and Table Name Correction
