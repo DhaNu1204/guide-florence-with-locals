@@ -16,7 +16,7 @@
 A comprehensive tour guide management system for Florence, Italy that integrates with Bokun API for automatic booking synchronization and guide assignment. Features a modern, responsive UI with complete CRUD operations and role-based access control.
 
 **Production Status**: ✅ FULLY OPERATIONAL at https://withlocals.deetech.cc
-**Last Critical Update**: January 25, 2026 - Priority Tickets page fixed (API pagination limit increased to 500, upcoming filter added), Auto-sync verified operational
+**Last Critical Update**: January 25, 2026 - GetYourGuide booking sync fixed, timezone correction, 200+ bookings now syncing
 
 ## Tech Stack
 
@@ -49,6 +49,10 @@ A comprehensive tour guide management system for Florence, Italy that integrates
 18. **✅ Priority Tickets Enhancements**: Upcoming filter (today + 60 days), morning bookings first, click-to-view details
 19. **✅ Automatic Bokun Sync**: Background sync every 15 minutes, on startup, and on app focus (Jan 25, 2026)
 20. **✅ Enhanced Ticket Detection**: Added "Entrance Ticket" keyword for better Uffizi ticket detection
+21. **✅ GetYourGuide Booking Sync**: Full support for GetYourGuide OTA bookings via SUPPLIER role (Jan 25, 2026)
+22. **✅ Timezone Fix**: Using startTimeStr for accurate local tour times instead of UTC conversion
+23. **✅ Pagination Enhancement**: Increased Bokun API pageSize to 200 with multi-page support (200+ bookings)
+24. **✅ Guides Page Improvements**: Pagination, PUT for updates, per-operation loading states, database indexes (Jan 28, 2026)
 
 ## Project Structure
 
@@ -184,12 +188,14 @@ For detailed setup instructions, see [ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SET
    - Sessions table has `token` column (fixed Oct 25, 2025)
 
 3. **Recent Critical Fixes** (Read `docs/CHANGELOG.md` for full details):
-   - ✅ Priority Tickets API fix (per_page max increased to 500, upcoming filter added) - Jan 25, 2026
-   - ✅ Automatic Bokun sync verified operational (15-min interval, startup, focus)
+   - ✅ **Guides page improvements** - Pagination, PUT for updates, per-operation loading, database indexes (Jan 28, 2026)
+   - ✅ **GetYourGuide sync fixed** - Changed Bokun API to use both SUPPLIER and SELLER roles (Jan 25, 2026)
+   - ✅ **Timezone fix** - Using startTimeStr for accurate local times (was showing +1 hour offset)
+   - ✅ **Pagination fix** - Increased pageSize from 50 to 200, added multi-page support (200+ bookings)
+   - ✅ **Tours page fix** - Default to upcoming filter, increased toursPerPage to 100
+   - ✅ Priority Tickets API fix (per_page max increased to 500, upcoming filter added)
+   - ✅ Dashboard fix - Added upcoming filter to show 2026 data
    - ✅ Enhanced ticket detection ("Entrance Ticket" keyword added)
-   - ✅ Dashboard chronological sorting (date + time combined)
-   - ✅ Tours CRUD operations (guide assignment & notes persistence)
-   - ✅ Authentication session management working
 
 ### Key File Locations
 - **Frontend Entry**: `src/main.jsx`
@@ -206,8 +212,9 @@ For detailed setup instructions, see [ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SET
 - **Admin Login**: dhanu / Kandy@123
 
 ### Active Features
-- ✅ Bokun API Integration (266+ bookings synced)
+- ✅ Bokun API Integration (200+ bookings synced from Viator AND GetYourGuide)
 - ✅ Automatic Bokun sync every 15 minutes
+- ✅ Multi-channel OTA support (Viator, GetYourGuide, direct bookings)
 - ✅ Multi-language guide management
 - ✅ Payment tracking with Italian timezone
 - ✅ Museum ticket inventory (Uffizi/Accademia)
@@ -222,9 +229,10 @@ For detailed setup instructions, see [ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SET
 
 - All core functionality working perfectly
 - Database schema synchronized (Oct 25, 2025)
-- Bokun integration operational with 47+ bookings
+- Bokun integration operational with 200+ bookings (Viator + GetYourGuide)
 - Complete payment tracking system
 - Modern responsive UI across all devices
+- Correct timezone handling for tour times
 
 For detailed status information, see [PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
 
@@ -323,9 +331,54 @@ Located in `src/utils/tourFilters.js`:
 - "Skip-the-Line"
 
 ### API Pagination
-- **Default**: 50 records per page
+- **Default**: 50 records per page (20 for guides)
 - **Maximum**: 500 records per page (increased Jan 2026)
 - **Upcoming Filter**: `?upcoming=true` returns today + 60 days
+
+### Guides API (Updated Jan 28, 2026)
+Located in `public_html/api/guides.php`:
+
+**Endpoints:**
+- `GET /guides.php?page=1&per_page=20` - List guides with pagination
+- `POST /guides.php` - Create new guide
+- `PUT /guides.php/{id}` - Update existing guide
+- `DELETE /guides.php/{id}` - Delete guide
+
+**Response Format (GET):**
+```json
+{
+  "data": [...],
+  "pagination": {
+    "current_page": 1,
+    "per_page": 20,
+    "total": 45,
+    "total_pages": 3,
+    "has_next": true,
+    "has_prev": false
+  }
+}
+```
+
+**Database Indexes:**
+- `idx_email` - Index on email column
+- `idx_name` - Index on name column
+
+### Bokun API Integration Details
+Located in `public_html/api/BokunAPI.php`:
+
+**Booking Roles** (CRITICAL for OTA sync):
+- `SUPPLIER` - Fetches OTA bookings (Viator, GetYourGuide) where you supply the tour
+- `SELLER` - Fetches direct bookings where you sell directly
+- **Both roles are queried** to get all bookings
+
+**Time Extraction** (CRITICAL for correct times):
+- Uses `startTimeStr` field (local time) instead of UTC timestamp conversion
+- This ensures tour times match what's shown in Bokun/OTA dashboards
+
+**Pagination**:
+- Default pageSize: 200 (increased from 50)
+- Multi-page support: Fetches up to 10 pages (2000 bookings max)
+- Deduplicates bookings by ID across roles
 
 ## 🔮 Future Development Roadmap
 
@@ -342,7 +395,7 @@ Located in `src/utils/tourFilters.js`:
 ### Technical Improvements
 | Improvement | Priority | Description |
 |-------------|----------|-------------|
-| Database indexing | High | Add indexes for frequently queried columns |
+| ~~Database indexing~~ | ~~High~~ | ✅ Done - Added indexes for guides table (Jan 28, 2026) |
 | API rate limiting | Medium | Prevent abuse and optimize performance |
 | Caching layer (Redis) | Medium | Reduce database load |
 | Unit tests | Medium | Jest for frontend, PHPUnit for backend |
@@ -354,6 +407,16 @@ Located in `src/utils/tourFilters.js`:
 2. **Offline support** - Service worker for offline viewing
 3. **Real-time updates** - WebSocket for live booking notifications
 4. **Multi-tenant support** - Support for multiple tour companies
+
+### Resolved Issues (Jan 2026)
+1. **GetYourGuide bookings not syncing** - Fixed by adding SUPPLIER role to Bokun API (Jan 25)
+2. **Tour times off by 1 hour** - Fixed by using startTimeStr instead of UTC timestamp (Jan 25)
+3. **Only 50 bookings syncing** - Fixed by increasing pageSize to 200 with pagination (Jan 25)
+4. **Tours page showing old data** - Fixed by defaulting to upcoming filter (Jan 25)
+5. **Guides page missing pagination** - Added pagination with 20 per page (Jan 28)
+6. **Guides API using POST for updates** - Changed to RESTful PUT `/guides.php/{id}` (Jan 28)
+7. **Guides page global loading state** - Added per-operation loading for Save/Delete buttons (Jan 28)
+8. **Guides table missing indexes** - Added `idx_email` and `idx_name` indexes (Jan 28)
 
 ## 📁 New Files Added (Jan 2026)
 
@@ -370,6 +433,7 @@ Located in `src/utils/tourFilters.js`:
 |------|---------|
 | `database/add_missing_indexes.sql` | Performance optimization |
 | `database/migrations/create_sync_logs_table.sql` | Sync history tracking |
+| `database/add_guides_indexes.sql` | Guides table indexes (email, name) - Jan 28, 2026 |
 
 ### Configuration
 | File | Purpose |
@@ -426,9 +490,10 @@ For troubleshooting and common issues, see [TROUBLESHOOTING.md](docs/TROUBLESHOO
 
 ---
 
-**Last Updated**: January 25, 2026
+**Last Updated**: January 28, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: ✅ Fully Operational
-**Last Deployment**: January 25, 2026 01:14 UTC
+**Last Deployment**: January 25, 2026 02:00 UTC
+**Bookings Synced**: 200+ (Viator + GetYourGuide)
 
 **📌 Remember**: When working on this project, always read the relevant documentation files in `docs/` folder to understand the complete context before making changes.

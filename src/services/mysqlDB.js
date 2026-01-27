@@ -40,10 +40,49 @@ export const clearTourCache = () => {
 };
 
 // GUIDES OPERATIONS
-export const getGuides = async () => {
+export const getGuides = async (page = 1, perPage = 20) => {
   try {
-    const response = await axios.get(addCacheBuster(`${API_BASE_URL}/guides.php`));
-    return response.data;
+    const url = `${API_BASE_URL}/guides.php?page=${page}&per_page=${perPage}`;
+    const response = await axios.get(addCacheBuster(url));
+
+    // Handle both paginated response format and legacy array format
+    const responseData = response.data;
+    const guidesArray = Array.isArray(responseData) ? responseData : (responseData.data || []);
+
+    // Normalize languages to array for each guide (handles both array and string from backend)
+    const guides = guidesArray.map(guide => ({
+      ...guide,
+      languages: Array.isArray(guide.languages)
+        ? guide.languages
+        : guide.languages
+          ? guide.languages.split(',').map(lang => lang.trim()).filter(lang => lang)
+          : []
+    }));
+
+    // Return in consistent paginated format
+    if (Array.isArray(responseData)) {
+      // Wrap legacy array response for backward compatibility
+      return {
+        data: guides,
+        pagination: {
+          page: page,
+          per_page: perPage,
+          total: guides.length,
+          total_pages: 1
+        }
+      };
+    }
+
+    // Return paginated response with normalized guides
+    return {
+      data: guides,
+      pagination: responseData.pagination || {
+        page: page,
+        per_page: perPage,
+        total: guides.length,
+        total_pages: 1
+      }
+    };
   } catch (error) {
     console.error('Error fetching guides:', error);
     throw error;
@@ -52,7 +91,25 @@ export const getGuides = async () => {
 
 export const addGuide = async (guideData) => {
   try {
-    const response = await axios.post(`${API_BASE_URL}/guides.php`, guideData);
+    // Convert languages array to comma-separated string for backend storage
+    const dataToSend = {
+      ...guideData,
+      languages: Array.isArray(guideData.languages)
+        ? guideData.languages.join(',')
+        : guideData.languages || ''
+    };
+
+    const response = await axios.post(`${API_BASE_URL}/guides.php`, dataToSend);
+
+    // Normalize languages to array (handles both array and string from backend)
+    if (response.data) {
+      response.data.languages = Array.isArray(response.data.languages)
+        ? response.data.languages
+        : response.data.languages
+          ? response.data.languages.split(',').map(lang => lang.trim()).filter(lang => lang)
+          : [];
+    }
+
     return response.data;
   } catch (error) {
     console.error('Error adding guide:', error);
@@ -72,9 +129,31 @@ export const deleteGuide = async (guideId) => {
 
 export const updateGuide = async (guideId, guideData) => {
   try {
-    // Add the ID to the data for the API update logic
-    const updateData = { ...guideData, id: guideId };
-    const response = await axios.post(`${API_BASE_URL}/guides.php`, updateData);
+    // Extract guide ID from guideData if not provided separately
+    const id = guideId || guideData.id;
+
+    // Convert languages array to comma-separated string for backend storage
+    // Don't include id in the request body since it's in the URL
+    const { id: _, ...dataWithoutId } = guideData;
+    const updateData = {
+      ...dataWithoutId,
+      languages: Array.isArray(guideData.languages)
+        ? guideData.languages.join(',')
+        : guideData.languages || ''
+    };
+
+    // Use PUT request with guide ID in the URL path
+    const response = await axios.put(`${API_BASE_URL}/guides.php/${id}`, updateData);
+
+    // Normalize languages to array (handles both array and string from backend)
+    if (response.data) {
+      response.data.languages = Array.isArray(response.data.languages)
+        ? response.data.languages
+        : response.data.languages
+          ? response.data.languages.split(',').map(lang => lang.trim()).filter(lang => lang)
+          : [];
+    }
+
     return response.data;
   } catch (error) {
     console.error('Error updating guide:', error);
