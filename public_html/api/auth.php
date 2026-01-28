@@ -1,10 +1,16 @@
 <?php
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-header('Content-Type: application/json');
-
+/**
+ * Authentication API
+ * Handles login, logout, and token verification
+ *
+ * SECURITY: CORS headers handled by config.php
+ */
 require_once 'config.php';
+
+// Include SentryLogger if available (for error tracking)
+if (file_exists(__DIR__ . '/SentryLogger.php')) {
+    require_once __DIR__ . '/SentryLogger.php';
+}
 
 // Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -94,6 +100,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Rate limiting check
         $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         if (!checkRateLimit($conn, $clientIP)) {
+            // Log rate limit events to Sentry for security monitoring
+            if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+                sentry_capture_message("Rate limit exceeded for login attempts", 'warning', [
+                    'context' => 'auth_rate_limit',
+                    'client_ip' => $clientIP,
+                    'username_attempted' => $username
+                ]);
+            }
+
             http_response_code(429);
             echo json_encode([
                 'success' => false,
@@ -111,14 +126,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
 
-            // SECURITY: Use only proper password verification
-            // Legacy plaintext fallback for existing accounts (should be migrated)
+            // SECURITY: Use ONLY proper bcrypt password verification
+            // All passwords MUST be hashed with password_hash()
             $isValidPassword = verifyPassword($password, $user['password']);
-
-            // Temporary fallback for unmigrated accounts - REMOVE after password migration
-            if (!$isValidPassword && defined('ALLOW_LEGACY_AUTH') && ALLOW_LEGACY_AUTH === true) {
-                $isValidPassword = ($password === $user['password']); // Plain text check - TO BE REMOVED
-            }
 
             if ($isValidPassword) {
                 // Generate a session token
@@ -157,6 +167,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
     } catch (Exception $e) {
+        // Send to Sentry if available
+        if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+            sentry_capture_exception($e, [
+                'context' => 'auth_login',
+                'username' => $username,
+                'client_ip' => $clientIP
+            ]);
+        }
+
         http_response_code(500);
         echo json_encode([
             'success' => false,
@@ -201,6 +220,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
             echo json_encode(['error' => 'Invalid or expired token']);
         }
     } catch (Exception $e) {
+        // Send to Sentry if available
+        if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+            sentry_capture_exception($e, [
+                'context' => 'auth_token_verify'
+            ]);
+        }
+
         http_response_code(500);
         echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
     }

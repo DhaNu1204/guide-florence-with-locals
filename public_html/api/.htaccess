@@ -1,3 +1,43 @@
+# ===========================================================================
+# GZIP COMPRESSION - Reduce response sizes by 70-80%
+# ===========================================================================
+<IfModule mod_deflate.c>
+    # Enable compression for common MIME types
+    AddOutputFilterByType DEFLATE application/json
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE text/javascript
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/atom+xml
+    AddOutputFilterByType DEFLATE image/svg+xml
+
+    # Remove browser bugs (old browsers)
+    BrowserMatch ^Mozilla/4 gzip-only-text/html
+    BrowserMatch ^Mozilla/4\.0[678] no-gzip
+    BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
+
+    # Don't compress images (already compressed)
+    SetEnvIfNoCase Request_URI \.(?:gif|jpe?g|png|ico|webp)$ no-gzip
+
+    # Ensure proxies deliver the correct content
+    Header append Vary Accept-Encoding
+</IfModule>
+
+# Fallback: Set Content-Encoding header if PHP handles compression
+<IfModule mod_headers.c>
+    # Add compression header for monitoring
+    Header set X-Compression "enabled"
+</IfModule>
+
+# ===========================================================================
+# URL REWRITING
+# ===========================================================================
 RewriteEngine On
 RewriteBase /api/
 

@@ -2,6 +2,16 @@
 require_once 'config.php';
 require_once 'BokunAPI.php';
 
+// Include SentryLogger if available (for error tracking)
+if (file_exists(__DIR__ . '/SentryLogger.php')) {
+    require_once __DIR__ . '/SentryLogger.php';
+}
+
+// Include Encryption helper for secure credential storage
+if (file_exists(__DIR__ . '/Encryption.php')) {
+    require_once __DIR__ . '/Encryption.php';
+}
+
 // Simple auth check function for API endpoints
 function checkAuth() {
     $headers = getallheaders();
@@ -23,6 +33,18 @@ function getBokunConfig() {
     $result = $conn->query("SELECT * FROM bokun_config LIMIT 1");
     if ($result && $result->num_rows > 0) {
         $config = $result->fetch_assoc();
+
+        // Decrypt credentials if encryption is available
+        // Uses backward-compatible decryption (handles both encrypted and plain text)
+        if (class_exists('Encryption')) {
+            if (isset($config['api_key'])) {
+                $config['api_key'] = Encryption::ensureDecrypted($config['api_key']);
+            }
+            if (isset($config['api_secret'])) {
+                $config['api_secret'] = Encryption::ensureDecrypted($config['api_secret']);
+            }
+        }
+
         // Map production column names to expected names for backward compatibility
         if (isset($config['api_key'])) {
             $config['access_key'] = $config['api_key'];
@@ -43,6 +65,28 @@ function saveBokunConfig($data) {
     $secretKey = $data['secret_key'] ?? '';
     $vendorId = $data['vendor_id'] ?? '';
     $syncEnabled = isset($data['sync_enabled']) ? 1 : 0;
+
+    // Encrypt sensitive credentials before storing
+    if (class_exists('Encryption') && Encryption::init()) {
+        if (!empty($accessKey)) {
+            $encryptedKey = Encryption::encrypt($accessKey);
+            if ($encryptedKey !== false) {
+                $accessKey = $encryptedKey;
+            } else {
+                error_log("saveBokunConfig: Failed to encrypt access_key");
+            }
+        }
+        if (!empty($secretKey)) {
+            $encryptedSecret = Encryption::encrypt($secretKey);
+            if ($encryptedSecret !== false) {
+                $secretKey = $encryptedSecret;
+            } else {
+                error_log("saveBokunConfig: Failed to encrypt secret_key");
+            }
+        }
+    } else {
+        error_log("saveBokunConfig: Encryption not available - storing credentials in plain text");
+    }
 
     // Check if config exists
     $result = $conn->query("SELECT id FROM bokun_config LIMIT 1");
@@ -67,7 +111,7 @@ function saveBokunConfig($data) {
 
     if ($stmt->execute()) {
         $stmt->close();
-        return ['success' => true];
+        return ['success' => true, 'encrypted' => class_exists('Encryption')];
     } else {
         $error = $stmt->error;
         $stmt->close();
@@ -298,6 +342,16 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
             } catch (Exception $e) {
                 $failedCount++;
                 $errors[] = "Error processing booking: " . $e->getMessage();
+
+                // Send individual booking errors to Sentry
+                if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+                    $bookingId = $booking['id'] ?? $booking['confirmationCode'] ?? 'unknown';
+                    sentry_capture_exception($e, [
+                        'context' => 'bokun_booking_processing',
+                        'booking_id' => $bookingId,
+                        'sync_type' => $syncType
+                    ]);
+                }
             }
         }
 
@@ -336,6 +390,23 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         // Log failure
         $duration = round(microtime(true) - $startTime, 2);
         updateSyncLog($logId, 'failed', ['found' => 0, 'synced' => 0, 'created' => 0, 'updated' => 0, 'failed' => 0], $e->getMessage(), $duration);
+
+        // Send to Sentry if available
+        if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+            sentry_add_breadcrumb("Bokun sync failed", 'sync', 'error', [
+                'sync_type' => $syncType,
+                'start_date' => $startDate,
+                'end_date' => $endDate
+            ]);
+            sentry_capture_exception($e, [
+                'context' => 'bokun_sync',
+                'sync_type' => $syncType,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'triggered_by' => $triggeredBy,
+                'duration_seconds' => $duration
+            ]);
+        }
 
         return [
             'error' => 'Bokun API Error: ' . $e->getMessage(),
