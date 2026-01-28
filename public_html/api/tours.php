@@ -99,13 +99,23 @@ switch ($method) {
         $filterDate = isset($_GET['date']) ? $_GET['date'] : null;
         $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
         $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
+        $past = isset($_GET['past']) && $_GET['past'] === 'true';
 
         // Build WHERE clause for filtering
         $whereConditions = [];
         $whereParams = [];
         $whereTypes = "";
 
-        if ($upcoming) {
+        if ($past) {
+            // Show tours from past 40 days (for payment verification)
+            $startDate = date('Y-m-d', strtotime('-40 days'));
+            $yesterday = date('Y-m-d', strtotime('-1 day'));
+            $whereConditions[] = "t.date >= ?";
+            $whereConditions[] = "t.date <= ?";
+            $whereParams[] = $startDate;
+            $whereParams[] = $yesterday;
+            $whereTypes .= "ss";
+        } elseif ($upcoming) {
             // Show tours from today onwards for the next 60 days
             $today = date('Y-m-d');
             $endDate = date('Y-m-d', strtotime('+60 days'));

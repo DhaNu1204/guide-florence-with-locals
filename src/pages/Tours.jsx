@@ -200,6 +200,7 @@ const Tours = () => {
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
   const [showUpcoming, setShowUpcoming] = useState(true); // Default to upcoming to show 2026 data
+  const [showPast, setShowPast] = useState(false); // Show past 40 days for payment verification
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTour, setSelectedTour] = useState(null);
   const [pagination, setPagination] = useState({
@@ -252,11 +253,12 @@ const Tours = () => {
   // Build current filters object
   const getCurrentFilters = () => {
     const filters = {};
-    if (!showUpcoming && filterDate) {
-      filters.date = format(filterDate, 'yyyy-MM-dd');
-    }
-    if (showUpcoming) {
+    if (showPast) {
+      filters.past = true; // Show past 40 days
+    } else if (showUpcoming) {
       filters.upcoming = true;
+    } else if (filterDate) {
+      filters.date = format(filterDate, 'yyyy-MM-dd');
     }
     if (selectedGuideId !== 'all') {
       filters.guide_id = selectedGuideId;
@@ -279,7 +281,7 @@ const Tours = () => {
   useEffect(() => {
     setCurrentPage(1); // Reset to page 1 when filters change
     loadData(false, 1, getCurrentFilters());
-  }, [filterDate, showUpcoming, selectedGuideId]);
+  }, [filterDate, showUpcoming, showPast, selectedGuideId]);
 
   // Memoized filtered and grouped tours by date
   // Note: Date and guide filtering is now done on the server side for efficiency
@@ -530,6 +532,7 @@ const Tours = () => {
                   onChange={(e) => {
                     setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
                     setShowUpcoming(false);
+                    setShowPast(false);
                   }}
                   className="flex-1 px-3 py-2 border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
                 />
@@ -537,9 +540,10 @@ const Tours = () => {
                   onClick={() => {
                     setFilterDate(new Date());
                     setShowUpcoming(false);
+                    setShowPast(false);
                   }}
                   className={`px-4 py-2.5 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] ${
-                    !showUpcoming && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+                    !showUpcoming && !showPast && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
                       ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
                       : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
                   }`}
@@ -547,15 +551,32 @@ const Tours = () => {
                   Today
                 </button>
                 <button
-                  onClick={() => setShowUpcoming(!showUpcoming)}
+                  onClick={() => {
+                    setShowUpcoming(true);
+                    setShowPast(false);
+                  }}
                   className={`px-4 py-2.5 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] ${
-                    showUpcoming
+                    showUpcoming && !showPast
                       ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
                       : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
                   }`}
                   title="Show tours for the next 60 days"
                 >
                   Upcoming
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPast(true);
+                    setShowUpcoming(false);
+                  }}
+                  className={`px-4 py-2.5 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] ${
+                    showPast
+                      ? 'bg-amber-600 text-white active:bg-amber-700'
+                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
+                  }`}
+                  title="Show completed tours from past 40 days"
+                >
+                  Past 40 Days
                 </button>
               </div>
             </div>
