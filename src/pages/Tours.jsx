@@ -238,7 +238,8 @@ const Tours = () => {
         setTours(toursResponse || []);
       }
 
-      setGuides(guidesData || []);
+      // Handle paginated response - extract data array
+      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
 
     } catch (err) {
       console.error('Load error:', err);
