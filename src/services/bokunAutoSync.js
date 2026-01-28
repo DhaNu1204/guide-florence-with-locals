@@ -35,11 +35,13 @@ class BokunAutoSyncService {
 
     console.log('Initializing Bokun Auto-Sync Service');
 
-    // Perform initial sync if enabled
-    if (this.config.onStartupSync) {
+    // Perform initial sync if enabled AND last sync was > 15 minutes ago
+    if (this.config.onStartupSync && this.shouldSyncOnFocus()) {
       setTimeout(() => {
         this.performSync('startup');
       }, 2000); // Delay to let the app fully load
+    } else if (this.config.onStartupSync) {
+      console.log('Skipping startup sync - last sync was less than 15 minutes ago');
     }
 
     // Start periodic sync
