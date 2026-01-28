@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="florentineGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#D4AF37"/>
+      <stop offset="50%" style="stop-color:#C5A028"/>
+      <stop offset="100%" style="stop-color:#B8962B"/>
+    </linearGradient>
+    <linearGradient id="florentineRed" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B2942"/>
+      <stop offset="100%" style="stop-color:#6B1F32"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle with Florentine red -->
+  <circle cx="50" cy="50" r="48" fill="url(#florentineRed)"/>
+  <circle cx="50" cy="50" r="45" fill="none" stroke="url(#florentineGold)" stroke-width="2"/>
+
+  <!-- Simplified Florentine Lily (Giglio) -->
+  <g fill="url(#florentineGold)">
+    <!-- Center petal -->
+    <path d="M50 15 C45 25, 45 35, 50 50 C55 35, 55 25, 50 15 Z"/>
+    <ellipse cx="50" cy="12" rx="5" ry="4"/>
+
+    <!-- Left petal -->
+    <path d="M30 30 C35 35, 40 42, 50 50 C38 45, 32 40, 30 30 Z"/>
+    <ellipse cx="26" cy="26" rx="5" ry="4" transform="rotate(-45 26 26)"/>
+
+    <!-- Right petal -->
+    <path d="M70 30 C65 35, 60 42, 50 50 C62 45, 68 40, 70 30 Z"/>
+    <ellipse cx="74" cy="26" rx="5" ry="4" transform="rotate(45 74 26)"/>
+
+    <!-- Left curved arm -->
+    <path d="M25 55 C30 52, 40 50, 50 50 C40 55, 32 58, 25 55 Z"/>
+    <ellipse cx="22" cy="58" rx="4" ry="3" transform="rotate(20 22 58)"/>
+
+    <!-- Right curved arm -->
+    <path d="M75 55 C70 52, 60 50, 50 50 C60 55, 68 58, 75 55 Z"/>
+    <ellipse cx="78" cy="58" rx="4" ry="3" transform="rotate(-20 78 58)"/>
+
+    <!-- Stem -->
+    <rect x="47" y="50" width="6" height="25" rx="2"/>
+
+    <!-- Base band -->
+    <rect x="40" y="72" width="20" height="6" rx="2"/>
+
+    <!-- Bottom decorative elements -->
+    <circle cx="42" cy="82" r="3"/>
+    <circle cx="50" cy="85" r="3"/>
+    <circle cx="58" cy="82" r="3"/>
+  </g>
+</svg>
