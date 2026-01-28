@@ -12,6 +12,9 @@
 
 require_once 'config.php';
 
+// Apply rate limiting (read operations)
+applyRateLimit('read');
+
 // Get parameters
 $type = isset($_GET['type']) ? $_GET['type'] : 'summary';
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : null;

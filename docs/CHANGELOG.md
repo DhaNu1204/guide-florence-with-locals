@@ -1,5 +1,96 @@
 # Changelog - Recent Major Updates
 
+## ✅ AUTOMATED TESTING IMPLEMENTATION (2026-01-29)
+
+### React Testing with Vitest
+✅ COMPLETED - Comprehensive testing infrastructure for frontend
+
+- **Testing Stack**:
+  - Vitest (test runner, compatible with Vite)
+  - @testing-library/react (React component testing)
+  - @testing-library/jest-dom (DOM assertions)
+  - @testing-library/user-event (user interaction simulation)
+  - jsdom (DOM environment)
+
+- **Test Commands**:
+  ```bash
+  npm test           # Run tests in watch mode
+  npm run test:run   # Run tests once
+  npm run test:coverage  # Run with coverage report
+  ```
+
+- **Test Coverage**:
+  | Component | Tests | Description |
+  |-----------|-------|-------------|
+  | Button.jsx | 23 | Rendering, clicks, loading, disabled, icons, accessibility |
+  | Login.jsx | 16 | Form rendering, input handling, validation, structure |
+  | mysqlDB.js | 13 | API calls, error handling, caching, pagination |
+  | **Total** | **52** | All passing |
+
+- **Files Created**:
+  - `vite.config.js` - Updated with test configuration
+  - `src/test/setup.js` - Test environment setup
+  - `src/components/__tests__/Button.test.jsx`
+  - `src/pages/__tests__/Login.test.jsx`
+  - `src/services/__tests__/mysqlDB.test.js`
+  - `public_html/api/tests/run_tests.php` - PHP API test runner
+
+- **PHP API Tests**:
+  - Simple test runner (no PHPUnit needed)
+  - Tests for auth, tours, guides endpoints
+  - Rate limiting verification
+  - Run with: `php public_html/api/tests/run_tests.php`
+
+---
+
+## ✅ API RATE LIMITING IMPLEMENTATION (2026-01-29)
+
+### Database-Backed Rate Limiting
+✅ COMPLETED - Comprehensive API rate limiting for all endpoints
+
+- **Purpose**: Protect against brute force attacks, API abuse, and spam
+- **Implementation**: Database-backed storage (Hostinger-compatible, no Redis)
+- **Rate Limits Configured**:
+  | Endpoint Type | Limit | Window |
+  |---------------|-------|--------|
+  | Login/Auth | 5 requests | per minute |
+  | Read operations | 100 requests | per minute |
+  | Write/Create | 30 requests | per minute |
+  | Update | 30 requests | per minute |
+  | Delete | 10 requests | per minute |
+  | Bokun Sync | 10 requests | per minute |
+  | Webhooks | 30 requests | per minute |
+
+- **Files Created**:
+  - `public_html/api/RateLimiter.php` - Rate limiter class with database storage
+  - `database/migrations/create_rate_limits_table.sql` - Database schema
+
+- **Files Modified**:
+  - `public_html/api/config.php` - Added rate limiting helper functions
+  - `public_html/api/auth.php` - Login rate limiting (5/min)
+  - `public_html/api/tours.php` - Auto rate limiting by HTTP method
+  - `public_html/api/guides.php` - Auto rate limiting by HTTP method
+  - `public_html/api/payments.php` - Auto rate limiting by HTTP method
+  - `public_html/api/tickets.php` - Auto rate limiting by HTTP method
+  - `public_html/api/guide-payments.php` - Read rate limiting (100/min)
+  - `public_html/api/payment-reports.php` - Read rate limiting (100/min)
+  - `public_html/api/bokun_sync.php` - Sync rate limiting (10/min)
+  - `public_html/api/bokun_webhook.php` - Webhook rate limiting (30/min)
+
+- **Features**:
+  - Automatic IP detection (supports Cloudflare, proxies)
+  - HTTP headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+  - 429 Too Many Requests response with Retry-After header
+  - Skipped in development mode (configurable via RATE_LIMIT_DEV env var)
+  - Self-cleaning: 1% chance per request to clean expired records
+  - Database event scheduler for hourly cleanup (optional)
+
+- **Deployment Required**:
+  1. Run SQL migration: `database/migrations/create_rate_limits_table.sql`
+  2. Deploy updated PHP files to production
+
+---
+
 ## ✅ PRIORITY TICKETS PAGE FIX & AUTO-SYNC (2026-01-25)
 
 ### Priority Tickets API Pagination & Filter Fix

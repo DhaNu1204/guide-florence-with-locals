@@ -13,6 +13,9 @@
 
 require_once 'config.php';
 
+// Apply rate limiting based on HTTP method
+autoRateLimit('payments');
+
 // Handle request based on HTTP method
 $method = $_SERVER['REQUEST_METHOD'];
 $tour_id = isset($_GET['tour_id']) ? intval($_GET['tour_id']) : null;

@@ -6,6 +6,9 @@ ini_set('display_errors', 1);
 // Include the config file for database credentials
 require_once __DIR__ . '/config.php';
 
+// Apply rate limiting based on HTTP method
+autoRateLimit('tickets');
+
 // The headers are already set in config.php, but we need JSON specifically
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -19,27 +22,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 function createTicketsTableIfNotExists($conn) {
     $sql = "CREATE TABLE IF NOT EXISTS tickets (
         id INT(11) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        location VARCHAR(255) NOT NULL,
-        code VARCHAR(255) NOT NULL,
+        location VARCHAR(255) NOT NULL DEFAULT '',
+        museum VARCHAR(255) NOT NULL DEFAULT '',
+        ticket_type VARCHAR(255) NOT NULL DEFAULT '',
         date DATE NOT NULL,
         time TIME DEFAULT NULL,
-        quantity INT(11) NOT NULL,
+        quantity INT(11) NOT NULL DEFAULT 0,
+        price DECIMAL(10,2) DEFAULT 0.00,
+        notes TEXT DEFAULT NULL,
+        status VARCHAR(50) DEFAULT 'available',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )";
-    
+
     if (!$conn->query($sql)) {
         throw new Exception("Error creating table: " . $conn->error);
     }
-    
-    // Check if time column exists, if not add it
-    $checkColumn = "SHOW COLUMNS FROM tickets LIKE 'time'";
-    $result = $conn->query($checkColumn);
-    if ($result->num_rows == 0) {
-        $addColumn = "ALTER TABLE tickets ADD COLUMN time TIME DEFAULT NULL AFTER date";
-        if (!$conn->query($addColumn)) {
-            // Column might already exist or error
-            error_log("Could not add time column: " . $conn->error);
+
+    // Ensure all required columns exist (for existing tables)
+    $requiredColumns = [
+        'location' => "ALTER TABLE tickets ADD COLUMN location VARCHAR(255) NOT NULL DEFAULT '' AFTER id",
+        'museum' => "ALTER TABLE tickets ADD COLUMN museum VARCHAR(255) NOT NULL DEFAULT '' AFTER location",
+        'ticket_type' => "ALTER TABLE tickets ADD COLUMN ticket_type VARCHAR(255) NOT NULL DEFAULT '' AFTER museum",
+        'time' => "ALTER TABLE tickets ADD COLUMN time TIME DEFAULT NULL AFTER date",
+        'price' => "ALTER TABLE tickets ADD COLUMN price DECIMAL(10,2) DEFAULT 0.00 AFTER quantity",
+        'notes' => "ALTER TABLE tickets ADD COLUMN notes TEXT DEFAULT NULL AFTER price",
+        'status' => "ALTER TABLE tickets ADD COLUMN status VARCHAR(50) DEFAULT 'available' AFTER notes"
+    ];
+
+    foreach ($requiredColumns as $column => $alterSql) {
+        $checkColumn = "SHOW COLUMNS FROM tickets LIKE '$column'";
+        $result = $conn->query($checkColumn);
+        if ($result && $result->num_rows == 0) {
+            if (!$conn->query($alterSql)) {
+                error_log("Could not add $column column: " . $conn->error);
+            }
         }
     }
 }
@@ -92,25 +109,32 @@ switch($method) {
         // Add new ticket
         $data = json_decode(file_get_contents("php://input"), true);
 
-        // Validate required fields
-        if (!isset($data['location']) || !isset($data['code']) ||
-            !isset($data['date']) || !isset($data['quantity'])) {
+        // Validate required fields - support both old (code) and new (museum/ticket_type) schema
+        $hasOldSchema = isset($data['code']);
+        $hasNewSchema = isset($data['museum']) || isset($data['ticket_type']);
+
+        if (!isset($data['location']) || !isset($data['date']) || !isset($data['quantity'])) {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Missing required fields"
+                "message" => "Missing required fields (location, date, quantity)"
             ));
             exit();
         }
 
         $location = $data['location'];
-        $code = $data['code'];
+        // Support backward compatibility: if 'code' is sent, use it as museum
+        $museum = $data['museum'] ?? $data['code'] ?? '';
+        $ticket_type = $data['ticket_type'] ?? '';
         $date = $data['date'];
         $time = isset($data['time']) && !empty($data['time']) ? $data['time'] : null;
         $quantity = intval($data['quantity']);
+        $price = isset($data['price']) ? floatval($data['price']) : 0.00;
+        $notes = $data['notes'] ?? null;
+        $status = $data['status'] ?? 'available';
 
         // Use prepared statement for INSERT
-        $stmt = $conn->prepare("INSERT INTO tickets (location, code, date, time, quantity) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssssi", $location, $code, $date, $time, $quantity);
+        $stmt = $conn->prepare("INSERT INTO tickets (location, museum, ticket_type, date, time, quantity, price, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssssidss", $location, $museum, $ticket_type, $date, $time, $quantity, $price, $notes, $status);
 
         if ($stmt->execute()) {
             $insertId = $conn->insert_id;
@@ -163,24 +187,28 @@ switch($method) {
         $data = json_decode(file_get_contents("php://input"), true);
 
         // Validate required fields
-        if (!isset($data['location']) || !isset($data['code']) ||
-            !isset($data['date']) || !isset($data['quantity'])) {
+        if (!isset($data['location']) || !isset($data['date']) || !isset($data['quantity'])) {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Missing required fields"
+                "message" => "Missing required fields (location, date, quantity)"
             ));
             exit();
         }
 
         $location = $data['location'];
-        $code = $data['code'];
+        // Support backward compatibility: if 'code' is sent, use it as museum
+        $museum = $data['museum'] ?? $data['code'] ?? '';
+        $ticket_type = $data['ticket_type'] ?? '';
         $date = $data['date'];
         $time = isset($data['time']) && !empty($data['time']) ? $data['time'] : null;
         $quantity = intval($data['quantity']);
+        $price = isset($data['price']) ? floatval($data['price']) : 0.00;
+        $notes = $data['notes'] ?? null;
+        $status = $data['status'] ?? 'available';
 
         // Use prepared statement for UPDATE
-        $stmt = $conn->prepare("UPDATE tickets SET location = ?, code = ?, date = ?, time = ?, quantity = ? WHERE id = ?");
-        $stmt->bind_param("ssssii", $location, $code, $date, $time, $quantity, $id);
+        $stmt = $conn->prepare("UPDATE tickets SET location = ?, museum = ?, ticket_type = ?, date = ?, time = ?, quantity = ?, price = ?, notes = ?, status = ? WHERE id = ?");
+        $stmt->bind_param("sssssidssi", $location, $museum, $ticket_type, $date, $time, $quantity, $price, $notes, $status, $id);
 
         if ($stmt->execute()) {
             $affectedRows = $stmt->affected_rows;

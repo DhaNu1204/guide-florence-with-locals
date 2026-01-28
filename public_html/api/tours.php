@@ -21,6 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // Include database configuration
 require_once 'config.php';
 
+// Apply rate limiting based on HTTP method
+autoRateLimit('tours');
+
 // Create database connection using credentials from config.php
 $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
 

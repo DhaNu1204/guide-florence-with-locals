@@ -12,6 +12,9 @@
 
 require_once 'config.php';
 
+// Apply rate limiting (read operations)
+applyRateLimit('read');
+
 // Handle request based on parameters
 $guide_id = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
 $period = isset($_GET['period']) ? $_GET['period'] : null;
@@ -36,8 +39,10 @@ try {
 
 /**
  * Get payment summary for all guides
+ * Fixed: unpaid_tours now correctly counts PAST tours with guide assigned but NO payment recorded
  */
 function getAllGuidePaymentSummaries($conn) {
+    // Get base summary from view
     $sql = "SELECT * FROM guide_payment_summary ORDER BY total_payments_received DESC, guide_name";
 
     $result = $conn->query($sql);
@@ -49,6 +54,54 @@ function getAllGuidePaymentSummaries($conn) {
             $row['total_payments_received'] = floatval($row['total_payments_received']);
             $row['cash_payments'] = floatval($row['cash_payments']);
             $row['bank_payments'] = floatval($row['bank_payments']);
+
+            // Calculate CORRECT unpaid_tours count:
+            // Past tours (completed) + Guide assigned + NO payment recorded for that tour
+            $guide_id = intval($row['guide_id']);
+            $unpaidQuery = $conn->prepare("
+                SELECT COUNT(*) as unpaid_count
+                FROM tours t
+                WHERE t.guide_id = ?
+                  AND t.date < CURDATE()
+                  AND t.cancelled = 0
+                  AND t.title NOT LIKE '%Entry Ticket%'
+                  AND t.title NOT LIKE '%Entrance Ticket%'
+                  AND t.title NOT LIKE '%Priority Ticket%'
+                  AND t.title NOT LIKE '%Skip the Line%'
+                  AND t.title NOT LIKE '%Skip-the-Line%'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM payments p
+                      WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
+                  )
+            ");
+            $unpaidQuery->bind_param("i", $guide_id);
+            $unpaidQuery->execute();
+            $unpaidResult = $unpaidQuery->get_result();
+            $unpaidRow = $unpaidResult->fetch_assoc();
+            $row['unpaid_tours'] = intval($unpaidRow['unpaid_count']);
+
+            // Calculate paid_tours correctly (past tours WITH payment recorded)
+            $paidQuery = $conn->prepare("
+                SELECT COUNT(DISTINCT t.id) as paid_count
+                FROM tours t
+                INNER JOIN payments p ON p.tour_id = t.id AND p.guide_id = t.guide_id
+                WHERE t.guide_id = ?
+                  AND t.date < CURDATE()
+                  AND t.cancelled = 0
+                  AND t.title NOT LIKE '%Entry Ticket%'
+                  AND t.title NOT LIKE '%Entrance Ticket%'
+                  AND t.title NOT LIKE '%Priority Ticket%'
+                  AND t.title NOT LIKE '%Skip the Line%'
+                  AND t.title NOT LIKE '%Skip-the-Line%'
+            ");
+            $paidQuery->bind_param("i", $guide_id);
+            $paidQuery->execute();
+            $paidResult = $paidQuery->get_result();
+            $paidRow = $paidResult->fetch_assoc();
+            $row['paid_tours'] = intval($paidRow['paid_count']);
+
+            // Total tours = unpaid + paid (past completed tours only, excluding tickets)
+            $row['total_tours'] = $row['unpaid_tours'] + $row['paid_tours'];
 
             // Calculate percentages
             if ($row['total_tours'] > 0) {

@@ -12,6 +12,9 @@ if (file_exists(__DIR__ . '/Encryption.php')) {
     require_once __DIR__ . '/Encryption.php';
 }
 
+// Apply rate limiting for Bokun sync operations (stricter: 10 per minute)
+applyRateLimit('bokun_sync');
+
 // Simple auth check function for API endpoints
 function checkAuth() {
     $headers = getallheaders();

@@ -862,7 +862,8 @@ const Tours = () => {
                                           Cancelled
                                         </span>
                                       )}
-                                      {tour.rescheduled && !tour.cancelled && (
+                                      {tour.rescheduled && !tour.cancelled && tour.original_date && tour.original_time &&
+                                       (tour.original_date !== tour.date || tour.original_time !== tour.time) && (
                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gold-100 text-gold-800" title={`Originally scheduled for ${tour.original_date} at ${tour.original_time}`}>
                                           Rescheduled
                                         </span>
