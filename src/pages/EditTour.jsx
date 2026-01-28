@@ -170,7 +170,8 @@ const EditTour = () => {
       }
       
       setTour(tourToEdit);
-      setGuides(guidesData);
+      // Handle paginated response - extract data array
+      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
       
       // Set form data with tour values
       setFormData({

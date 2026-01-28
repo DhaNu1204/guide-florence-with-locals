@@ -64,7 +64,8 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
   const loadGuides = async () => {
     try {
       const guidesData = await getGuides();
-      setGuides(guidesData);
+      // Handle paginated response - extract data array
+      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
     } catch (error) {
       console.error('Error loading guides:', error);
     }
