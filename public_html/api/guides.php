@@ -129,33 +129,45 @@ else if ($method === 'POST') {
         exit();
     }
 
-    // SECURITY: Insert using prepared statement
-    $stmt = $conn->prepare("INSERT INTO guides (name, phone, email, languages, bio, photo_url) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssssss", $name, $phone, $email, $languages, $bio, $photo_url);
+    // SECURITY: Insert using prepared statement with duplicate email handling
+    try {
+        $stmt = $conn->prepare("INSERT INTO guides (name, phone, email, languages, bio, photo_url) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssss", $name, $phone, $email, $languages, $bio, $photo_url);
 
-    if ($stmt->execute()) {
-        $guide_id = $conn->insert_id;
+        if ($stmt->execute()) {
+            $guide_id = $conn->insert_id;
 
-        // Return the created guide using prepared statement
-        $stmt = $conn->prepare("SELECT * FROM guides WHERE id = ?");
-        $stmt->bind_param("i", $guide_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $guide = $result->fetch_assoc();
+            // Return the created guide using prepared statement
+            $stmt = $conn->prepare("SELECT * FROM guides WHERE id = ?");
+            $stmt->bind_param("i", $guide_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $guide = $result->fetch_assoc();
 
-        // Convert languages string to array for frontend consistency
-        if (!empty($guide['languages'])) {
-            $guide['languages'] = array_map('trim', explode(',', $guide['languages']));
+            // Convert languages string to array for frontend consistency
+            if (!empty($guide['languages'])) {
+                $guide['languages'] = array_map('trim', explode(',', $guide['languages']));
+            } else {
+                $guide['languages'] = [];
+            }
+
+            http_response_code(201); // Created
+            echo json_encode($guide);
         } else {
-            $guide['languages'] = [];
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to add guide']);
+            error_log("Guide insert error: " . $stmt->error);
         }
-
-        http_response_code(201); // Created
-        echo json_encode($guide);
-    } else {
-        http_response_code(500);
-        echo json_encode(['error' => 'Failed to add guide']);
-        error_log("Guide insert error: " . $stmt->error);
+    } catch (mysqli_sql_exception $e) {
+        // Handle duplicate email error (MySQL error code 1062)
+        if ($e->getCode() == 1062 || strpos($e->getMessage(), 'Duplicate entry') !== false) {
+            http_response_code(409); // Conflict
+            echo json_encode(['error' => 'A guide with this email already exists']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
+            error_log("Guide insert error: " . $e->getMessage());
+        }
     }
 }
 
@@ -228,30 +240,42 @@ else if ($method === 'PUT') {
         exit();
     }
 
-    // SECURITY: Update using prepared statement
-    $stmt = $conn->prepare("UPDATE guides SET name = ?, phone = ?, email = ?, languages = ?, bio = ?, photo_url = ? WHERE id = ?");
-    $stmt->bind_param("ssssssi", $name, $phone, $email, $languages, $bio, $photo_url, $guideId);
+    // SECURITY: Update using prepared statement with duplicate email handling
+    try {
+        $stmt = $conn->prepare("UPDATE guides SET name = ?, phone = ?, email = ?, languages = ?, bio = ?, photo_url = ? WHERE id = ?");
+        $stmt->bind_param("ssssssi", $name, $phone, $email, $languages, $bio, $photo_url, $guideId);
 
-    if ($stmt->execute()) {
-        // Return the updated guide using prepared statement
-        $stmt = $conn->prepare("SELECT * FROM guides WHERE id = ?");
-        $stmt->bind_param("i", $guideId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $guide = $result->fetch_assoc();
+        if ($stmt->execute()) {
+            // Return the updated guide using prepared statement
+            $stmt = $conn->prepare("SELECT * FROM guides WHERE id = ?");
+            $stmt->bind_param("i", $guideId);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $guide = $result->fetch_assoc();
 
-        // Convert languages string to array for frontend consistency
-        if (!empty($guide['languages'])) {
-            $guide['languages'] = array_map('trim', explode(',', $guide['languages']));
+            // Convert languages string to array for frontend consistency
+            if (!empty($guide['languages'])) {
+                $guide['languages'] = array_map('trim', explode(',', $guide['languages']));
+            } else {
+                $guide['languages'] = [];
+            }
+
+            echo json_encode($guide);
         } else {
-            $guide['languages'] = [];
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to update guide']);
+            error_log("Guide update error: " . $stmt->error);
         }
-
-        echo json_encode($guide);
-    } else {
-        http_response_code(500);
-        echo json_encode(['error' => 'Failed to update guide']);
-        error_log("Guide update error: " . $stmt->error);
+    } catch (mysqli_sql_exception $e) {
+        // Handle duplicate email error (MySQL error code 1062)
+        if ($e->getCode() == 1062 || strpos($e->getMessage(), 'Duplicate entry') !== false) {
+            http_response_code(409); // Conflict
+            echo json_encode(['error' => 'Another guide already has this email']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
+            error_log("Guide update error: " . $e->getMessage());
+        }
     }
 }
 
