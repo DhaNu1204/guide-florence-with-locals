@@ -1,6 +1,11 @@
 <?php
 require_once 'HttpClient.php';
 
+// Include SentryLogger if available (for error tracking)
+if (file_exists(__DIR__ . '/SentryLogger.php')) {
+    require_once __DIR__ . '/SentryLogger.php';
+}
+
 class BokunAPI {
     private $accessKey;
     private $secretKey;
@@ -148,6 +153,20 @@ class BokunAPI {
             
         } catch (Exception $e) {
             error_log("BokunAPI: Request failed: " . $e->getMessage());
+
+            // Send to Sentry if available
+            if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+                sentry_add_breadcrumb("Bokun API request to $endpoint", 'http', 'error', [
+                    'method' => $method,
+                    'url' => $url
+                ]);
+                sentry_capture_exception($e, [
+                    'bokun_endpoint' => $endpoint,
+                    'bokun_method' => $method,
+                    'http_code' => $httpCode ?? null
+                ]);
+            }
+
             throw $e;
         }
     }
@@ -166,34 +185,73 @@ class BokunAPI {
     
     /**
      * Get bookings for date range
+     * Note: Use SUPPLIER role for OTA bookings (Viator, GetYourGuide)
+     * Use SELLER role for direct bookings
      */
-    public function getBookings($startDate, $endDate, $page = 1, $pageSize = 50) {
-        // Use the booking-search endpoint confirmed working by Bokun support
+    public function getBookings($startDate, $endDate, $page = 1, $pageSize = 200) {
+        // Collect all bookings from both SUPPLIER (OTA) and SELLER (direct) roles
+        $allBookings = [];
+        $seenIds = [];
+
+        // Use larger page size to get more bookings per request
+        $actualPageSize = max($pageSize, 200);
+
+        // Roles to fetch - SUPPLIER for OTA bookings (Viator, GetYourGuide), SELLER for direct
+        $roles = ['SUPPLIER', 'SELLER'];
+
+        foreach ($roles as $role) {
+            try {
+                error_log("BokunAPI: Fetching bookings with role: $role, pageSize: $actualPageSize");
+
+                // Fetch with pagination to get all bookings
+                $pageNum = 0;
+                $hasMore = true;
+
+                while ($hasMore && $pageNum < 10) { // Max 10 pages (2000 bookings) as safety limit
+                    $result = $this->makeRequest('POST', '/booking.json/booking-search', [
+                        'bookingRole' => $role,
+                        'bookingStatuses' => ['CONFIRMED', 'PENDING', 'CANCELLED'],
+                        'pageSize' => $actualPageSize,
+                        'page' => $pageNum,
+                        'startDateRange' => [
+                            'from' => $startDate . 'T00:00:00.000Z',
+                            'to' => $endDate . 'T23:59:59.999Z',
+                            'includeLower' => true,
+                            'includeUpper' => true
+                        ]
+                    ]);
+
+                    if ($result && isset($result['items']) && count($result['items']) > 0) {
+                        error_log("BokunAPI: Page $pageNum - Found " . count($result['items']) . " bookings with role $role");
+                        foreach ($result['items'] as $booking) {
+                            $bookingId = $booking['id'] ?? null;
+                            if ($bookingId && !isset($seenIds[$bookingId])) {
+                                $seenIds[$bookingId] = true;
+                                $allBookings[] = $booking;
+                            }
+                        }
+
+                        // Check if there are more pages
+                        $totalHits = $result['totalHits'] ?? count($result['items']);
+                        $hasMore = (($pageNum + 1) * $actualPageSize) < $totalHits;
+                        $pageNum++;
+                    } else {
+                        $hasMore = false;
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("BokunAPI: Failed to fetch with role $role: " . $e->getMessage());
+                // Continue to next role
+            }
+        }
+
+        if (count($allBookings) > 0) {
+            error_log("BokunAPI: Total unique bookings found: " . count($allBookings));
+            return $allBookings;
+        }
+
+        // Fallback to legacy endpoints if new method fails
         $requests = [
-            // PRIMARY: The endpoint confirmed working by Bokun support (POST /booking.json/booking-search)
-            ['POST', '/booking.json/booking-search', [
-                'bookingRole' => 'SELLER',
-                'bookingStatuses' => ['CONFIRMED', 'PENDING', 'CANCELLED'],
-                'pageSize' => $pageSize,
-                'startDateRange' => [
-                    'from' => $startDate . 'T00:00:00.000Z',
-                    'to' => $endDate . 'T23:59:59.999Z',
-                    'includeLower' => true,
-                    'includeUpper' => true
-                ]
-            ]],
-            // FALLBACK: Try with simpler date format
-            ['POST', '/booking.json/booking-search', [
-                'bookingRole' => 'SELLER',
-                'bookingStatuses' => ['CONFIRMED', 'CANCELLED'],
-                'pageSize' => $pageSize,
-                'startDateRange' => [
-                    'from' => date('c', strtotime($startDate)),
-                    'to' => date('c', strtotime($endDate)),
-                    'includeLower' => true,
-                    'includeUpper' => true
-                ]
-            ]],
             // Legacy endpoints as fallback
             ['GET', '/booking.json/search?start=' . $startDate . '&end=' . $endDate . '&page=' . $page . '&pageSize=' . $pageSize, null],
             ['POST', '/booking.json/search', [
@@ -303,8 +361,14 @@ class BokunAPI {
         $date = null;
         $time = '09:00'; // Default time if not provided
 
-        // Try to get date from startDateTime first (this is the actual tour date/time)
-        // IMPORTANT: Bokun timestamps are in UTC, convert to Europe/Rome timezone
+        // PRIORITY: Use startTimeStr if available - this is the LOCAL time (already in tour timezone)
+        // This is more accurate than converting UTC timestamps which can have timezone issues
+        if (isset($productBooking['fields']['startTimeStr'])) {
+            $time = $productBooking['fields']['startTimeStr'];
+        }
+
+        // Extract date from startDateTime or startDate
+        // Note: For date extraction, we use UTC conversion but for TIME we use startTimeStr above
         $romeTimezone = new DateTimeZone('Europe/Rome');
         $utcTimezone = new DateTimeZone('UTC');
 
@@ -318,7 +382,10 @@ class BokunAPI {
             }
             $utcDateTime->setTimezone($romeTimezone);
             $date = $utcDateTime->format('Y-m-d');
-            $time = $utcDateTime->format('H:i');
+            // Only use timestamp-derived time if startTimeStr wasn't available
+            if (!isset($productBooking['fields']['startTimeStr'])) {
+                $time = $utcDateTime->format('H:i');
+            }
         } elseif (isset($productBooking['startTime'])) {
             if (is_numeric($productBooking['startTime'])) {
                 $utcDateTime = new DateTime('@' . intval($productBooking['startTime'] / 1000), $utcTimezone);
@@ -327,7 +394,9 @@ class BokunAPI {
             }
             $utcDateTime->setTimezone($romeTimezone);
             $date = $utcDateTime->format('Y-m-d');
-            $time = $utcDateTime->format('H:i');
+            if (!isset($productBooking['fields']['startTimeStr'])) {
+                $time = $utcDateTime->format('H:i');
+            }
         } elseif (isset($productBooking['startDate'])) {
             if (is_numeric($productBooking['startDate'])) {
                 $utcDateTime = new DateTime('@' . intval($productBooking['startDate'] / 1000), $utcTimezone);
@@ -336,10 +405,6 @@ class BokunAPI {
             }
             $utcDateTime->setTimezone($romeTimezone);
             $date = $utcDateTime->format('Y-m-d');
-            // Try to get time from fields.startTimeStr
-            if (isset($productBooking['fields']['startTimeStr'])) {
-                $time = $productBooking['fields']['startTimeStr'];
-            }
         } elseif (isset($booking['startTime'])) {
             if (is_numeric($booking['startTime'])) {
                 $utcDateTime = new DateTime('@' . intval($booking['startTime'] / 1000), $utcTimezone);
@@ -348,7 +413,9 @@ class BokunAPI {
             }
             $utcDateTime->setTimezone($romeTimezone);
             $date = $utcDateTime->format('Y-m-d');
-            $time = $utcDateTime->format('H:i');
+            if (!isset($productBooking['fields']['startTimeStr'])) {
+                $time = $utcDateTime->format('H:i');
+            }
         }
 
         // CRITICAL: Do NOT use creationDate as tour date!
@@ -560,9 +627,18 @@ class BokunAPI {
         } catch (Exception $e) {
             error_log("BokunAPI: Connection test failed - " . $e->getMessage());
             error_log("BokunAPI: Error code - " . $e->getCode());
-            
+
+            // Send to Sentry if available
+            if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+                sentry_capture_exception($e, [
+                    'context' => 'bokun_connection_test',
+                    'base_url' => $this->baseUrl,
+                    'vendor_id' => $this->vendorId
+                ]);
+            }
+
             return [
-                'success' => false, 
+                'success' => false,
                 'error' => $e->getMessage(),
                 'error_code' => $e->getCode(),
                 'base_url' => $this->baseUrl,
