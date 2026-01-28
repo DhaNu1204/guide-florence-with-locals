@@ -6,7 +6,9 @@ import {
   FiDollarSign,
   FiEye,
   FiAlertCircle,
-  FiRefreshCw
+  FiRefreshCw,
+  FiUsers,
+  FiMapPin
 } from 'react-icons/fi';
 import Card from './UI/Card';
 import Button from './UI/Button';
@@ -49,46 +51,28 @@ const Dashboard = () => {
   const loadDashboardData = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      // Load tours data with upcoming filter to get future tours only
-      // This ensures we get 2026+ data instead of old 2025 records
       const toursResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
       const guidesData = await getGuides();
 
-      // Extract tours array from paginated response
       const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
 
       if (toursData && guidesData) {
-        // Filter out ticket products using smart keyword detection
-        // Tickets don't need guide assignment
         const filteredTours = filterToursOnly(toursData);
-
         calculateStats(filteredTours, guidesData);
 
-        // Get recent and upcoming tours
         const now = new Date();
 
         const recent = filteredTours
           .filter(tour => {
-            // Show unassigned tours for today, tomorrow, and future dates
             if (tour.cancelled) return false;
-
             const tourDate = new Date(tour.date);
             const todayDate = new Date();
-            todayDate.setHours(0, 0, 0, 0); // Reset to start of day for comparison
-
-            // Only show tours from today onwards
+            todayDate.setHours(0, 0, 0, 0);
             if (tourDate < todayDate) return false;
-
-            // Ticket products already filtered out by filterToursOnly above
-
-            // Only show unassigned tours (no guide assigned)
             const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
-
-            // Show only unassigned tours
             return !hasGuide;
           })
           .sort((a, b) => {
-            // Sort by date AND time (chronological order)
             const dateA = new Date(a.date + ' ' + a.time);
             const dateB = new Date(b.date + ' ' + b.time);
             return dateA - dateB;
@@ -98,23 +82,17 @@ const Dashboard = () => {
         const upcoming = filteredTours
           .filter(tour => {
             if (tour.cancelled) return false;
-
             const tourDate = new Date(tour.date);
-            if (tourDate < now) return false; // Must be future tours
-
-            // Ticket products already filtered out by filterToursOnly above
-
-            // Show all upcoming tours regardless of guide assignment or payment status
+            if (tourDate < now) return false;
             return true;
           })
           .sort((a, b) => {
-            // Sort by date AND time (chronological order)
             const dateA = new Date(a.date + ' ' + a.time);
             const dateB = new Date(b.date + ' ' + b.time);
             return dateA - dateB;
           })
           .slice(0, 15);
-          
+
         setRecentTours(recent);
         setUpcomingTours(upcoming);
       }
@@ -128,38 +106,25 @@ const Dashboard = () => {
 
   const calculateStats = (tours, guides) => {
     const now = new Date();
-    now.setHours(0, 0, 0, 0); // Reset to start of day
+    now.setHours(0, 0, 0, 0);
 
-    // Count unassigned tours for future dates only
     const unassignedTours = tours.filter(tour => {
       if (tour.cancelled) return false;
-
       const tourDate = new Date(tour.date);
       tourDate.setHours(0, 0, 0, 0);
-
-      // Only future tours
       if (tourDate < now) return false;
-
-      // Check if guide is not assigned
       const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
       return !hasGuide;
     }).length;
 
-    // Count tours with unpaid or partial payment status (past tours only)
     const unpaidTours = tours.filter(tour => {
       if (tour.cancelled) return false;
-
       const tourDate = new Date(tour.date);
       tourDate.setHours(0, 0, 0, 0);
-
-      // Only count past tours
       if (tourDate >= now) return false;
-
-      // Check enhanced payment status
       if (tour.payment_status) {
         return tour.payment_status === 'unpaid' || tour.payment_status === 'partial';
       }
-      // Fallback to legacy paid field
       return !tour.paid;
     }).length;
 
@@ -173,202 +138,274 @@ const Dashboard = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-terracotta-500"></div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header with Sync Status */}
+      {/* Header with Tuscan styling */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="flex items-center space-x-3 text-sm text-gray-500">
-          <span>Last sync: {formatTimeAgo(lastSync)}</span>
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-stone-900">Dashboard</h1>
+          <p className="text-stone-500 text-sm mt-1">Welcome to Florence with Locals</p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className="hidden sm:inline text-sm text-stone-500">
+            Last sync: {formatTimeAgo(lastSync)}
+          </span>
           <button
             onClick={syncNow}
             disabled={isSyncing}
-            className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${
-              isSyncing ? 'text-blue-500' : 'text-gray-500 hover:text-gray-700'
+            className={`p-3 min-h-[44px] min-w-[44px] rounded-tuscan-lg hover:bg-stone-100 active:bg-stone-200 transition-all touch-manipulation flex items-center justify-center ${
+              isSyncing ? 'text-terracotta-500' : 'text-stone-500 hover:text-terracotta-600'
             }`}
             title={isSyncing ? 'Syncing...' : 'Sync now'}
           >
-            <FiRefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            <FiRefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
       {/* Sync Error Alert */}
       {syncError && (
-        <div className="bg-orange-50 border border-orange-200 text-orange-700 px-4 py-2 rounded-lg flex items-center text-sm">
-          <FiAlertCircle className="mr-2 flex-shrink-0" />
+        <div className="bg-gold-50 border border-gold-200 text-gold-800 px-4 py-3 rounded-tuscan-lg flex items-center text-sm shadow-tuscan-sm">
+          <FiAlertCircle className="mr-2 flex-shrink-0 text-gold-600" />
           <span>Sync error: {syncError}</span>
         </div>
       )}
 
       {/* Error Alert */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start">
-          <FiAlertCircle className="text-xl mr-3 mt-0.5 flex-shrink-0" />
+        <div className="bg-terracotta-50 border border-terracotta-200 text-terracotta-800 px-4 py-3 rounded-tuscan-lg flex items-start shadow-tuscan-sm">
+          <FiAlertCircle className="text-xl mr-3 mt-0.5 flex-shrink-0 text-terracotta-600" />
           <div className="flex-1">
             <p className="font-medium">Error</p>
-            <p className="text-sm mt-1">{error}</p>
+            <p className="text-sm mt-1 text-terracotta-700">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="ml-4 text-red-500 hover:text-red-700"
+            className="ml-2 p-2 min-h-[44px] min-w-[44px] text-terracotta-500 hover:text-terracotta-700 hover:bg-terracotta-100 active:bg-terracotta-200 rounded-lg transition-colors touch-manipulation flex items-center justify-center"
           >
-            ×
+            <span className="text-xl font-bold">×</span>
           </button>
         </div>
       )}
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 mb-1">Unassigned Tours</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.unassignedTours}</p>
-              <p className="text-xs text-gray-500 mt-1">Future tours without guide</p>
+
+      {/* Stats Grid with Tuscan styling */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+        {/* Unassigned Tours Card */}
+        <div className="group bg-gradient-to-br from-gold-50 to-gold-100/50 rounded-tuscan-xl border border-gold-200/50 p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gold-700 mb-2">Unassigned Tours</p>
+              <p className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
+                {stats.unassignedTours}
+              </p>
+              <p className="text-xs text-stone-500 mt-2 flex items-center">
+                <FiCalendar className="mr-1" />
+                Future tours without guide
+              </p>
             </div>
-            <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-              <FiAlertCircle className="text-orange-600 text-xl" />
+            <div className="w-14 h-14 bg-gold-200/50 rounded-tuscan-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+              <FiUsers className="text-gold-600 text-2xl" />
             </div>
           </div>
+          {stats.unassignedTours > 0 && (
+            <div className="mt-4 pt-4 border-t border-gold-200/50">
+              <Link
+                to="/tours"
+                className="text-sm font-medium text-gold-700 hover:text-gold-800 flex items-center group-hover:translate-x-1 transition-transform"
+              >
+                Assign guides now
+                <span className="ml-1">→</span>
+              </Link>
+            </div>
+          )}
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 mb-1">Unpaid Tours</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.unpaidTours}</p>
-              <p className="text-xs text-gray-500 mt-1">Past tours pending payment</p>
+        {/* Unpaid Tours Card */}
+        <div className={`group rounded-tuscan-xl border p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300 ${
+          stats.unpaidTours > 0
+            ? 'bg-gradient-to-br from-terracotta-50 to-terracotta-100/50 border-terracotta-200/50'
+            : 'bg-gradient-to-br from-olive-50 to-olive-100/50 border-olive-200/50'
+        }`}>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <p className={`text-sm font-medium mb-2 ${
+                stats.unpaidTours > 0 ? 'text-terracotta-700' : 'text-olive-700'
+              }`}>
+                Unpaid Tours
+              </p>
+              <p className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
+                {stats.unpaidTours}
+              </p>
+              <p className="text-xs text-stone-500 mt-2 flex items-center">
+                <FiDollarSign className="mr-1" />
+                Past tours pending payment
+              </p>
             </div>
-            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-              stats.unpaidTours > 0 ? 'bg-red-100' : 'bg-green-100'
+            <div className={`w-14 h-14 rounded-tuscan-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300 ${
+              stats.unpaidTours > 0 ? 'bg-terracotta-200/50' : 'bg-olive-200/50'
             }`}>
-              <FiDollarSign className={`text-xl ${
-                stats.unpaidTours > 0 ? 'text-red-600' : 'text-green-600'
+              <FiDollarSign className={`text-2xl ${
+                stats.unpaidTours > 0 ? 'text-terracotta-600' : 'text-olive-600'
               }`} />
             </div>
           </div>
+          {stats.unpaidTours > 0 && (
+            <div className="mt-4 pt-4 border-t border-terracotta-200/50">
+              <Link
+                to="/payments"
+                className="text-sm font-medium text-terracotta-700 hover:text-terracotta-800 flex items-center group-hover:translate-x-1 transition-transform"
+              >
+                Process payments
+                <span className="ml-1">→</span>
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Recent Activity and Upcoming Tours */}
+      {/* Tours Lists */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Upcoming Tours */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Upcoming Tours</h2>
+        <div className="bg-white rounded-tuscan-xl shadow-tuscan border border-stone-200/50 overflow-hidden">
+          <div className="px-5 py-4 bg-gradient-to-r from-olive-500 to-olive-600 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white flex items-center">
+              <FiCalendar className="mr-2" />
+              Upcoming Tours
+            </h2>
             <Link to="/tours">
-              <Button variant="ghost" size="sm" icon={FiEye}>
+              <button className="text-olive-100 hover:text-white text-sm font-medium flex items-center transition-colors">
                 View All
-              </Button>
+                <FiEye className="ml-1" />
+              </button>
             </Link>
           </div>
-          
-          {upcomingTours.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <FiCalendar className="text-3xl mx-auto mb-2 opacity-50" />
-              <p>No upcoming tours</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {upcomingTours.map((tour) => (
-                <div
-                  key={tour.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-900">{tour.title}</h3>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                      <span>{new Date(tour.date).toLocaleDateString('en-GB')}</span>
-                      <span>{tour.time}</span>
-                      <span>{tour.guide_name || 'Unassigned'}</span>
+
+          <div className="p-4">
+            {upcomingTours.length === 0 ? (
+              <div className="text-center py-8 text-stone-400">
+                <FiCalendar className="text-4xl mx-auto mb-3 opacity-50" />
+                <p className="font-medium">No upcoming tours</p>
+                <p className="text-sm mt-1">New bookings will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {upcomingTours.map((tour) => (
+                  <div
+                    key={tour.id}
+                    className="group flex items-center justify-between p-3 rounded-tuscan-lg border border-stone-100 hover:border-olive-200 hover:bg-olive-50/30 transition-all duration-200 cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-stone-800 truncate group-hover:text-olive-700 transition-colors">
+                        {tour.title}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-2 md:gap-3 text-sm text-stone-500 mt-1">
+                        <span className="flex items-center">
+                          <FiCalendar className="mr-1 text-stone-400" />
+                          {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </span>
+                        <span className="flex items-center">
+                          <FiClock className="mr-1 text-stone-400" />
+                          {tour.time}
+                        </span>
+                        <span className={`flex items-center ${tour.guide_name ? 'text-olive-600' : 'text-gold-600'}`}>
+                          <FiUsers className="mr-1" />
+                          {tour.guide_name || 'Unassigned'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
                       {tour.language && (
-                        <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-medium rounded">
-                          🗣️ {tour.language}
+                        <span className="hidden sm:inline-flex items-center px-2 py-1 bg-renaissance-50 text-renaissance-700 text-xs font-medium rounded-full">
+                          {tour.language}
+                        </span>
+                      )}
+                      {tour.booking_channel && (
+                        <span className="inline-flex px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium rounded-full">
+                          {tour.booking_channel}
                         </span>
                       )}
                     </div>
                   </div>
-                  {tour.booking_channel && (
-                    <div className="ml-2">
-                      <span className="inline-block px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                        {tour.booking_channel}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Unassigned Tours */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Unassigned Tours</h2>
+        <div className="bg-white rounded-tuscan-xl shadow-tuscan border border-stone-200/50 overflow-hidden">
+          <div className="px-5 py-4 bg-gradient-to-r from-gold-500 to-gold-600 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white flex items-center">
+              <FiAlertCircle className="mr-2" />
+              Needs Attention
+            </h2>
             <Link to="/tours">
-              <Button variant="ghost" size="sm" icon={FiEye}>
+              <button className="text-gold-100 hover:text-white text-sm font-medium flex items-center transition-colors">
                 View All
-              </Button>
+                <FiEye className="ml-1" />
+              </button>
             </Link>
           </div>
-          
-          {recentTours.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <FiClock className="text-3xl mx-auto mb-2 opacity-50" />
-              <p>No unassigned tours</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {recentTours.map((tour) => (
-                <div
-                  key={tour.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-900">{tour.title}</h3>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                      <span>{new Date(tour.date).toLocaleDateString('en-GB')}</span>
-                      <span>{tour.time}</span>
-                      <span>{tour.guide_name || 'Unassigned'}</span>
-                      {tour.language && (
-                        <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-medium rounded">
-                          🗣️ {tour.language}
+
+          <div className="p-4">
+            {recentTours.length === 0 ? (
+              <div className="text-center py-8 text-stone-400">
+                <FiClock className="text-4xl mx-auto mb-3 opacity-50" />
+                <p className="font-medium">All tours are assigned!</p>
+                <p className="text-sm mt-1">Great job keeping up</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentTours.map((tour) => (
+                  <div
+                    key={tour.id}
+                    className="group flex items-center justify-between p-3 rounded-tuscan-lg border border-stone-100 hover:border-gold-200 hover:bg-gold-50/30 transition-all duration-200 cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-stone-800 truncate group-hover:text-gold-700 transition-colors">
+                        {tour.title}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-2 md:gap-3 text-sm text-stone-500 mt-1">
+                        <span className="flex items-center">
+                          <FiCalendar className="mr-1 text-stone-400" />
+                          {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                         </span>
-                      )}
+                        <span className="flex items-center">
+                          <FiClock className="mr-1 text-stone-400" />
+                          {tour.time}
+                        </span>
+                        <span className="text-gold-600 font-medium">
+                          Needs Guide
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-full ${
+                        tour.payment_status === 'paid' || tour.paid
+                          ? 'bg-olive-100 text-olive-700'
+                          : tour.payment_status === 'partial'
+                          ? 'bg-gold-100 text-gold-700'
+                          : 'bg-terracotta-100 text-terracotta-700'
+                      }`}>
+                        {tour.payment_status === 'paid' || tour.paid
+                          ? 'Paid'
+                          : tour.payment_status === 'partial'
+                          ? 'Partial'
+                          : 'Unpaid'}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
-                      tour.payment_status === 'paid' || tour.paid
-                        ? 'bg-green-100 text-green-700'
-                        : tour.payment_status === 'partial'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {tour.payment_status === 'paid' || tour.paid
-                        ? 'Paid'
-                        : tour.payment_status === 'partial'
-                        ? 'Partial'
-                        : 'Unpaid'}
-                    </span>
-                    {tour.booking_channel && (
-                      <span className="inline-block px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                        {tour.booking_channel}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-
     </div>
   );
 };

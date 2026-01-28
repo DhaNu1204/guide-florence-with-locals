@@ -199,7 +199,7 @@ const Tours = () => {
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
-  const [showUpcoming, setShowUpcoming] = useState(false);
+  const [showUpcoming, setShowUpcoming] = useState(true); // Default to upcoming to show 2026 data
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTour, setSelectedTour] = useState(null);
   const [pagination, setPagination] = useState({
@@ -211,7 +211,7 @@ const Tours = () => {
     has_prev: false
   });
 
-  const toursPerPage = 50;
+  const toursPerPage = 100; // Increased to show more tours per page
 
   // Load data function with server-side filtering
   const loadData = async (forceRefresh = false, page = 1, filters = {}) => {
@@ -468,7 +468,7 @@ const Tours = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg text-gray-600">Loading tours...</div>
+        <div className="text-lg text-stone-600">Loading tours...</div>
       </div>
     );
   }
@@ -476,20 +476,20 @@ const Tours = () => {
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg text-red-600">Error: {error}</div>
+        <div className="text-lg text-terracotta-600">Error: {error}</div>
       </div>
     );
   }
 
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-stone-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Tours Management</h1>
-            <p className="text-gray-600">Manage your Florence tours and bookings</p>
+            <h1 className="text-2xl font-bold text-stone-900">Tours Management</h1>
+            <p className="text-stone-600">Manage your Florence tours and bookings</p>
           </div>
           <div className="flex items-center gap-3">
             <Button
@@ -508,11 +508,11 @@ const Tours = () => {
           <h3 className="text-lg font-semibold mb-4">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Guide</label>
+              <label className="block text-sm font-medium text-stone-700 mb-2">Filter by Guide</label>
               <select
                 value={selectedGuideId}
                 onChange={(e) => setSelectedGuideId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
               >
                 <option value="all">All Guides</option>
                 {guides.map(guide => (
@@ -521,7 +521,7 @@ const Tours = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Date</label>
+              <label className="block text-sm font-medium text-stone-700 mb-2">Select Date</label>
               <div className="flex gap-2">
                 <input
                   type="date"
@@ -530,27 +530,27 @@ const Tours = () => {
                     setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
                     setShowUpcoming(false);
                   }}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
                 />
                 <button
                   onClick={() => {
                     setFilterDate(new Date());
                     setShowUpcoming(false);
                   }}
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  className={`px-4 py-2.5 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] ${
                     !showUpcoming && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
+                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
                   }`}
                 >
                   Today
                 </button>
                 <button
                   onClick={() => setShowUpcoming(!showUpcoming)}
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  className={`px-4 py-2.5 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] ${
                     showUpcoming
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
+                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
                   }`}
                   title="Show tours for the next 60 days"
                 >
@@ -567,7 +567,7 @@ const Tours = () => {
           {groupedTours.length === 0 ? (
             <Card>
               <div className="text-center py-8">
-                <p className="text-gray-500">No tours found for the selected criteria.</p>
+                <p className="text-stone-500">No tours found for the selected criteria.</p>
               </div>
             </Card>
           ) : (
@@ -582,21 +582,21 @@ const Tours = () => {
               );
 
               return (
-                <div key={dateGroup.date} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+                <div key={dateGroup.date} className="bg-white border border-stone-200 rounded-tuscan-lg shadow-tuscan overflow-hidden">
                   {/* Date Header */}
-                  <div className={`px-6 py-4 border-b border-gray-200 ${isToday ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                  <div className={`px-6 py-4 border-b border-stone-200 ${isToday ? 'bg-gold-50' : 'bg-stone-50'}`}>
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-3">
-                        <h3 className={`text-lg font-semibold ${isToday ? 'text-blue-900' : 'text-gray-900'}`}>
+                        <h3 className={`text-lg font-semibold ${isToday ? 'text-gold-900' : 'text-stone-900'}`}>
                           {format(dateObj, 'EEEE, d MMMM yyyy')}
                         </h3>
                         {isToday && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gold-100 text-gold-800">
                             Today
                           </span>
                         )}
                       </div>
-                      <div className="text-sm text-gray-600">
+                      <div className="text-sm text-stone-600">
                         {dateTourCount} tours • {dateParticipants} PAX
                       </div>
                     </div>
@@ -606,12 +606,12 @@ const Tours = () => {
                   {dateGroup.periods.map((periodGroup, periodIndex) => (
                     <div key={`${dateGroup.date}-${periodGroup.period}`}>
                       {/* Time Period Header */}
-                      <div className="bg-gray-100 px-6 py-2 border-b border-gray-200">
+                      <div className="bg-stone-100 px-6 py-2 border-b border-stone-200">
                         <div className="flex justify-between items-center">
-                          <h4 className="text-sm font-semibold text-gray-700">
+                          <h4 className="text-sm font-semibold text-stone-700">
                             {periodGroup.period}
                           </h4>
-                          <div className="text-xs text-gray-600">
+                          <div className="text-xs text-stone-600">
                             {periodGroup.tours.length} tours • {periodGroup.tours.reduce((sum, tour) => sum + getParticipantCount(tour), 0)} PAX
                           </div>
                         </div>
@@ -619,70 +619,70 @@ const Tours = () => {
 
                       {/* Tours Table */}
                       <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
+                        <table className="min-w-full divide-y divide-stone-200">
+                          <thead className="bg-stone-50">
                             <tr>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-20">
                                 Time
                               </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-24">
                                 Channel
                               </th>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-96">
+                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-96">
                                 Tour
                               </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-24">
                                 Language
                               </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-20">
                                 People
                               </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-32">
                                 Guide
                               </th>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                                 Notes
                               </th>
                             </tr>
                           </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
+                          <tbody className="bg-white divide-y divide-stone-200">
                             {periodGroup.tours.map((tour) => {
                           const guideName = guides.find(g => g.id == tour.guide_id)?.name || 'Unassigned';
                           return (
                             <tr
                               key={tour.id}
-                              className="hover:bg-gray-50 cursor-pointer"
+                              className="hover:bg-stone-50 cursor-pointer"
                               onClick={() => handleRowClick(tour)}
                             >
-                              <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-stone-900">
                                 {getBookingTime(tour)}
                               </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
                                 <div className="truncate">
                                   {tour.booking_channel || 'Website'}
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-900">
+                              <td className="px-6 py-4 text-sm text-stone-900">
                                 <div className="break-words">
                                   {tour.title}
                                 </div>
                               </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
+                                <span className="inline-block px-2 py-1 bg-renaissance-50 text-renaissance-700 text-xs font-medium rounded-tuscan">
                                   {getTourLanguage(tour)}
                                 </span>
                               </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
                                 {getParticipantCount(tour)} PAX
                               </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900" onClick={(e) => e.stopPropagation()}>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                   {editingGuides[tour.id] !== undefined ? (
                                     <div className="flex items-center gap-2">
                                       <select
                                         value={editingGuides[tour.id]}
                                         onChange={(e) => handleGuideChange(tour.id, e.target.value)}
-                                        className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
                                       >
                                         <option value="">Unassigned</option>
                                         {guides.map(guide => (
@@ -692,10 +692,10 @@ const Tours = () => {
                                       <button
                                         onClick={() => saveGuideAssignment(tour.id)}
                                         disabled={savingChanges[`guide_${tour.id}`]}
-                                        className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
+                                        className="p-2 min-h-[40px] min-w-[40px] text-olive-600 hover:text-olive-800 hover:bg-olive-50 active:bg-olive-100 disabled:opacity-50 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
                                         title="Save guide assignment"
                                       >
-                                        <FiSave size={16} />
+                                        <FiSave size={18} />
                                       </button>
                                       <button
                                         onClick={() => setEditingGuides(prev => {
@@ -703,16 +703,16 @@ const Tours = () => {
                                           delete newState[tour.id];
                                           return newState;
                                         })}
-                                        className="p-1 text-gray-400 hover:text-gray-600"
+                                        className="p-2 min-h-[40px] min-w-[40px] text-stone-400 hover:text-stone-600 hover:bg-stone-100 active:bg-stone-200 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
                                         title="Cancel"
                                       >
-                                        ×
+                                        <span className="text-lg font-bold">×</span>
                                       </button>
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-2">
                                       <span
-                                        className="cursor-pointer hover:bg-gray-100 px-2 py-1 rounded"
+                                        className="cursor-pointer hover:bg-stone-100 px-2 py-1 rounded-tuscan"
                                         onClick={() => setEditingGuides(prev => ({
                                           ...prev,
                                           [tour.id]: tour.guide_id || ''
@@ -724,7 +724,7 @@ const Tours = () => {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-900" onClick={(e) => e.stopPropagation()}>
+                              <td className="px-6 py-4 text-sm text-stone-900" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-start gap-2">
                                   <div className="flex flex-col gap-2 flex-1">
                                     {editingNotes[tour.id] !== undefined ? (
@@ -732,17 +732,17 @@ const Tours = () => {
                                         <textarea
                                           value={editingNotes[tour.id]}
                                           onChange={(e) => handleNotesChange(tour.id, e.target.value)}
-                                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                          className="flex-1 px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none"
                                           rows="2"
                                           placeholder="Add notes..."
                                         />
                                         <button
                                           onClick={() => saveNotes(tour.id)}
                                           disabled={savingChanges[`notes_${tour.id}`]}
-                                          className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
+                                          className="p-2 min-h-[40px] min-w-[40px] text-olive-600 hover:text-olive-800 hover:bg-olive-50 active:bg-olive-100 disabled:opacity-50 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
                                           title="Save notes"
                                         >
-                                          <FiSave size={16} />
+                                          <FiSave size={18} />
                                         </button>
                                         <button
                                           onClick={() => setEditingNotes(prev => {
@@ -750,15 +750,15 @@ const Tours = () => {
                                             delete newState[tour.id];
                                             return newState;
                                           })}
-                                          className="p-1 text-gray-400 hover:text-gray-600"
+                                          className="p-2 min-h-[40px] min-w-[40px] text-stone-400 hover:text-stone-600 hover:bg-stone-100 active:bg-stone-200 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
                                           title="Cancel"
                                         >
-                                          ×
+                                          <span className="text-lg font-bold">×</span>
                                         </button>
                                       </div>
                                     ) : (
                                       <div
-                                        className="cursor-pointer hover:bg-gray-100 px-2 py-1 rounded min-h-[2rem] flex items-center"
+                                        className="cursor-pointer hover:bg-stone-100 px-2 py-1 rounded-tuscan min-h-[2rem] flex items-center"
                                         onClick={() => setEditingNotes(prev => ({
                                           ...prev,
                                           [tour.id]: tour.notes || ''
@@ -770,17 +770,17 @@ const Tours = () => {
 
                                     <div className="flex items-center gap-2 flex-wrap">
                                       {tour.paid && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-olive-100 text-olive-800">
                                           Paid
                                         </span>
                                       )}
                                       {tour.cancelled && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-terracotta-100 text-terracotta-800">
                                           Cancelled
                                         </span>
                                       )}
                                       {tour.rescheduled && !tour.cancelled && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800" title={`Originally scheduled for ${tour.original_date} at ${tour.original_time}`}>
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gold-100 text-gold-800" title={`Originally scheduled for ${tour.original_date} at ${tour.original_time}`}>
                                           Rescheduled
                                         </span>
                                       )}
@@ -807,7 +807,7 @@ const Tours = () => {
               <div className="px-6 py-4">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                   {/* Pagination Info */}
-                  <div className="text-sm text-gray-700">
+                  <div className="text-sm text-stone-700">
                     Showing <span className="font-medium">{((pagination.current_page - 1) * pagination.per_page) + 1}</span> to{' '}
                     <span className="font-medium">
                       {Math.min(pagination.current_page * pagination.per_page, pagination.total)}
@@ -845,10 +845,10 @@ const Tours = () => {
                             key={pageNum}
                             onClick={() => handlePageChange(pageNum)}
                             disabled={loading}
-                            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                            className={`px-3 py-2 min-h-[40px] min-w-[40px] text-sm font-medium rounded-tuscan transition-colors touch-manipulation active:scale-[0.98] ${
                               currentPage === pageNum
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
+                                : 'bg-white text-stone-700 hover:bg-stone-100 active:bg-stone-200 border border-stone-300'
                             }`}
                           >
                             {pageNum}
@@ -876,8 +876,8 @@ const Tours = () => {
             <Card>
               <div className="px-6 py-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-gray-900">Summary</h3>
-                  <div className="text-sm text-gray-600">
+                  <h3 className="text-lg font-semibold text-stone-900">Summary</h3>
+                  <div className="text-sm text-stone-600">
                     Total: {totalData.totalTours} tours • {totalData.totalParticipants} PAX
                   </div>
                 </div>

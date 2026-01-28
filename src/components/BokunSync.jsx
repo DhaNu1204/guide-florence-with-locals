@@ -183,20 +183,20 @@ const BokunSync = () => {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+    <div className="bg-white rounded-tuscan-xl shadow-tuscan p-6 mb-6">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-gray-800">Bokun Integration</h2>
+        <h2 className="text-xl font-semibold text-stone-800">Bokun Integration</h2>
         <div className="flex gap-2">
           <button
             onClick={() => setShowConfig(!showConfig)}
-            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+            className="px-4 py-2 bg-stone-600 text-white rounded-tuscan hover:bg-stone-700"
           >
             {showConfig ? 'Hide' : 'Configure'}
           </button>
           {config.access_key && (
             <button
               onClick={testConnection}
-              className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+              className="px-4 py-2 bg-gold-600 text-white rounded-tuscan hover:bg-gold-700"
             >
               Test Connection
             </button>
@@ -204,10 +204,10 @@ const BokunSync = () => {
           <button
             onClick={syncBookings}
             disabled={syncing || !config.sync_enabled}
-            className={`px-4 py-2 rounded text-white ${
+            className={`px-4 py-2 rounded-tuscan text-white ${
               syncing || !config.sync_enabled
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700'
+                ? 'bg-stone-400 cursor-not-allowed'
+                : 'bg-terracotta-600 hover:bg-terracotta-700'
             }`}
           >
             {syncing ? 'Syncing...' : 'Sync Now'}
@@ -216,70 +216,70 @@ const BokunSync = () => {
       </div>
 
       {message && (
-        <div className={`p-3 rounded mb-4 ${
-          message.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+        <div className={`p-3 rounded-tuscan mb-4 ${
+          message.includes('Error') ? 'bg-terracotta-100 text-terracotta-700' : 'bg-olive-100 text-olive-700'
         }`}>
           {message}
         </div>
       )}
 
       {showConfig && (
-        <div className="bg-gray-50 p-4 rounded mb-4">
-          <h3 className="font-semibold mb-3">Bokun API Configuration</h3>
+        <div className="bg-stone-50 p-4 rounded-tuscan-lg mb-4">
+          <h3 className="font-semibold mb-3 text-stone-800">Bokun API Configuration</h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Access Key</label>
+              <label className="block text-sm font-medium text-stone-700">Access Key</label>
               <input
                 type="text"
                 value={config.access_key}
                 onChange={(e) => setConfig({...config, access_key: e.target.value})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                className="mt-1 block w-full rounded-tuscan border-stone-300 shadow-tuscan-sm focus:ring-terracotta-500 focus:border-terracotta-500"
                 placeholder="Your Bokun Access Key"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Secret Key</label>
+              <label className="block text-sm font-medium text-stone-700">Secret Key</label>
               <input
                 type="password"
                 value={config.secret_key}
                 onChange={(e) => setConfig({...config, secret_key: e.target.value})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                className="mt-1 block w-full rounded-tuscan border-stone-300 shadow-tuscan-sm focus:ring-terracotta-500 focus:border-terracotta-500"
                 placeholder="Your Bokun Secret Key"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Vendor ID</label>
+              <label className="block text-sm font-medium text-stone-700">Vendor ID</label>
               <input
                 type="text"
                 value={config.vendor_id}
                 onChange={(e) => setConfig({...config, vendor_id: e.target.value})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                className="mt-1 block w-full rounded-tuscan border-stone-300 shadow-tuscan-sm focus:ring-terracotta-500 focus:border-terracotta-500"
                 placeholder="Your Bokun Vendor ID"
               />
             </div>
             <div className="flex items-center space-x-4">
-              <label className="flex items-center">
+              <label className="flex items-center text-stone-700">
                 <input
                   type="checkbox"
                   checked={config.sync_enabled}
                   onChange={(e) => setConfig({...config, sync_enabled: e.target.checked})}
-                  className="mr-2"
+                  className="mr-2 text-terracotta-500 focus:ring-terracotta-500 border-stone-300 rounded"
                 />
                 Enable Sync
               </label>
-              <label className="flex items-center">
+              <label className="flex items-center text-stone-700">
                 <input
                   type="checkbox"
                   checked={config.auto_assign_guides}
                   onChange={(e) => setConfig({...config, auto_assign_guides: e.target.checked})}
-                  className="mr-2"
+                  className="mr-2 text-terracotta-500 focus:ring-terracotta-500 border-stone-300 rounded"
                 />
                 Auto-Assign Guides
               </label>
             </div>
             <button
               onClick={saveConfig}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              className="px-4 py-2 bg-olive-600 text-white rounded-tuscan hover:bg-olive-700"
             >
               Save Configuration
             </button>
@@ -289,40 +289,40 @@ const BokunSync = () => {
 
       {Array.isArray(unassignedTours) && unassignedTours.length > 0 && (
         <div>
-          <h3 className="font-semibold mb-3">
+          <h3 className="font-semibold mb-3 text-stone-800">
             Unassigned Bokun Tours ({unassignedTours.length})
           </h3>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-stone-200">
+              <thead className="bg-stone-50">
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tour</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Participants</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Time</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Tour</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Customer</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Participants</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Action</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-stone-200">
                 {unassignedTours.map((tour) => (
-                  <tr key={tour.id}>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm">
+                  <tr key={tour.id} className="hover:bg-stone-50">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-stone-900">
                       {format(new Date(tour.date), 'd MMM yyyy')}
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm">{tour.time}</td>
-                    <td className="px-4 py-2 text-sm">{tour.title}</td>
-                    <td className="px-4 py-2 text-sm">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-stone-900">{tour.time}</td>
+                    <td className="px-4 py-2 text-sm text-stone-900">{tour.title}</td>
+                    <td className="px-4 py-2 text-sm text-stone-900">
                       {tour.customer_name}
                       {tour.customer_email && (
-                        <div className="text-xs text-gray-500">{tour.customer_email}</div>
+                        <div className="text-xs text-stone-500">{tour.customer_email}</div>
                       )}
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm">{tour.participants || '-'}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-stone-900">{tour.participants || '-'}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm">
                       <button
                         onClick={() => autoAssignGuide(tour.id)}
-                        className="text-blue-600 hover:text-blue-800"
+                        className="text-terracotta-600 hover:text-terracotta-800"
                       >
                         Auto-Assign
                       </button>
@@ -336,13 +336,13 @@ const BokunSync = () => {
       )}
 
       {config.sync_enabled && Array.isArray(unassignedTours) && unassignedTours.length === 0 && (
-        <p className="text-gray-500 text-center py-4">
-          All Bokun tours have been assigned guides! 🎉
+        <p className="text-stone-500 text-center py-4">
+          All Bokun tours have been assigned guides!
         </p>
       )}
 
       {!Array.isArray(unassignedTours) && config.sync_enabled && (
-        <p className="text-gray-500 text-center py-4">
+        <p className="text-stone-500 text-center py-4">
           Loading unassigned tours...
         </p>
       )}

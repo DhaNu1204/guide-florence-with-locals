@@ -63,10 +63,10 @@ const BokunIntegration = () => {
   if (!isAdmin()) {
     return (
       <div className="space-y-6">
-        <Card className="border-red-200 bg-red-50">
+        <Card className="border-terracotta-200 bg-terracotta-50">
           <div className="flex items-center">
-            <FiSettings className="h-5 w-5 mr-3 text-red-500" />
-            <p className="text-red-700">Access denied. Admin privileges required to access Bokun Integration.</p>
+            <FiSettings className="h-5 w-5 mr-3 text-terracotta-500" />
+            <p className="text-terracotta-700">Access denied. Admin privileges required to access Bokun Integration.</p>
           </div>
         </Card>
       </div>
@@ -77,38 +77,38 @@ const BokunIntegration = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <div className="p-3 bg-blue-100 rounded-lg">
-          <FiCloud className="w-8 h-8 text-blue-600" />
+        <div className="p-3 bg-terracotta-100 rounded-tuscan-lg">
+          <FiCloud className="w-8 h-8 text-terracotta-600" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bokun Integration</h1>
-          <p className="text-gray-600 mt-1">Manage automatic booking synchronization with Bokun API</p>
+          <h1 className="text-2xl font-bold text-stone-900">Bokun Integration</h1>
+          <p className="text-stone-600 mt-1">Manage automatic booking synchronization with Bokun API</p>
         </div>
       </div>
 
       {/* Auto-Sync Status */}
       {syncStatus && (
-        <Card className="border-blue-200 bg-blue-50">
+        <Card className="border-terracotta-200 bg-terracotta-50">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-full ${syncStatus.syncInProgress || fullSyncLoading ? 'bg-yellow-100' : 'bg-green-100'}`}>
+                <div className={`p-2 rounded-full ${syncStatus.syncInProgress || fullSyncLoading ? 'bg-gold-100' : 'bg-olive-100'}`}>
                   {syncStatus.syncInProgress || fullSyncLoading ? (
-                    <FiRefreshCw className="w-4 h-4 text-yellow-600 animate-spin" />
+                    <FiRefreshCw className="w-4 h-4 text-gold-600 animate-spin" />
                   ) : (
-                    <FiCheck className="w-4 h-4 text-green-600" />
+                    <FiCheck className="w-4 h-4 text-olive-600" />
                   )}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-blue-900">Auto-Sync Status</h3>
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      syncStatus.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                    <h3 className="font-medium text-terracotta-900">Auto-Sync Status</h3>
+                    <span className={`px-2 py-1 text-xs rounded-tuscan ${
+                      syncStatus.enabled ? 'bg-olive-100 text-olive-800' : 'bg-stone-100 text-stone-600'
                     }`}>
                       {syncStatus.enabled ? 'Enabled' : 'Disabled'}
                     </span>
                   </div>
-                  <p className="text-sm text-blue-700">
+                  <p className="text-sm text-terracotta-700">
                     {syncStatus.syncInProgress
                       ? 'Syncing bookings...'
                       : fullSyncLoading
@@ -118,7 +118,7 @@ const BokunIntegration = () => {
                           : 'No sync performed yet'
                     }
                     {syncStatus.enabled && !syncStatus.syncInProgress && !fullSyncLoading && (
-                      <span className="ml-2 text-blue-600">
+                      <span className="ml-2 text-terracotta-600">
                         • Auto-sync every {syncStatus.intervalMinutes} minutes
                       </span>
                     )}
@@ -129,10 +129,10 @@ const BokunIntegration = () => {
                 <button
                   onClick={syncNow}
                   disabled={syncStatus.syncInProgress || fullSyncLoading}
-                  className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                  className={`px-3 py-2 text-sm rounded-tuscan transition-colors ${
                     syncStatus.syncInProgress || fullSyncLoading
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                      ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                      : 'bg-terracotta-600 text-white hover:bg-terracotta-700'
                   }`}
                 >
                   {syncStatus.syncInProgress ? 'Syncing...' : 'Sync Now'}
@@ -140,10 +140,10 @@ const BokunIntegration = () => {
                 <button
                   onClick={handleFullSync}
                   disabled={syncStatus.syncInProgress || fullSyncLoading}
-                  className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                  className={`px-3 py-2 text-sm rounded-tuscan transition-colors ${
                     syncStatus.syncInProgress || fullSyncLoading
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-purple-600 text-white hover:bg-purple-700'
+                      ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                      : 'bg-renaissance-600 text-white hover:bg-renaissance-700'
                   }`}
                   title="Sync all bookings for the next 12 months"
                 >
@@ -154,7 +154,7 @@ const BokunIntegration = () => {
 
             {/* Sync Range Info */}
             {syncInfo && (
-              <div className="flex flex-wrap gap-4 text-xs text-blue-700 border-t border-blue-200 pt-3">
+              <div className="flex flex-wrap gap-4 text-xs text-terracotta-700 border-t border-terracotta-200 pt-3">
                 <div className="flex items-center gap-1">
                   <FiCalendar className="w-3 h-3" />
                   <span>Regular sync: {syncInfo.default_sync_days} days ({syncInfo.default_date_range?.start} to {syncInfo.default_date_range?.end})</span>
@@ -168,8 +168,8 @@ const BokunIntegration = () => {
 
             {/* Full Sync Result */}
             {fullSyncResult && (
-              <div className={`text-sm p-3 rounded-lg ${
-                fullSyncResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+              <div className={`text-sm p-3 rounded-tuscan ${
+                fullSyncResult.success ? 'bg-olive-100 text-olive-800' : 'bg-terracotta-100 text-terracotta-800'
               }`}>
                 {fullSyncResult.message}
                 {fullSyncResult.data?.duration_seconds && (
@@ -184,14 +184,14 @@ const BokunIntegration = () => {
       )}
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-stone-200">
         <nav className="-mb-px flex space-x-8">
           <button
             onClick={() => setActiveTab('sync')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'sync'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-terracotta-600 text-terracotta-600'
+                : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -203,8 +203,8 @@ const BokunIntegration = () => {
             onClick={() => setActiveTab('monitor')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'monitor'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-terracotta-600 text-terracotta-600'
+                : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -225,14 +225,14 @@ const BokunIntegration = () => {
       <Card>
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <FiSettings className="w-5 h-5 text-gray-600" />
-            <h3 className="text-lg font-semibold text-gray-900">Integration Information</h3>
+            <FiSettings className="w-5 h-5 text-stone-600" />
+            <h3 className="text-lg font-semibold text-stone-900">Integration Information</h3>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h4 className="font-medium text-gray-900 mb-2">Current Status</h4>
-              <ul className="space-y-2 text-sm text-gray-600">
+              <h4 className="font-medium text-stone-900 mb-2">Current Status</h4>
+              <ul className="space-y-2 text-sm text-stone-600">
                 <li>• API Connection: Active</li>
                 <li>• Authentication: HMAC-SHA1</li>
                 <li>• Vendor ID: 96929</li>
@@ -242,8 +242,8 @@ const BokunIntegration = () => {
             </div>
 
             <div>
-              <h4 className="font-medium text-gray-900 mb-2">Sync Features</h4>
-              <ul className="space-y-2 text-sm text-gray-600">
+              <h4 className="font-medium text-stone-900 mb-2">Sync Features</h4>
+              <ul className="space-y-2 text-sm text-stone-600">
                 <li>• Automatic sync on app startup</li>
                 <li>• Background sync every {syncStatus?.intervalMinutes || 15} minutes</li>
                 <li>• Regular sync: {syncInfo?.default_sync_days || 120} days ahead (4 months)</li>
@@ -253,13 +253,13 @@ const BokunIntegration = () => {
               </ul>
             </div>
           </div>
-          
-          <div className="mt-6 p-4 bg-green-50 rounded-lg">
+
+          <div className="mt-6 p-4 bg-olive-50 rounded-tuscan-lg">
             <div className="flex items-start gap-3">
-              <FiCheck className="w-5 h-5 text-green-600 mt-0.5" />
+              <FiCheck className="w-5 h-5 text-olive-600 mt-0.5" />
               <div>
-                <h4 className="font-medium text-green-900">Email-Style Auto-Synchronization</h4>
-                <p className="text-sm text-green-700 mt-1">
+                <h4 className="font-medium text-olive-900">Email-Style Auto-Synchronization</h4>
+                <p className="text-sm text-olive-700 mt-1">
                   The system now works like modern email applications - automatically checking for new bookings
                   in the background, syncing on app startup, and showing notifications for new arrivals.
                   You'll always have the latest booking information without manual intervention.
