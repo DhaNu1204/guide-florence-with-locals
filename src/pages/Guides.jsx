@@ -15,6 +15,7 @@ const Guides = () => {
   const [guides, setGuides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, guideId: null, guideName: '' });
@@ -159,11 +160,19 @@ const Guides = () => {
       setShowAddForm(false);
       setIsEditing(false);
       setError(null);
+
+      // Show success message
+      const successMsg = isEditing
+        ? `Guide "${savedGuide.name}" updated successfully!`
+        : `Guide "${savedGuide.name}" added successfully!`;
+      setSuccess(successMsg);
+      setTimeout(() => setSuccess(null), 4000); // Auto-dismiss after 4 seconds
     } catch (err) {
       console.error('Error saving guide:', err);
       // Extract error message from API response
       const errorMessage = err.response?.data?.error || err.message || 'Failed to save guide. Please try again.';
       setError(errorMessage);
+      setSuccess(null);
     } finally {
       setSavingGuideId(null);
     }
@@ -190,6 +199,8 @@ const Guides = () => {
   const handleDelete = async () => {
     if (!deleteConfirmation.guideId) return;
 
+    const guideName = deleteConfirmation.guideName;
+
     // Set deleting state for this specific guide
     setDeletingGuideId(deleteConfirmation.guideId);
 
@@ -200,12 +211,18 @@ const Guides = () => {
       setGuides(guides.filter(guide => guide.id !== deleteConfirmation.guideId));
       setDeleteConfirmation({ show: false, guideId: null, guideName: '' });
       setError(null);
+
+      // Show success message
+      setSuccess(`Guide "${guideName}" deleted successfully!`);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       console.error('Error deleting guide:', err);
-      if (err.message === 'Cannot delete guide with associated tours') {
+      setSuccess(null);
+      const errorMessage = err.response?.data?.error || err.message;
+      if (errorMessage?.includes('associated tours')) {
         setError('Cannot delete this guide because they have associated tours.');
       } else {
-        setError('Failed to delete guide. Please try again.');
+        setError(errorMessage || 'Failed to delete guide. Please try again.');
       }
     } finally {
       setDeletingGuideId(null);
@@ -251,19 +268,52 @@ const Guides = () => {
         </div>
       </div>
       
+      {/* Success Alert */}
+      {success && (
+        <Card borderColor="border-l-green-500" className="bg-green-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-green-100 rounded-tuscan-lg flex items-center justify-center mr-3">
+                <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-medium text-green-800">Success</h3>
+                <p className="text-sm text-green-700">{success}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSuccess(null)}
+              className="text-green-500 hover:text-green-700"
+            >
+              <FiX className="h-5 w-5" />
+            </button>
+          </div>
+        </Card>
+      )}
+
       {/* Error Alert */}
       {error && (
         <Card borderColor="border-l-terracotta-500" className="bg-terracotta-50">
-          <div className="flex items-center">
-            <div className="w-10 h-10 bg-terracotta-100 rounded-tuscan-lg flex items-center justify-center mr-3">
-              <svg className="h-5 w-5 text-terracotta-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-terracotta-100 rounded-tuscan-lg flex items-center justify-center mr-3">
+                <svg className="h-5 w-5 text-terracotta-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-medium text-terracotta-800">Error</h3>
+                <p className="text-sm text-terracotta-700">{error}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium text-terracotta-800">Error</h3>
-              <p className="text-sm text-terracotta-700">{error}</p>
-            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-terracotta-500 hover:text-terracotta-700"
+            >
+              <FiX className="h-5 w-5" />
+            </button>
           </div>
         </Card>
       )}
