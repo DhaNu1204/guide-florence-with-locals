@@ -69,13 +69,38 @@ const Payments = () => {
       if (overviewResult.success) setPaymentOverview(overviewResult.data);
       if (guidesResult.success) setGuidePayments(guidesResult.data);
 
-      // Load unpaid tours for the alert
+      // Load unpaid tours for the alert and pending payments tab
+      // Only include PAST tours (completed) with guide assigned but not paid
       const toursResponse = await fetch(`${API_BASE_URL}/tours.php`);
       if (toursResponse.ok) {
         const toursResult = await toursResponse.json();
         if (toursResult.success) {
           const allTours = toursResult.data || [];
-          const unpaidToursData = allTours.filter(tour => !tour.paid && tour.guide_id);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          // Filter: past tours + guide assigned + not paid + not cancelled + not ticket products
+          const unpaidToursData = allTours.filter(tour => {
+            // Must have a guide assigned
+            if (!tour.guide_id) return false;
+            // Must not be cancelled
+            if (tour.cancelled) return false;
+            // Must be a past tour (completed)
+            const tourDate = new Date(tour.date);
+            if (tourDate >= today) return false;
+            // Must not be paid
+            if (tour.paid) return false;
+            // Exclude ticket products
+            const title = (tour.title || '').toLowerCase();
+            if (title.includes('entry ticket') ||
+                title.includes('entrance ticket') ||
+                title.includes('priority ticket') ||
+                title.includes('skip the line') ||
+                title.includes('skip-the-line')) {
+              return false;
+            }
+            return true;
+          });
           setUnpaidTours(unpaidToursData);
           setShowUnpaidAlert(unpaidToursData.length > 0);
         }
@@ -400,6 +425,7 @@ const Payments = () => {
         <nav className="-mb-px flex space-x-8">
           {[
             { id: 'overview', name: 'Overview', icon: FiTrendingUp },
+            { id: 'pending', name: 'Pending Payments', icon: FiAlertCircle, badge: unpaidTours.length },
             { id: 'guides', name: 'Guide Payments', icon: FiUsers },
             { id: 'record', name: 'Record Payment', icon: FiPlus },
             { id: 'reports', name: 'Reports', icon: FiCalendar }
@@ -415,6 +441,11 @@ const Payments = () => {
             >
               <tab.icon className="w-4 h-4" />
               {tab.name}
+              {tab.badge > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium rounded-full bg-terracotta-100 text-terracotta-800">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -554,6 +585,105 @@ const Payments = () => {
               </div>
             </Card>
           )}
+        </div>
+      )}
+
+      {activeTab === 'pending' && (
+        <div className="space-y-6">
+          <Card>
+            <div className="px-6 py-4 border-b border-stone-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-stone-900">
+                  Pending Guide Payments
+                  <span className="ml-2 text-sm font-normal text-stone-500">
+                    ({unpaidTours.length} tours awaiting payment)
+                  </span>
+                </h3>
+              </div>
+              <p className="text-sm text-stone-500 mt-1">
+                Completed tours with assigned guides that have not yet been paid
+              </p>
+            </div>
+            {unpaidTours.length === 0 ? (
+              <div className="p-8 text-center">
+                <FiCheckCircle className="w-12 h-12 text-olive-500 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-stone-900 mb-2">All Caught Up!</h4>
+                <p className="text-stone-500">No pending guide payments at this time.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-stone-200">
+                  <thead className="bg-stone-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Tour Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Guide Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Participants
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Expected Payment
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-stone-200">
+                    {unpaidTours
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((tour) => (
+                        <tr key={tour.id}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {new Date(tour.date).toLocaleDateString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-stone-900 max-w-xs truncate" title={tour.title}>
+                              {tour.title}
+                            </div>
+                            {tour.time && (
+                              <div className="text-xs text-stone-500">{tour.time}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {tour.guide_name || 'Unknown Guide'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {tour.participants || tour.adults || '-'}
+                            {tour.children > 0 && ` + ${tour.children} children`}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {tour.expected_amount ? formatCurrency(tour.expected_amount) : '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <Button
+                              size="sm"
+                              icon={FiPlus}
+                              onClick={() => {
+                                setActiveTab('record');
+                                // Pre-select the tour/guide if possible
+                              }}
+                            >
+                              Record Payment
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
         </div>
       )}
 

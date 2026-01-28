@@ -1,6 +1,9 @@
 <?php
 require_once 'config.php';
 
+// Apply rate limiting for webhooks (30 per minute)
+applyRateLimit('webhook');
+
 // Log all webhook calls for debugging
 function logWebhook($topic, $data, $error = null) {
     global $conn;

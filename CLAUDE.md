@@ -380,6 +380,42 @@ Located in `public_html/api/BokunAPI.php`:
 - Multi-page support: Fetches up to 10 pages (2000 bookings max)
 - Deduplicates bookings by ID across roles
 
+### API Rate Limiting (NEW - Jan 29, 2026)
+Located in `public_html/api/RateLimiter.php`:
+
+**Rate Limits by Endpoint Type:**
+| Type | Limit | Window | Used By |
+|------|-------|--------|---------|
+| login | 5 | 1 min | auth.php |
+| read | 100 | 1 min | GET requests |
+| write/create | 30 | 1 min | POST requests |
+| update | 30 | 1 min | PUT requests |
+| delete | 10 | 1 min | DELETE requests |
+| bokun_sync | 10 | 1 min | bokun_sync.php |
+| webhook | 30 | 1 min | bokun_webhook.php |
+
+**Usage in Endpoints:**
+```php
+// Automatic rate limiting by HTTP method
+autoRateLimit('endpoint-name');
+
+// Explicit rate limit type
+applyRateLimit('login');           // 5 per minute
+applyRateLimit('read');            // 100 per minute
+applyRateLimit('bokun_sync');      // 10 per minute
+
+// Custom limits
+applyRateLimit('custom', 50, 60);  // 50 per 60 seconds
+```
+
+**HTTP Response Headers:**
+- `X-RateLimit-Limit` - Max requests allowed
+- `X-RateLimit-Remaining` - Requests remaining
+- `X-RateLimit-Reset` - Unix timestamp when limit resets
+- `Retry-After` - Seconds until retry (on 429 response)
+
+**Database Table:** `rate_limits` (auto-created if missing)
+
 ## 🔮 Future Development Roadmap
 
 ### Planned Features
@@ -396,9 +432,9 @@ Located in `public_html/api/BokunAPI.php`:
 | Improvement | Priority | Description |
 |-------------|----------|-------------|
 | ~~Database indexing~~ | ~~High~~ | ✅ Done - Added indexes for guides table (Jan 28, 2026) |
-| API rate limiting | Medium | Prevent abuse and optimize performance |
+| ~~API rate limiting~~ | ~~Medium~~ | ✅ Done - Database-backed rate limiting (Jan 29, 2026) |
+| ~~Unit tests~~ | ~~Medium~~ | ✅ Done - Vitest + PHP tests, 52 tests passing (Jan 29, 2026) |
 | Caching layer (Redis) | Medium | Reduce database load |
-| Unit tests | Medium | Jest for frontend, PHPUnit for backend |
 | CI/CD pipeline | Low | GitHub Actions for automated deployment |
 | TypeScript migration | Low | Type safety for frontend |
 
@@ -427,6 +463,7 @@ Located in `public_html/api/BokunAPI.php`:
 | `EnvLoader.php` | Load environment variables from .env files |
 | `Logger.php` | File-based error logging with rotation |
 | `Validator.php` | Input sanitization and validation |
+| `RateLimiter.php` | Database-backed API rate limiting - Jan 29, 2026 |
 
 ### Database Migrations
 | File | Purpose |
@@ -434,6 +471,7 @@ Located in `public_html/api/BokunAPI.php`:
 | `database/add_missing_indexes.sql` | Performance optimization |
 | `database/migrations/create_sync_logs_table.sql` | Sync history tracking |
 | `database/add_guides_indexes.sql` | Guides table indexes (email, name) - Jan 28, 2026 |
+| `database/migrations/create_rate_limits_table.sql` | API rate limiting storage - Jan 29, 2026 |
 
 ### Configuration
 | File | Purpose |

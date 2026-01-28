@@ -86,6 +86,9 @@ function recordFailedAttempt($conn, $identifier) {
 
 // Login endpoint
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Apply centralized rate limiting (stricter: 5 requests per minute)
+    applyRateLimit('login');
+
     $data = json_decode(file_get_contents('php://input'), true);
     
     if (!isset($data['username']) || !isset($data['password'])) {

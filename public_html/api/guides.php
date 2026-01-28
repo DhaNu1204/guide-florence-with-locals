@@ -1,6 +1,9 @@
 <?php
 require_once 'config.php';
 
+// Apply rate limiting based on HTTP method
+autoRateLimit('guides');
+
 // Enable error reporting
 ini_set('display_errors', 1);
 error_reporting(E_ALL);

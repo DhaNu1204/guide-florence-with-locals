@@ -37,7 +37,9 @@ const Dashboard = () => {
 
   const [stats, setStats] = useState({
     unassignedTours: 0,
-    unpaidTours: 0
+    unpaidTours: 0,
+    totalGuidedTours: 0,
+    paidTours: 0
   });
   const [recentTours, setRecentTours] = useState([]);
   const [upcomingTours, setUpcomingTours] = useState([]);
@@ -51,18 +53,26 @@ const Dashboard = () => {
   const loadDashboardData = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      const toursResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
+      // Fetch upcoming tours for display lists
+      const upcomingResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
+      // Fetch all tours for accurate payment stats (past tours need to be counted)
+      const allToursResponse = await getTours(forceRefresh, 1, 500, {});
       const guidesData = await getGuides();
 
-      const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
+      const upcomingData = upcomingResponse && upcomingResponse.data ? upcomingResponse.data : upcomingResponse;
+      const allToursData = allToursResponse && allToursResponse.data ? allToursResponse.data : allToursResponse;
 
-      if (toursData && guidesData) {
-        const filteredTours = filterToursOnly(toursData);
-        calculateStats(filteredTours, guidesData);
+      if (upcomingData && allToursData && guidesData) {
+        // Filter out ticket products - only count real guided tours
+        const allGuidedTours = filterToursOnly(allToursData);
+        const upcomingGuidedTours = filterToursOnly(upcomingData);
+
+        calculateStats(allGuidedTours, upcomingGuidedTours, guidesData);
 
         const now = new Date();
 
-        const recent = filteredTours
+        // Unassigned upcoming tours (need guide assignment)
+        const recent = upcomingGuidedTours
           .filter(tour => {
             if (tour.cancelled) return false;
             const tourDate = new Date(tour.date);
@@ -79,7 +89,8 @@ const Dashboard = () => {
           })
           .slice(0, 10);
 
-        const upcoming = filteredTours
+        // Upcoming tours list
+        const upcoming = upcomingGuidedTours
           .filter(tour => {
             if (tour.cancelled) return false;
             const tourDate = new Date(tour.date);
@@ -104,11 +115,12 @@ const Dashboard = () => {
     }
   };
 
-  const calculateStats = (tours, guides) => {
+  const calculateStats = (allTours, upcomingTours, guides) => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
-    const unassignedTours = tours.filter(tour => {
+    // Count unassigned UPCOMING tours (future tours without guide)
+    const unassignedTours = upcomingTours.filter(tour => {
       if (tour.cancelled) return false;
       const tourDate = new Date(tour.date);
       tourDate.setHours(0, 0, 0, 0);
@@ -117,20 +129,34 @@ const Dashboard = () => {
       return !hasGuide;
     }).length;
 
-    const unpaidTours = tours.filter(tour => {
+    // Count unpaid PAST tours (completed tours awaiting guide payment)
+    // Only count non-cancelled, past guided tours
+    const pastTours = allTours.filter(tour => {
       if (tour.cancelled) return false;
       const tourDate = new Date(tour.date);
       tourDate.setHours(0, 0, 0, 0);
-      if (tourDate >= now) return false;
+      return tourDate < now; // Past tours only
+    });
+
+    const unpaidTours = pastTours.filter(tour => {
       if (tour.payment_status) {
         return tour.payment_status === 'unpaid' || tour.payment_status === 'partial';
       }
       return !tour.paid;
     }).length;
 
+    const paidTours = pastTours.filter(tour => {
+      if (tour.payment_status) {
+        return tour.payment_status === 'paid';
+      }
+      return tour.paid === 1 || tour.paid === true || tour.paid === '1';
+    }).length;
+
     setStats({
       unassignedTours,
-      unpaidTours
+      unpaidTours,
+      paidTours,
+      totalGuidedTours: allTours.filter(t => !t.cancelled).length
     });
   };
 
@@ -193,8 +219,8 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Stats Grid with Tuscan styling */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+      {/* Stats Grid with Tuscan styling - 2 columns on desktop */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Unassigned Tours Card */}
         <div className="group bg-gradient-to-br from-gold-50 to-gold-100/50 rounded-tuscan-xl border border-gold-200/50 p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300">
           <div className="flex items-start justify-between">
@@ -225,7 +251,7 @@ const Dashboard = () => {
           )}
         </div>
 
-        {/* Unpaid Tours Card */}
+        {/* Guide Payment Status Card */}
         <div className={`group rounded-tuscan-xl border p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300 ${
           stats.unpaidTours > 0
             ? 'bg-gradient-to-br from-terracotta-50 to-terracotta-100/50 border-terracotta-200/50'
@@ -236,15 +262,20 @@ const Dashboard = () => {
               <p className={`text-sm font-medium mb-2 ${
                 stats.unpaidTours > 0 ? 'text-terracotta-700' : 'text-olive-700'
               }`}>
-                Unpaid Tours
+                Guide Payments Pending
               </p>
               <p className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
                 {stats.unpaidTours}
               </p>
               <p className="text-xs text-stone-500 mt-2 flex items-center">
                 <FiDollarSign className="mr-1" />
-                Past tours pending payment
+                Past guided tours awaiting payment
               </p>
+              {stats.paidTours > 0 && (
+                <p className="text-xs text-olive-600 mt-1">
+                  {stats.paidTours} tours already paid
+                </p>
+              )}
             </div>
             <div className={`w-14 h-14 rounded-tuscan-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300 ${
               stats.unpaidTours > 0 ? 'bg-terracotta-200/50' : 'bg-olive-200/50'
