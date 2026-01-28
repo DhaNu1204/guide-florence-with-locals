@@ -480,6 +480,36 @@ $api->sendSuccess($data);
 3. Create migration SQL in `database/migrations/`
 4. Apply to production via SSH
 
+## 🛠️ Florence Skills Toolkit
+
+Custom development skills are available in `../florence-skills/` directory. These provide specialized guidance for this project:
+
+### Available Skills
+| Skill | Path | Use For |
+|-------|------|---------|
+| **UI Designer** | `skills/ui-designer/SKILL.md` | Tuscan-inspired components, colors, styling |
+| **Mobile Optimizer** | `skills/mobile-optimizer/SKILL.md` | Responsive design, touch interactions |
+| **Security Hardener** | `skills/security-hardener/SKILL.md` | Input validation, XSS/SQL injection prevention |
+| **Reliability Engineer** | `skills/reliability-engineer/SKILL.md` | Error handling, monitoring, deployment |
+| **PHP Backend** | `skills/php-backend/SKILL.md` | API endpoints, database patterns |
+| **React Patterns** | `skills/react-patterns/SKILL.md` | Component structure, hooks, contexts |
+
+### Available Agents
+| Agent | Path | Use For |
+|-------|------|---------|
+| **Code Reviewer** | `agents/code-reviewer/AGENT.md` | Security/performance code review |
+| **Deployment Checker** | `agents/deployment-checker/AGENT.md` | Pre-deployment validation |
+
+### How to Use
+Ask Claude Code to use a skill:
+```
+Using the UI Designer skill, create a new card component for tour details.
+Using the PHP Backend skill, create an API endpoint for guide schedules.
+Using the Code Reviewer agent, review my changes for security issues.
+```
+
+Claude will read the relevant SKILL.md file and apply its patterns to your request.
+
 ## Support
 
 For troubleshooting and common issues, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
