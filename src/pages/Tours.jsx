@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FiPlus, FiRefreshCw, FiSave } from 'react-icons/fi';
+import { FiPlus, FiRefreshCw, FiSave, FiX } from 'react-icons/fi';
 import { format } from 'date-fns';
 import mysqlDB from '../services/mysqlDB';
 import Card from '../components/UI/Card';
@@ -195,6 +195,7 @@ const Tours = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [editingNotes, setEditingNotes] = useState({});
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
@@ -407,8 +408,12 @@ const Tours = () => {
         delete newState[tourId];
         return newState;
       });
+      setError(null);
+      setSuccess('Notes saved successfully!');
+      setTimeout(() => setSuccess(null), 4000);
     } catch (error) {
       console.error('Error saving notes:', error);
+      setSuccess(null);
       setError('Failed to save notes');
     } finally {
       setSavingChanges(prev => {
@@ -422,6 +427,8 @@ const Tours = () => {
   // Save guide assignment for a tour
   const saveGuideAssignment = async (tourId) => {
     const guideId = editingGuides[tourId];
+    const guide = guides.find(g => g.id === parseInt(guideId));
+    const guideName = guide?.name || 'Guide';
     setSavingChanges(prev => ({ ...prev, [`guide_${tourId}`]: true }));
 
     try {
@@ -435,8 +442,12 @@ const Tours = () => {
         delete newState[tourId];
         return newState;
       });
+      setError(null);
+      setSuccess(`Guide "${guideName}" assigned successfully!`);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (error) {
       console.error('Error saving guide assignment:', error);
+      setSuccess(null);
       setError('Failed to save guide assignment');
     } finally {
       setSavingChanges(prev => {
@@ -458,14 +469,23 @@ const Tours = () => {
   };
 
   const handleUpdateNotesFromModal = async (tourId, newNotes) => {
-    await mysqlDB.updateTour(tourId, { notes: newNotes });
+    try {
+      await mysqlDB.updateTour(tourId, { notes: newNotes });
 
-    // Update local state
-    setTours(prev =>
-      prev.map(tour =>
-        tour.id === tourId ? { ...tour, notes: newNotes } : tour
-      )
-    );
+      // Update local state
+      setTours(prev =>
+        prev.map(tour =>
+          tour.id === tourId ? { ...tour, notes: newNotes } : tour
+        )
+      );
+      setError(null);
+      setSuccess('Notes updated successfully!');
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (error) {
+      console.error('Error updating notes:', error);
+      setSuccess(null);
+      setError('Failed to update notes');
+    }
   };
 
   if (loading) {
@@ -476,18 +496,59 @@ const Tours = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg text-terracotta-600">Error: {error}</div>
-      </div>
-    );
-  }
-
-
   return (
     <div className="min-h-screen bg-stone-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Success Alert */}
+        {success && (
+          <div className="bg-green-50 border-l-4 border-green-500 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+                  <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-medium text-green-800">Success</h3>
+                  <p className="text-sm text-green-700">{success}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSuccess(null)}
+                className="text-green-500 hover:text-green-700"
+              >
+                <FiX className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error Alert */}
+        {error && (
+          <div className="bg-terracotta-50 border-l-4 border-terracotta-500 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-terracotta-100 rounded-lg flex items-center justify-center mr-3">
+                  <svg className="h-5 w-5 text-terracotta-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-medium text-terracotta-800">Error</h3>
+                  <p className="text-sm text-terracotta-700">{error}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-terracotta-500 hover:text-terracotta-700"
+              >
+                <FiX className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
