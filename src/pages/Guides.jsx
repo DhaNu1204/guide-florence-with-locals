@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiPlus, FiUsers, FiPhone, FiX, FiCalendar, FiEdit2, FiTrash2, FiMail, FiGlobe } from 'react-icons/fi';
-import { getGuides, addGuide, deleteGuide } from '../services/mysqlDB';
+import { getGuides, addGuide, updateGuide, deleteGuide } from '../services/mysqlDB';
 import { usePageTitle } from '../contexts/PageTitleContext';
 import { useAuth } from '../contexts/AuthContext';
 import Card from '../components/UI/Card';
@@ -141,14 +141,17 @@ const Guides = () => {
     try {
       console.log(isEditing ? 'Updating guide:' : 'Adding guide:', formData);
 
-      const updatedGuide = await addGuide(formData);
-
+      let savedGuide;
       if (isEditing) {
+        // Use updateGuide for existing guides
+        savedGuide = await updateGuide(formData.id, formData);
         // Update the guide in the local state
-        setGuides(guides.map(guide => guide.id === updatedGuide.id ? updatedGuide : guide));
+        setGuides(guides.map(guide => guide.id === savedGuide.id ? savedGuide : guide));
       } else {
+        // Use addGuide for new guides
+        savedGuide = await addGuide(formData);
         // Add the new guide to the local state
-        setGuides([...guides, updatedGuide]);
+        setGuides([...guides, savedGuide]);
       }
 
       // Reset form and state
@@ -158,7 +161,9 @@ const Guides = () => {
       setError(null);
     } catch (err) {
       console.error('Error saving guide:', err);
-      setError('Failed to save guide. Please try again.');
+      // Extract error message from API response
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to save guide. Please try again.';
+      setError(errorMessage);
     } finally {
       setSavingGuideId(null);
     }
