@@ -1,9 +1,25 @@
 # Florence with Locals Tour Guide Management System
 
+> **📋 CLAUDE CODE INSTRUCTIONS**: This is the main project documentation file. Read this file every time you start working on this project to understand the complete context, architecture, and recent changes.
+>
+> **When you need detailed information**, read the specific documentation files in the `docs/` folder:
+> - For environment/setup questions → Read `docs/ENVIRONMENT_SETUP.md`
+> - For recent changes/history → Read `docs/CHANGELOG.md`
+> - For API information → Read `docs/API_DOCUMENTATION.md`
+> - For development commands → Read `docs/DEVELOPMENT_GUIDE.md`
+> - For troubleshooting → Read `docs/TROUBLESHOOTING.md`
+> - For architecture details → Read `docs/ARCHITECTURE.md`
+> - For Bokun integration → Read `docs/BOKUN_INTEGRATION.md`
+
 ## Project Overview
+
 A comprehensive tour guide management system for Florence, Italy that integrates with Bokun API for automatic booking synchronization and guide assignment. Features a modern, responsive UI with complete CRUD operations and role-based access control.
 
+**Production Status**: ✅ FULLY OPERATIONAL at https://withlocals.deetech.cc
+**Last Critical Update**: January 29, 2026 - Payment system bug fixes, PDF report generation, API rate limiting
+
 ## Tech Stack
+
 - **Frontend**: React 18 + Vite + TailwindCSS
 - **Backend**: PHP 8.2
 - **Database**: MySQL
@@ -12,16 +28,36 @@ A comprehensive tour guide management system for Florence, Italy that integrates
 - **UI Components**: Custom modern component system with responsive design
 
 ## Key Features
+
 1. **Tour Management**: Create, edit, and manage tours with comprehensive details
 2. **Guide Management**: Manage tour guides with multi-language support and email contacts
 3. **Payment System**: Complete payment tracking with guide-wise analytics, date range reports, and Italian timezone support
 4. **Bokun Integration**: Dedicated page for automatic sync of bookings from Bokun (separated from tours)
 5. **Authentication**: Role-based access control (admin/viewer)
 6. **Ticket Management**: Museum entrance ticket inventory system for Uffizi and Accademia
-7. **Modern UI/UX**: 100% mobile responsive with sidebar navigation and compact card layouts
-8. **Real-time Updates**: Live data synchronization with fallback localStorage support
+7. **Priority Tickets**: Dedicated page for museum ticket bookings with booking details modal
+8. **Modern UI/UX**: 100% mobile responsive with sidebar navigation and compact card layouts
+9. **Real-time Updates**: Live data synchronization with fallback localStorage support
+10. **✅ Cancelled Booking Sync**: Automatic synchronization of cancelled bookings with red visual indicators
+11. **✅ Rescheduling Support**: Complete detection and tracking of rescheduled tours with audit trail
+12. **✅ Cache Management**: Force refresh functionality to ensure latest data display
+13. **✅ Multi-Channel Language Detection**: Automatic tour language extraction from Bokun API (Viator, GetYourGuide, and other booking channels)
+14. **✅ Smart Payment Status**: Intelligent payment tracking distinguishing between customer platform payments and guide payments
+15. **✅ Ticket Product Filtering**: Automatic exclusion of museum entrance tickets from tour management views
+16. **✅ Booking Details Modal**: Comprehensive modal showing all booking information with 6 detailed sections (Oct 24, 2025)
+17. **✅ Participant Breakdown**: Adults/children display extracted from Bokun API (INFANT excluded)
+18. **✅ Priority Tickets Enhancements**: Upcoming filter (today + 60 days), morning bookings first, click-to-view details
+19. **✅ Automatic Bokun Sync**: Background sync every 15 minutes, on startup, and on app focus (Jan 25, 2026)
+20. **✅ Enhanced Ticket Detection**: Added "Entrance Ticket" keyword for better Uffizi ticket detection
+21. **✅ GetYourGuide Booking Sync**: Full support for GetYourGuide OTA bookings via SUPPLIER role (Jan 25, 2026)
+22. **✅ Timezone Fix**: Using startTimeStr for accurate local tour times instead of UTC conversion
+23. **✅ Pagination Enhancement**: Increased Bokun API pageSize to 200 with multi-page support (200+ bookings)
+24. **✅ Guides Page Improvements**: Pagination, PUT for updates, per-operation loading states, database indexes (Jan 28, 2026)
+25. **✅ PDF Report Generation**: Frontend PDF generation using jsPDF with Tuscan-themed reports (Jan 29, 2026)
+26. **✅ Payment System Bug Fixes**: Fixed VIEW table mismatch, added pending_tours API, consistent payment tracking (Jan 29, 2026)
 
 ## Project Structure
+
 ```
 guide-florence-with-locals/
 ├── src/                           # React frontend source
@@ -32,23 +68,28 @@ guide-florence-with-locals/
 │   │   │   ├── Card.jsx         # Modern card component
 │   │   │   ├── Button.jsx       # Styled button component
 │   │   │   └── Input.jsx        # Form input components
+│   │   ├── BookingDetailsModal.jsx # Comprehensive booking details modal (NEW - Oct 24, 2025)
 │   │   ├── TourCards.jsx        # Tour display component (compact horizontal layout)
 │   │   ├── CardView.jsx         # Tour card container
 │   │   ├── PaymentRecordForm.jsx # Payment recording form with Italian timezone
 │   │   └── Dashboard.jsx        # Statistics dashboard
 │   ├── pages/                   # Page components
-│   │   ├── Tours.jsx           # Tour management (clean, focused)
+│   │   ├── Tours.jsx           # Tour management with booking details modal
 │   │   ├── Guides.jsx          # Guide management with multi-language support
 │   │   ├── Payments.jsx        # Payment tracking with calendar date filtering
 │   │   ├── Tickets.jsx         # Museum ticket inventory management
+│   │   ├── PriorityTickets.jsx # Museum ticket bookings with modal and participant breakdown
 │   │   ├── EditTour.jsx        # Tour editing interface
 │   │   ├── BokunIntegration.jsx # Dedicated Bokun integration page
 │   │   └── Login.jsx           # Authentication
 │   ├── contexts/               # React contexts
 │   │   ├── AuthContext.jsx     # Authentication management
 │   │   └── PageTitleContext.jsx # Dynamic page titles
-│   └── services/               # API services
-│       └── mysqlDB.js          # Database service layer with caching
+│   ├── services/               # API services
+│   │   └── mysqlDB.js          # Database service layer with caching
+│   └── utils/                  # Utility functions
+│       ├── tourFilters.js      # Ticket detection keywords
+│       └── pdfGenerator.js     # PDF report generation (jsPDF) - NEW Jan 29, 2026
 ├── public_html/                # PHP backend
 │   └── api/                    # API endpoints
 │       ├── config.php          # Database configuration with CORS
@@ -62,449 +103,510 @@ guide-florence-with-locals/
 │       ├── bokun_sync.php      # Bokun sync endpoints
 │       ├── auth.php            # Authentication API
 │       └── database_check.php  # Database verification utility
-└── database/                   # Database schemas and setup
+├── database/                   # Database schemas and setup
+└── docs/                       # Documentation (organized by topic)
+    ├── ENVIRONMENT_SETUP.md    # Environment, database, servers
+    ├── CHANGELOG.md            # All recent updates and changes
+    ├── API_DOCUMENTATION.md    # API endpoints and authentication
+    ├── DEVELOPMENT_GUIDE.md    # Development commands and testing
+    ├── BOKUN_INTEGRATION.md    # Bokun API integration details
+    ├── ARCHITECTURE.md         # System design and data flow
+    ├── FEATURES.md             # Feature status and roadmap
+    ├── PERFORMANCE.md          # Optimization and security
+    ├── TESTING.md              # QA and test coverage
+    ├── TROUBLESHOOTING.md      # Common issues and solutions
+    └── PROJECT_STATUS.md       # Completion phases and status
 ```
 
-## Environment Setup
+## Documentation Index
 
-### PHP Configuration
-- **Location**: `C:\php\php.ini`
-- **Required Extensions**: 
-  - `extension=curl` (enabled)
-  - `extension=openssl` (enabled)
-  - `extension=mysqli` (enabled)
+All detailed documentation has been organized into topic-specific files in the `docs/` directory:
 
-### Database Schema
+### Quick Reference
+- 🚀 **[Getting Started](docs/ENVIRONMENT_SETUP.md)** - Environment setup, database configuration, access credentials
+- 💻 **[Development](docs/DEVELOPMENT_GUIDE.md)** - Development commands, port management, testing
+- 📝 **[Changelog](docs/CHANGELOG.md)** - Recent updates and changes (Oct 2025 - Aug 2025)
+- 🔌 **[API Documentation](docs/API_DOCUMENTATION.md)** - API endpoints and authentication
 
-#### Development Environment
-- **Host**: localhost
-- **Database**: florence_guides
+### Technical Documentation
+- 🏗️ **[Architecture](docs/ARCHITECTURE.md)** - System design, component structure, data flow
+- ⚡ **[Performance & Security](docs/PERFORMANCE.md)** - Optimization strategies and security features
+- 🧪 **[Testing](docs/TESTING.md)** - QA processes and test coverage
 
-#### Production Environment ✅
-- **Host**: localhost (on production server)
-- **Database**: u803853690_florence_guides
-- **Production URL**: https://withlocals.deetech.cc
+### Feature Documentation
+- ✨ **[Features](docs/FEATURES.md)** - Complete feature list and status
+- 🔗 **[Bokun Integration](docs/BOKUN_INTEGRATION.md)** - Bokun API integration details and status
+
+### Operations
+- 📊 **[Project Status](docs/PROJECT_STATUS.md)** - Current status and completion phases
+- 🛠️ **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+## Quick Start
+
+### Prerequisites
+- PHP 8.2+ with curl, openssl, mysqli extensions
+- MySQL database
+- Node.js 16+ and npm
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/DhaNu1204/guide-florence-with-locals.git
+   cd guide-florence-with-locals
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Configure database**
+   - Update `public_html/api/config.php` with your database credentials
+   - Import database schema from `database/` directory
+
+4. **Start development servers**
+   ```bash
+   # Terminal 1 - Frontend (port 5173)
+   npm run dev
+
+   # Terminal 2 - Backend (port 8080)
+   cd public_html
+   php -S localhost:8080
+   ```
+
+5. **Access the application**
+   - Frontend: http://localhost:5173
+   - Login: dhanu / Kandy@123
+
+For detailed setup instructions, see [ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)
+
+## 🔴 CRITICAL INFORMATION - READ FIRST
+
+### Development Rules
+1. **PORT MANAGEMENT**: ALWAYS use port 5173 for frontend - NEVER allow different ports
+   - Kill existing processes before starting: `netstat -ano | findstr :5173` then `taskkill //PID [PID] //F`
+   - Backend uses port 8080
+
+2. **Database**: Production database has 40 columns in `tours` table - synchronized Oct 25, 2025
+   - Important columns: `language`, `rescheduled`, `original_date`, `original_time`, `notes`, `bokun_data`
+   - Sessions table has `token` column (fixed Oct 25, 2025)
+
+3. **Recent Critical Fixes** (Read `docs/CHANGELOG.md` for full details):
+   - ✅ **PDF Report Generation** - Frontend PDF generation using jsPDF with Tuscan theme (Jan 29, 2026)
+   - ✅ **Payment System Bug Fixes** - Fixed VIEW table mismatch, added pending_tours API (Jan 29, 2026)
+   - ✅ **Automated Testing** - Vitest + React Testing Library, 52 tests passing (Jan 29, 2026)
+   - ✅ **API Rate Limiting** - Database-backed rate limiting for all endpoints (Jan 29, 2026)
+   - ✅ **Guides page improvements** - Pagination, PUT for updates, per-operation loading, database indexes (Jan 28, 2026)
+   - ✅ **GetYourGuide sync fixed** - Changed Bokun API to use both SUPPLIER and SELLER roles (Jan 25, 2026)
+   - ✅ **Timezone fix** - Using startTimeStr for accurate local times (was showing +1 hour offset)
+   - ✅ **Pagination fix** - Increased pageSize from 50 to 200, added multi-page support (200+ bookings)
+
+### Key File Locations
+- **Frontend Entry**: `src/main.jsx`
+- **Main Layout**: `src/components/Layout/ModernLayout.jsx`
+- **Database Config**: `public_html/api/config.php`
+- **API Endpoints**: `public_html/api/*.php`
+- **Service Layer**: `src/services/mysqlDB.js` (handles caching)
+
+### Environment Details
+- **Development**: http://localhost:5173 (frontend) + http://localhost:8080 (backend)
+- **Production**: https://withlocals.deetech.cc
+- **Database**: florence_guides (dev) / u803853690_florence_guides (prod)
 - **SSH Access**: ssh -p 65002 u803853690@82.25.82.111
-- **Directory**: /home/u803853690/domains/deetech.cc/public_html/withlocals
+- **Admin Login**: dhanu / Kandy@123
 
-#### Tables with Record Counts (Production Active ✅):
-  - `users` (1 record) - Authentication and roles
-  - `guides` (3+ records) - Guide profiles with email and multi-language support
-  - `tours` (50+ records) - Tour bookings with guide assignments (includes 47 Bokun synced tours)
-  - `tickets` (3 records) - Museum entrance ticket inventory (Uffizi/Accademia)
-  - `bokun_config` (1 record) - Bokun API configuration (production credentials)
-  - `sessions` (3+ records) - User session management
-  - `payments` (2+ records) - Payment transaction records
-  - `guide_payments` (3+ records) - Guide payment summaries and analytics
+### Active Features
+- ✅ Bokun API Integration (200+ bookings synced from Viator AND GetYourGuide)
+- ✅ Automatic Bokun sync every 15 minutes
+- ✅ Multi-channel OTA support (Viator, GetYourGuide, direct bookings)
+- ✅ Multi-language guide management
+- ✅ Payment tracking with Italian timezone
+- ✅ Museum ticket inventory (Uffizi/Accademia)
+- ✅ Priority Tickets with upcoming filter
+- ✅ Booking details modal (6 sections)
+- ✅ Cancelled booking sync with visual indicators
+- ✅ Rescheduling detection with audit trail
 
-### Development Servers
-- **Frontend**: `npm run dev` (currently port 5173)
-- **Backend**: `php -S localhost:8080` (port 8080)
+## Current Status
 
-### Production Deployment ✅
-- **Live URL**: https://withlocals.deetech.cc
-- **API Base**: https://withlocals.deetech.cc/api
-- **Server**: Hostinger shared hosting with SSL certificate
-- **Deployment Method**: SSH upload via port 65002
-- **Environment**: .env.production configured for production API URLs
+✅ **FULLY OPERATIONAL** - Production site live at https://withlocals.deetech.cc
 
-## Recent Major Updates
+- All core functionality working perfectly
+- Database schema synchronized (Oct 25, 2025)
+- Bokun integration operational with 200+ bookings (Viator + GetYourGuide)
+- Complete payment tracking system
+- Modern responsive UI across all devices
+- Correct timezone handling for tour times
 
-### ✅ PRODUCTION DEPLOYMENT COMPLETE (2025-09-29)
-- **Live Production Site**: https://withlocals.deetech.cc fully operational ✅
-- **Critical Bug Fixes**: Resolved all production deployment errors including:
-  - Fixed hardcoded localhost URLs in frontend components
-  - Corrected API endpoint naming (.php extensions required)
-  - Resolved database schema mismatches between development and production
-  - Fixed missing payment system database tables
-- **Bokun Integration Live**: Successfully synced 47 bookings from Bokun API on production server
-- **Dashboard Functionality**: All dashboard components showing live data with proper filtering
-- **Payment System Operational**: Complete payment tracking system with guide analytics working on production
-- **Environment Configuration**: Proper .env.production setup with VITE_API_URL=https://withlocals.deetech.cc/api
-- **Database Migration**: Successfully migrated and configured production MySQL database
-- **SSH Deployment Process**: Established automated deployment via SSH (port 65002) to Hostinger hosting
+For detailed status information, see [PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
 
-### ✅ Latest Development Update (2025-09-28)
-- **Application Branding Update**: Updated application name to "Florence with Locals Tour Guide Management System"
-- **Enhanced User Experience**: Improved payment alerts with styled notifications replacing browser alerts
-- **Editable Payment Transactions**: Added inline editing capability for payment amounts and methods
-- **Layout Reorganization**: Moved user profile and logout to sidebar footer for better navigation
-- **100% Mobile Responsive**: Comprehensive mobile responsiveness testing completed across all pages and components
-- **UI/UX Optimization**: Sidebar displays clean "Florence with Locals" branding while maintaining full application name in titles
+## 💡 Working on This Project
 
-### ✅ Payment System Enhancement (2025-09-20)
-- **Payment System Reports Enhancement**: Completed calendar-based date range filtering for payment reports
-- **Italian Timezone Support**: All payment dates and reports now use proper Italian timezone (Europe/Rome)
-- **Calendar Date Picker**: Advanced date range selector with quick filter buttons (Today, Last 7/30 Days, This Month)
-- **Guide Payment Analytics**: Enhanced reports with guide-specific filtering and date range selection
-- **Payment API Integration**: Complete CRUD operations for payment transactions with date filtering
+When the user asks you to work on this project:
 
-### ✅ Bokun API Update (2025-09-13)
-- **Bokun API Credentials Updated**: Corrected API keys with actual credentials from dashboard
-- **2025 Date Corrections**: All date references updated from 2024 to proper 2025 dates
-- **Enhanced Monitoring System**: Real-time API diagnostics with auto-refresh capabilities
-- **Comprehensive Support Documentation**: Updated Bokun support reply with correct API keys and 2025 August tour examples
-- **API Status Confirmed**: HTTP 303 redirects confirm authentication works but BOOKINGS_READ permission needed
-- **Server Environment**: Both frontend (port 5173) and backend (port 8080) running successfully
+1. **First Time / Starting Session**:
+   - Read this CLAUDE.md file to understand the project
+   - Read `docs/CHANGELOG.md` to see recent changes
+   - Read relevant docs based on the task (e.g., `docs/API_DOCUMENTATION.md` for API work)
 
-### ✅ UI/UX Modernization Complete (2025-08-29)
-- **Responsive Sidebar Navigation**: Desktop left sidebar, mobile collapsible menu
-- **Modern Component System**: Card, Button, Input components with consistent styling
-- **Compact Tour Cards**: Horizontal layout on desktop, single column list view
-- **Mobile-First Design**: 100% responsive across all screen sizes
-- **Icon Integration**: React Icons (Fi) throughout the interface
-- **Color-coded Status System**: Visual indicators for tour status, payment, etc.
+2. **Before Making Changes**:
+   - Check `docs/ARCHITECTURE.md` to understand system design
+   - Check `docs/TROUBLESHOOTING.md` for known issues
+   - Verify database schema matches documentation (40 columns in tours table)
 
-### ✅ Enhanced Functionality
-- **Multi-Language Guide Support**: Checkbox selection for up to 3 languages per guide
-- **Email Integration**: Email field added to guide registration
-- **Separated Bokun Integration**: Dedicated page at `/bokun-integration`
-- **Improved Error Handling**: Comprehensive error boundaries and user feedback
-- **Data Validation**: Frontend and backend validation for all forms
-- **Ticket Management System**: Museum entrance ticket inventory with date/time organization
+3. **Development Workflow**:
+   - Frontend changes: Edit files in `src/`
+   - Backend changes: Edit files in `public_html/api/`
+   - Test locally before suggesting production deployment
+   - Always use port 5173 for frontend, 8080 for backend
 
-### ✅ Database & API Verification
-- **All CRUD Operations Tested**: Create, Read, Update, Delete for Tours, Guides, and Tickets
-- **RESTful API Endpoints**: Proper HTTP methods and status codes
-- **Database Integrity**: All foreign keys and relationships verified
-- **Performance Optimization**: Efficient queries with proper indexing
+4. **When Stuck**:
+   - Read `docs/TROUBLESHOOTING.md` for common issues
+   - Check `docs/DEVELOPMENT_GUIDE.md` for commands
+   - Read `docs/PROJECT_STATUS.md` for overall status
 
-## API Endpoints
+## 🚀 Deployment Process
 
-### Production APIs ✅ (https://withlocals.deetech.cc/api)
-- **Tours**: `/api/tours.php` - Full CRUD operations ✅ LIVE
-- **Guides**: `/api/guides.php` - Full CRUD operations ✅ LIVE
-- **Payments**: `/api/payments.php` - Payment transaction CRUD with date filtering ✅ LIVE
-- **Guide Payments**: `/api/guide-payments.php` - Guide payment summaries and analytics ✅ LIVE
-- **Payment Reports**: `/api/payment-reports.php` - Payment reports with date range filtering ✅ LIVE
-- **Tickets**: `/api/tickets.php` - Museum ticket inventory management (Uffizi/Accademia) ✅ LIVE
-- **Authentication**: `/api/auth.php` - Login/logout functionality ✅ LIVE
+### Quick Deploy Command
+Ask Claude Code to: *"Create a special agent to do the deployment process step by step"*
 
-### Development APIs (http://localhost:8080/api)
-- **Tours**: `/api/tours.php` - Full CRUD operations
-- **Guides**: `/api/guides.php` - Full CRUD operations
-- **Payments**: `/api/payments.php` - Payment transaction CRUD with date filtering
-- **Guide Payments**: `/api/guide-payments.php` - Guide payment summaries and analytics
-- **Payment Reports**: `/api/payment-reports.php` - Payment reports with date range filtering
-- **Tickets**: `/api/tickets.php` - Museum ticket inventory management (Uffizi/Accademia)
-- **Authentication**: `/api/auth.php` - Login/logout functionality
+### Manual Deployment Steps
 
-### Bokun Integration APIs
-- **Test Connection**: `/api/bokun_sync.php?action=test`
-- **Sync Bookings**: `/api/bokun_sync.php?action=sync`
-- **Get Unassigned**: `/api/bokun_sync.php?action=unassigned`
-- **Auto-Assign Guide**: `/api/bokun_sync.php?action=auto-assign`
+1. **Build Frontend**
+   ```bash
+   cd guide-florence-with-locals
+   npm run build
+   ```
 
-### Utility APIs
-- **Database Check**: `/api/database_check.php` - Verify database structure and connections
+2. **Deploy Backend (PHP files)**
+   ```bash
+   scp -P 65002 public_html/api/*.php u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/api/
+   ```
 
-## Development Commands
+3. **Deploy Frontend**
+   ```bash
+   scp -P 65002 -r dist/* u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/
+   ```
 
-### Start Development Environment
-```bash
-# Terminal 1 - Start frontend (React + Vite) - ALWAYS use port 5173
-cd guide-florence-with-locals
-npm run dev
+4. **Verify Deployment**
+   ```bash
+   curl -s "https://withlocals.deetech.cc/api/tours.php?upcoming=true&per_page=10"
+   ```
 
-# Terminal 2 - Start PHP backend server
-cd guide-florence-with-locals/public_html
-php -S localhost:8080
+### Production Server Details
+| Property | Value |
+|----------|-------|
+| SSH Host | 82.25.82.111 |
+| SSH Port | 65002 |
+| SSH User | u803853690 |
+| Web Root | /home/u803853690/domains/deetech.cc/public_html/withlocals |
+| URL | https://withlocals.deetech.cc |
+
+## 🏗️ Architecture Overview
+
+### Auto-Sync System
+```
+src/
+├── components/BokunAutoSyncProvider.jsx  # Provider wrapper + status indicator
+├── hooks/useBokunAutoSync.jsx            # React hook for sync state
+└── services/bokunAutoSync.js             # Sync service class
 ```
 
-### ⚠️ IMPORTANT: Port Management
-- **ALWAYS use port 5173** for the frontend - this is the standard development port
-- **Before starting development**: Kill any existing processes using ports 5173-5178
-- **Never run multiple frontend servers** on different ports simultaneously
-- **If port 5173 is occupied**: Stop the existing process first
+**Sync Triggers:**
+- On app startup (if last sync > 15 minutes ago)
+- Every 15 minutes (periodic interval)
+- On app focus/visibility change
 
-### Port Management Commands
-```bash
-# Check what's using port 5173
-netstat -ano | findstr :5173
-
-# Kill process using port 5173 (replace PID with actual process ID)
-taskkill //PID [PID_NUMBER] //F
-
-# Start fresh development server
-cd guide-florence-with-locals
-npm run dev
+### API Utilities (NEW - Jan 2026)
+```
+public_html/api/
+├── BaseAPI.php      # Base class for consistent API responses
+├── EnvLoader.php    # Environment variable loader
+├── Logger.php       # Centralized error logging
+└── Validator.php    # Input validation helper
 ```
 
-### Application Access
+### Ticket Detection Keywords
+Located in `src/utils/tourFilters.js`:
+- "Entry Ticket"
+- "Entrance Ticket" (added Jan 2026)
+- "Priority Ticket"
+- "Skip the Line"
+- "Skip-the-Line"
 
-#### Production Access ✅
-- **Live Application**: https://withlocals.deetech.cc
-- **API Base URL**: https://withlocals.deetech.cc/api
-- **Status**: Fully operational with all features working
+### PDF Report Generation (NEW - Jan 29, 2026)
+Located in `src/utils/pdfGenerator.js`:
 
-#### Development Access
-- **Frontend URL**: http://localhost:5173 (**FIXED PORT - DO NOT USE OTHER PORTS**)
-- **API Base URL**: http://localhost:8080/api/
+**Tech Stack:**
+- jsPDF 2.5.2 - Core PDF generation library
+- jsPDF-AutoTable 3.8.4 - Table plugin for data tables
 
-### Testing Bokun Integration
-1. Navigate to http://localhost:5173
-2. Login with admin credentials
-3. Go to "Bokun Integration" in sidebar navigation
-4. Click "API Monitor" tab to see real-time diagnostics
-5. Run diagnostics to confirm API status and permissions
+**Available Reports:**
+| Function | Description | Output |
+|----------|-------------|--------|
+| `generateGuidePaymentSummaryPDF()` | Guide payment overview | guide_payments_summary_YYYYMMDD.pdf |
+| `generatePendingPaymentsPDF()` | Tours awaiting payment | pending_payments_YYYYMMDD.pdf |
+| `generatePaymentTransactionsPDF()` | Payment history | payment_transactions_YYYYMMDD.pdf |
+| `generateMonthlySummaryPDF()` | Monthly breakdown | monthly_payment_summary_YYYYMMDD.pdf |
 
-## Authentication Credentials
-- **Admin**: dhanu / Kandy@123
-- **Viewer**: Sudeshshiwanka25@gmail.com / Sudesh@93
+**Design:**
+- Tuscan theme with terracotta accent (#C75D3A)
+- Professional header with company branding
+- Auto-generated filenames with dates
+- A4 landscape format for tables
 
-## Bokun Integration Status
+**Usage:**
+```javascript
+import { generateGuidePaymentSummaryPDF } from '../utils/pdfGenerator';
 
-### ✅ **PRODUCTION READY & OPERATIONAL** - Updated September 29, 2025
+// Generate and download PDF
+generateGuidePaymentSummaryPDF(guidesData);
+```
 
-### Production Configuration ✅
-- **Live URL**: https://withlocals.deetech.cc/bokun-integration
-- **Vendor ID**: 96929
-- **API Access Key**: 2c413c402bd9402092b4a3f5157c899e
-- **API Base URL**: https://api.bokun.is
-- **Booking Channel**: www.florencewithlocals.com
-- **Authentication**: HMAC-SHA1 signatures working ✅
-- **Connection Status**: **LIVE AND SYNCING** ✅
-- **Last Sync**: 47 bookings successfully synchronized to production database
-- **Integration Status**: **FULLY OPERATIONAL ON PRODUCTION** ✅
+### API Pagination
+- **Default**: 50 records per page (20 for guides)
+- **Maximum**: 500 records per page (increased Jan 2026)
+- **Upcoming Filter**: `?upcoming=true` returns today + 60 days
 
-### ✅ **BREAKTHROUGH: New Working Endpoint Confirmed**
-**Date**: September 25, 2025
-**Bokun Support Confirmation**: Sanjeet Sisodia (Connectivity Solutions Specialist)
+### Guides API (Updated Jan 28, 2026)
+Located in `public_html/api/guides.php`:
 
-- **NEW ENDPOINT**: `POST /booking.json/booking-search` ✅
-- **API Permissions**: CONFIRMED enabled (Admin role verified)
-- **Booking Channels**: CONFIRMED associated with API key
-- **Test Results**: **76 total bookings** returned successfully
-- **Integration Status**: **FULLY FUNCTIONAL** ✅
+**Endpoints:**
+- `GET /guides.php?page=1&per_page=20` - List guides with pagination
+- `POST /guides.php` - Create new guide
+- `PUT /guides.php/{id}` - Update existing guide
+- `DELETE /guides.php/{id}` - Delete guide
 
-### Working API Details
-**Endpoint**: `POST https://api.bokun.is/booking.json/booking-search`
-**Payload Example**:
+**Response Format (GET):**
 ```json
 {
-  "bookingRole": "SELLER",
-  "bookingStatuses": ["CONFIRMED"],
-  "pageSize": 50,
-  "startDateRange": {
-    "from": "2025-08-25T10:00:14.359Z",
-    "includeLower": true,
-    "includeUpper": true,
-    "to": "2025-09-25T19:00:14.359Z"
+  "data": [...],
+  "pagination": {
+    "current_page": 1,
+    "per_page": 20,
+    "total": 45,
+    "total_pages": 3,
+    "has_next": true,
+    "has_prev": false
   }
 }
 ```
 
-**Response**: Returns full booking data with 1600+ total bookings accessible
+**Database Indexes:**
+- `idx_email` - Index on email column
+- `idx_name` - Index on name column
 
-### Current Production Status ✅
-- **Real Bookings Synchronized**: ✅ 47 tours with live Bokun data on production
-- **Data Sources**: Viator.com, GetYourGuide confirmed working
-- **API Monitor**: Updated to show **"Integration Ready"** status on https://withlocals.deetech.cc
-- **Automatic Sync**: Fully operational with working endpoint on production server
-- **Dashboard Integration**: Tours appearing correctly in dashboard and tour list
-- **Production Database**: All Bokun tours properly stored and displayed
+### Bokun API Integration Details
+Located in `public_html/api/BokunAPI.php`:
 
-## System Architecture
+**Booking Roles** (CRITICAL for OTA sync):
+- `SUPPLIER` - Fetches OTA bookings (Viator, GetYourGuide) where you supply the tour
+- `SELLER` - Fetches direct bookings where you sell directly
+- **Both roles are queried** to get all bookings
 
-### Frontend Architecture
-- **Component-Based**: Modular React components with clear separation of concerns
-- **Context Management**: Authentication and page title contexts
-- **Service Layer**: Centralized API communication with caching and error handling
-- **Responsive Design**: Mobile-first approach with TailwindCSS utilities
+**Time Extraction** (CRITICAL for correct times):
+- Uses `startTimeStr` field (local time) instead of UTC timestamp conversion
+- This ensures tour times match what's shown in Bokun/OTA dashboards
 
-### Backend Architecture
-- **RESTful APIs**: Standard HTTP methods with proper status codes
-- **Database Layer**: MySQLi with prepared statements for security
-- **CORS Configuration**: Proper cross-origin resource sharing setup
-- **Error Handling**: Comprehensive error responses with logging
+**Pagination**:
+- Default pageSize: 200 (increased from 50)
+- Multi-page support: Fetches up to 10 pages (2000 bookings max)
+- Deduplicates bookings by ID across roles
 
-### Data Flow
-1. **User Interaction**: Frontend React components
-2. **Service Layer**: mysqlDB.js handles API communication
-3. **Backend APIs**: PHP endpoints process requests
-4. **Database**: MySQL stores and retrieves data
-5. **Response**: JSON data returned to frontend
-6. **UI Update**: React components re-render with new data
+### API Rate Limiting (NEW - Jan 29, 2026)
+Located in `public_html/api/RateLimiter.php`:
 
-## Current Feature Status
+**Rate Limits by Endpoint Type:**
+| Type | Limit | Window | Used By |
+|------|-------|--------|---------|
+| login | 5 | 1 min | auth.php |
+| read | 100 | 1 min | GET requests |
+| write/create | 30 | 1 min | POST requests |
+| update | 30 | 1 min | PUT requests |
+| delete | 10 | 1 min | DELETE requests |
+| bokun_sync | 10 | 1 min | bokun_sync.php |
+| webhook | 30 | 1 min | bokun_webhook.php |
 
-### ✅ Fully Implemented & Live on Production
-- **Tour Management**: Create, edit, delete, status updates ✅ LIVE
-- **Guide Management**: Multi-language support ✅ LIVE
-- **Payment System**: Complete tracking with Italian timezone support ✅ LIVE
-- **Payment Reports**: Calendar-based date range filtering ✅ LIVE
-- **Guide Analytics**: Payment summaries and analytics ✅ LIVE
-- **Ticket Management**: Museum inventory system (Uffizi/Accademia) ✅ LIVE
-- **Authentication**: User authentication and role-based access ✅ LIVE
-- **Responsive UI**: Modern design across all devices ✅ LIVE
-- **Database Operations**: All relationships and data integrity ✅ LIVE
-- **API Endpoints**: Proper error handling and validation ✅ LIVE
-- **Bokun Integration**: Live synchronization with 47 bookings ✅ LIVE
-- **Dashboard**: Real-time data display with proper filtering ✅ LIVE
+**Usage in Endpoints:**
+```php
+// Automatic rate limiting by HTTP method
+autoRateLimit('endpoint-name');
 
-### ✅ Production Deployment Completed
-- **Environment Configuration**: .env.production with correct API URLs ✅
-- **Database Migration**: Production MySQL database setup ✅
-- **SSH Deployment**: Automated deployment process established ✅
-- **SSL Certificate**: HTTPS security enabled ✅
-- **API Endpoint Fixes**: All .php extensions corrected ✅
-- **Hardcoded URL Fixes**: All localhost URLs replaced with environment variables ✅
-- **Payment System Tables**: Missing guide_payments table created and populated ✅
+// Explicit rate limit type
+applyRateLimit('login');           // 5 per minute
+applyRateLimit('read');            // 100 per minute
+applyRateLimit('bokun_sync');      // 10 per minute
 
-### 🔄 Future Enhancements
-- Push notifications for new bookings
-- Advanced reporting and analytics
-- Guide availability calendar integration
-- Customer communication portal
+// Custom limits
+applyRateLimit('custom', 50, 60);  // 50 per 60 seconds
+```
 
-## Performance & Optimization
+**HTTP Response Headers:**
+- `X-RateLimit-Limit` - Max requests allowed
+- `X-RateLimit-Remaining` - Requests remaining
+- `X-RateLimit-Reset` - Unix timestamp when limit resets
+- `Retry-After` - Seconds until retry (on 429 response)
 
-### Frontend Optimization
-- **Caching Strategy**: localStorage with 1-minute expiry for tour data
-- **Bundle Optimization**: Vite build system with code splitting
-- **Responsive Images**: Efficient loading and rendering
-- **State Management**: Optimized React context usage
+**Database Table:** `rate_limits` (auto-created if missing)
 
-### Backend Optimization
-- **Database Queries**: Efficient JOIN operations for related data
-- **Connection Pool**: MySQLi connection management
-- **Caching Headers**: Proper HTTP caching directives
-- **Error Logging**: Comprehensive logging for debugging
+## 🔮 Future Development Roadmap
 
-## Security Features
-- **SQL Injection Prevention**: Prepared statements throughout
-- **Input Validation**: Frontend and backend data validation
-- **Authentication Tokens**: Secure session management
-- **CORS Configuration**: Controlled cross-origin access
-- **Password Hashing**: Secure password storage
+### Planned Features
+| Feature | Priority | Status |
+|---------|----------|--------|
+| Push notifications for new bookings | High | Planned |
+| Guide availability calendar | High | Planned |
+| Advanced reporting & analytics | Medium | Planned |
+| Customer communication portal | Medium | Planned |
+| Mobile app (React Native) | Low | Future |
+| Multi-location support | Low | Future |
 
-## Testing & Quality Assurance
+### Technical Improvements
+| Improvement | Priority | Description |
+|-------------|----------|-------------|
+| ~~Database indexing~~ | ~~High~~ | ✅ Done - Added indexes for guides table (Jan 28, 2026) |
+| ~~API rate limiting~~ | ~~Medium~~ | ✅ Done - Database-backed rate limiting (Jan 29, 2026) |
+| ~~Unit tests~~ | ~~Medium~~ | ✅ Done - Vitest + PHP tests, 52 tests passing (Jan 29, 2026) |
+| Caching layer (Redis) | Medium | Reduce database load |
+| CI/CD pipeline | Low | GitHub Actions for automated deployment |
+| TypeScript migration | Low | Type safety for frontend |
 
-### Tested Components
-- ✅ All CRUD operations for Tours, Guides, and Tickets
-- ✅ User authentication and authorization
-- ✅ Responsive design across devices
-- ✅ Database connection and query performance
-- ✅ API endpoint functionality and error handling
-- ✅ Frontend-backend data synchronization
-- ✅ Bokun API integration (authentication working, awaiting permissions)
-- ✅ Museum ticket inventory management system
+### Known Issues to Address
+1. **Large dataset pagination** - Consider infinite scroll for 500+ records
+2. **Offline support** - Service worker for offline viewing
+3. **Real-time updates** - WebSocket for live booking notifications
+4. **Multi-tenant support** - Support for multiple tour companies
 
-### Test Coverage
-- **API Endpoints**: 100% of core functionality tested
-- **Database Operations**: All tables and relationships verified
-- **UI Components**: Responsive behavior confirmed
-- **Error Scenarios**: Proper error handling and user feedback
+### Resolved Issues (Jan 2026)
+1. **GetYourGuide bookings not syncing** - Fixed by adding SUPPLIER role to Bokun API (Jan 25)
+2. **Tour times off by 1 hour** - Fixed by using startTimeStr instead of UTC timestamp (Jan 25)
+3. **Only 50 bookings syncing** - Fixed by increasing pageSize to 200 with pagination (Jan 25)
+4. **Tours page showing old data** - Fixed by defaulting to upcoming filter (Jan 25)
+5. **Guides page missing pagination** - Added pagination with 20 per page (Jan 28)
+6. **Guides API using POST for updates** - Changed to RESTful PUT `/guides.php/{id}` (Jan 28)
+7. **Guides page global loading state** - Added per-operation loading for Save/Delete buttons (Jan 28)
+8. **Guides table missing indexes** - Added `idx_email` and `idx_name` indexes (Jan 28)
+9. **Guide payments showing €0.00** - Fixed VIEW to query `payments` table instead of `payment_transactions` (Jan 29)
+10. **Pending payments inconsistent counts** - Added authoritative `pending_tours` API endpoint (Jan 29)
+11. **Frontend using wrong unpaid logic** - Changed to use API instead of legacy `paid` field (Jan 29)
 
-## Troubleshooting Guide
+## 📁 New Files Added (Jan 2026)
 
-### Common Issues & Solutions
+### Frontend Utilities
+| File | Purpose |
+|------|---------|
+| `src/utils/pdfGenerator.js` | PDF report generation using jsPDF - Jan 29, 2026 |
+| `src/utils/tourFilters.js` | Ticket detection keywords for filtering |
 
-#### Frontend Issues
-- **Port Conflicts**: **NEVER allow application to start on different ports**
-  - **SOLUTION**: Always kill existing processes and use port 5173 only
-  - **Commands**: `netstat -ano | findstr :5173` then `taskkill //PID [PID] //F`
-- **Multiple Servers**: **NEVER run multiple development servers simultaneously**
-  - **SOLUTION**: Kill all background Vite servers before starting new one
-- **Icon Errors**: Ensure correct React Icons import names (FiHome, not FiBuilding)
-- **Build Errors**: Clear cache with `npm run dev` restart
+### Backend Utilities
+| File | Purpose |
+|------|---------|
+| `BaseAPI.php` | Standardized JSON responses, error handling |
+| `EnvLoader.php` | Load environment variables from .env files |
+| `Logger.php` | File-based error logging with rotation |
+| `Validator.php` | Input sanitization and validation |
+| `RateLimiter.php` | Database-backed API rate limiting - Jan 29, 2026 |
 
-#### Backend Issues
-- **Database Connection**: Verify MySQL service and credentials in config.php
-- **PHP Extensions**: Ensure curl, openssl, mysqli are enabled
-- **API Responses**: Check CORS headers and request methods
+### Database Migrations
+| File | Purpose |
+|------|---------|
+| `database/add_missing_indexes.sql` | Performance optimization |
+| `database/migrations/create_sync_logs_table.sql` | Sync history tracking |
+| `database/add_guides_indexes.sql` | Guides table indexes (email, name) - Jan 28, 2026 |
+| `database/migrations/create_rate_limits_table.sql` | API rate limiting storage - Jan 29, 2026 |
+| `database/migrations/fix_guide_payment_summary_view.sql` | Fix VIEW table reference - Jan 29, 2026 |
 
-#### Integration Issues
-- **Bokun API**: Connection works, awaiting booking channel permissions
-- **Data Sync**: Manual entry system provides full functionality
+### Configuration
+| File | Purpose |
+|------|---------|
+| `.env.example` | Template for environment configuration |
 
-## Environment Status
+## 🔧 Common Development Tasks
 
-### Production Environment ✅ LIVE
-- **Live Application**: https://withlocals.deetech.cc ✅ OPERATIONAL
-- **Production API**: https://withlocals.deetech.cc/api ✅ OPERATIONAL
-- **Production Database**: u803853690_florence_guides ✅ ACTIVE
-- **SSL Certificate**: HTTPS enabled ✅ SECURE
-- **Bokun Integration**: 47 bookings synchronized ✅ LIVE
-- **Payment System**: Complete functionality ✅ OPERATIONAL
-- **Dashboard**: Real-time data display ✅ WORKING
-- **All Features**: Fully functional on production ✅ VERIFIED
+### Add New Ticket Detection Keyword
+Edit `src/utils/tourFilters.js`:
+```javascript
+const TICKET_KEYWORDS = [
+  'Entry Ticket',
+  'Entrance Ticket',
+  'Priority Ticket',
+  'Skip the Line',
+  'Skip-the-Line',
+  'YOUR_NEW_KEYWORD'  // Add here
+];
+```
 
-### Development Environment ✅
-- **Frontend Server**: **ALWAYS** running on http://localhost:5173 ✅ (**FIXED PORT**)
-- **Backend Server**: Running on http://localhost:8080 ✅
-- **Database Connection**: Active and responsive ✅
-- **API Endpoints**: All tested and functional ✅
-- **Bokun API Monitor**: Real-time diagnostics with auto-refresh ✅
-- **UI Components**: Modern, responsive, and optimized ✅
-- **Port Management**: Single port (5173) usage enforced ✅
+### Extend Auto-Sync Interval
+Edit `src/hooks/useBokunAutoSync.jsx`:
+```javascript
+const SYNC_INTERVAL_MS = 15 * 60 * 1000; // Change 15 to desired minutes
+```
 
-## Project Completion Status
+### Add New API Endpoint
+1. Create `public_html/api/your-endpoint.php`
+2. Use BaseAPI pattern:
+```php
+<?php
+require_once 'config.php';
+require_once 'BaseAPI.php';
 
-### 🎯 Phase 1: Core Functionality - **COMPLETE** ✅
-- Database design and implementation
-- Backend API development
-- Frontend React application
-- Authentication system
-- CRUD operations for all entities
+$api = new BaseAPI();
+// Your logic here
+$api->sendSuccess($data);
+```
 
-### 🎯 Phase 2: UI/UX Modernization - **COMPLETE** ✅
-- Responsive sidebar navigation
-- Modern component system
-- Mobile-first design
-- Compact and efficient layouts
-- Visual status indicators
+### Database Schema Changes
+1. Update local database first
+2. Test thoroughly
+3. Create migration SQL in `database/migrations/`
+4. Apply to production via SSH
 
-### 🎯 Phase 3: Integration & Testing - **COMPLETE** ✅
-- Bokun API integration (ready for activation)
-- Comprehensive testing of all features
-- Database optimization
-- Error handling and validation
+## 🛠️ Florence Skills Toolkit
 
-### 🎯 Phase 4: Production Deployment - **COMPLETED** ✅
-- **Live Production Site**: https://withlocals.deetech.cc operational
-- **All Systems Live**: Complete functionality verified on production
-- **Database Migration**: Successfully deployed and populated
-- **Bokun Integration**: 47 bookings synchronized and displaying
-- **Payment System**: Fully operational with guide analytics
-- **Dashboard**: Real-time data display working correctly
-- **SSL Security**: HTTPS certificate active
-- **Documentation**: Complete and updated
+Custom development skills are available in `../florence-skills/` directory. These provide specialized guidance for this project:
 
-## Support & Maintenance
+### Available Skills
+| Skill | Path | Use For |
+|-------|------|---------|
+| **UI Designer** | `skills/ui-designer/SKILL.md` | Tuscan-inspired components, colors, styling |
+| **Mobile Optimizer** | `skills/mobile-optimizer/SKILL.md` | Responsive design, touch interactions |
+| **Security Hardener** | `skills/security-hardener/SKILL.md` | Input validation, XSS/SQL injection prevention |
+| **Reliability Engineer** | `skills/reliability-engineer/SKILL.md` | Error handling, monitoring, deployment |
+| **PHP Backend** | `skills/php-backend/SKILL.md` | API endpoints, database patterns |
+| **React Patterns** | `skills/react-patterns/SKILL.md` | Component structure, hooks, contexts |
 
-### Documentation
-- **Code Comments**: Comprehensive inline documentation
-- **API Documentation**: All endpoints documented with examples
-- **Database Schema**: Complete table and relationship documentation
-- **Setup Guide**: Step-by-step installation and configuration
+### Available Agents
+| Agent | Path | Use For |
+|-------|------|---------|
+| **Code Reviewer** | `agents/code-reviewer/AGENT.md` | Security/performance code review |
+| **Deployment Checker** | `agents/deployment-checker/AGENT.md` | Pre-deployment validation |
 
-### Monitoring & Logging
-- **Error Logging**: Backend API errors logged to PHP error log
-- **Performance Monitoring**: Response time tracking
-- **Database Monitoring**: Connection and query performance
-- **User Activity**: Authentication and action logging
+### How to Use
+Ask Claude Code to use a skill:
+```
+Using the UI Designer skill, create a new card component for tour details.
+Using the PHP Backend skill, create an API endpoint for guide schedules.
+Using the Code Reviewer agent, review my changes for security issues.
+```
 
-## Next Steps & Recommendations
+Claude will read the relevant SKILL.md file and apply its patterns to your request.
 
-### Completed Actions ✅
-1. **Production Deployment**: ✅ COMPLETED - https://withlocals.deetech.cc live and operational
-2. **Bokun Integration**: ✅ COMPLETED - 47 bookings synchronized and working
-3. **Payment System**: ✅ COMPLETED - Full functionality with analytics
-4. **Database Setup**: ✅ COMPLETED - Production database migrated and operational
-5. **SSL Security**: ✅ COMPLETED - HTTPS certificate active
+## Support
 
-### Current Status
-1. **System Monitoring**: Ongoing performance monitoring of live production site
-2. **User Training**: Ready for admin user onboarding
-3. **Feature Enhancement**: System ready for additional feature development
+For troubleshooting and common issues, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
-### Future Enhancements
-1. **Analytics Dashboard**: Advanced reporting features
-2. **Mobile App**: Native mobile application
-3. **Customer Portal**: Self-service customer interface
-4. **Advanced Booking**: Complex tour package management
+## Repository
+
+**GitHub**: https://github.com/DhaNu1204/guide-florence-with-locals.git
 
 ---
 
-**Project Status**: ✅ **FULLY DEPLOYED AND OPERATIONAL** - Live production site at https://withlocals.deetech.cc with all core functionality working perfectly. Modern, responsive UI with comprehensive tour and guide management capabilities. Bokun API integration successfully synchronized 47 bookings. Payment system, dashboard, and all features fully operational on production server.
+**Last Updated**: January 29, 2026
+**Production URL**: https://withlocals.deetech.cc
+**Status**: ✅ Fully Operational
+**Last Deployment**: January 29, 2026
+**Bookings Synced**: 200+ (Viator + GetYourGuide)
+**Tests**: 52 passing (Vitest + React Testing Library)
+
+**📌 Remember**: When working on this project, always read the relevant documentation files in `docs/` folder to understand the complete context before making changes.

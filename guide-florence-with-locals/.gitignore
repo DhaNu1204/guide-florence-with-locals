@@ -1,0 +1,136 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Production build
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Database configuration (keep template)
+public_html/api/config.php
+
+# Development and testing files
+debug_*.php
+test_*.php
+check_*.php
+add_*.php
+clear_*.php
+*_test.php
+*_debug.php
+
+# Cache and temporary files
+*.tmp
+*.temp
+cache/
+temp/
+
+# Sensitive data
+config.production.php
+.env.production
+
+# Debug HTML files
+debug_*.html
+
+# Development scripts
+test_*.html
+debug_*.html
+
+# One-time migration SQL files (executed in production)
+CHECK_AND_ADD.sql
+CLEAN_MIGRATION.sql
+create_payment_views.sql
+add_paid_column.sql
+add_time_column.sql
+import_tickets.sql
+import_tickets_fixed.sql
+insert_july_tickets.sql
+insert_july_uffizi_tickets.sql
+insert_june_uffizi_tickets.sql
+database_export_for_hostinger.sql
+
+# Obsolete documentation (merged into primary docs)
+TOUR_DATE_BUG_FIX.md
+PAYMENTS_PAGE_FIX.md
+PRIORITY_TICKETS_404_FIX.md
+PRODUCTION_DATA_DISCREPANCY_REPORT.md
+MIGRATION_INSTRUCTIONS.md
+BOKUN_SUPPORT_MESSAGE.md
+BOKUN_SUPPORT_REQUEST.md
+BOKUN_SUPPORT_REPLY.md
+BOKUN_STATUS_REPORT.md
+BOKUN_TESTING_GUIDE.md
+BOKUN_API_CONFIGURATION.md
+CODEBASE_ANALYSIS.md
+
+# PHP utility and migration scripts
+fix_*.php
+migrate_*.php
+create_views_*.php
+execute_*.php
+update_*.php
+insert_*.php
+import_*.php
+diagnose_*.php
+sync_*.php
+run_*.php
+simple_*.php
+count_*.php
+
+# Keep essential schema files tracked (negate patterns above)
+!database_schema_updated.sql
+!production_database_migration.sql
+!update_production_schema.sql

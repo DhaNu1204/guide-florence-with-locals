@@ -2,35 +2,49 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FiCalendar,
-  FiUsers,
-  FiTag,
-  FiDollarSign,
-  FiTrendingUp,
   FiClock,
-  FiMapPin,
-  FiRefreshCw,
-  FiPlus,
+  FiDollarSign,
   FiEye,
-  FiAlertCircle
+  FiAlertCircle,
+  FiRefreshCw,
+  FiUsers,
+  FiMapPin
 } from 'react-icons/fi';
-import Card, { StatsCard, ActionCard, TourCard } from './UI/Card';
+import Card from './UI/Card';
 import Button from './UI/Button';
 import { getTours, getGuides } from '../services/mysqlDB';
+import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
+import { useBokunSync } from '../hooks/useBokunAutoSync';
+
+// Helper function to format time ago
+const formatTimeAgo = (date) => {
+  if (!date) return 'Never';
+
+  const now = new Date();
+  const syncDate = new Date(date);
+  const diffMs = now - syncDate;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  if (diffHours < 24) return `${diffHours} hr ago`;
+  return syncDate.toLocaleDateString();
+};
 
 const Dashboard = () => {
+  const { lastSync, isSyncing, syncNow, error: syncError } = useBokunSync();
+
   const [stats, setStats] = useState({
-    totalTours: 0,
-    activeTours: 0,
-    totalGuides: 0,
-    upcomingTours: 0,
+    unassignedTours: 0,
     unpaidTours: 0,
-    todayTours: 0
+    totalGuidedTours: 0,
+    paidTours: 0
   });
   const [recentTours, setRecentTours] = useState([]);
   const [upcomingTours, setUpcomingTours] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   useEffect(() => {
     loadDashboardData();
@@ -39,62 +53,72 @@ const Dashboard = () => {
   const loadDashboardData = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      // Load tours data with optional force refresh
-      const toursData = await getTours(forceRefresh);
+      // Fetch upcoming tours for display lists
+      const upcomingResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
+      // Fetch all tours for accurate payment stats (past tours need to be counted)
+      const allToursResponse = await getTours(forceRefresh, 1, 500, {});
       const guidesData = await getGuides();
-      
-      if (toursData && guidesData) {
-        // Filter out ticket products (not actual tours) - BUT keep Bokun synced bookings
-        const ticketProducts = [
-          'Uffizi Gallery Priority Entrance Tickets',
-          'Skip the Line: Accademia Gallery Priority Entry Ticket with eBook'
-        ];
-        const filteredTours = toursData.filter(tour => {
-          const isTicketProduct = ticketProducts.some(ticket => tour.title && tour.title.includes(ticket));
-          // Keep tour if it's NOT a ticket product OR if it's from Bokun (real booking)
-          return !isTicketProduct || tour.external_source === 'bokun';
-        });
 
-        calculateStats(filteredTours, guidesData);
+      // Fetch pending payments count from API (authoritative source)
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+      let pendingPaymentsCount = 0;
+      try {
+        const pendingResponse = await fetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
+        if (pendingResponse.ok) {
+          const pendingData = await pendingResponse.json();
+          if (pendingData.success) {
+            pendingPaymentsCount = pendingData.count || (pendingData.data ? pendingData.data.length : 0);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch pending payments count:', e);
+      }
 
-        // Get recent and upcoming tours
+      const upcomingData = upcomingResponse && upcomingResponse.data ? upcomingResponse.data : upcomingResponse;
+      const allToursData = allToursResponse && allToursResponse.data ? allToursResponse.data : allToursResponse;
+
+      if (upcomingData && allToursData && guidesData) {
+        // Filter out ticket products - only count real guided tours
+        const allGuidedTours = filterToursOnly(allToursData);
+        const upcomingGuidedTours = filterToursOnly(upcomingData);
+
+        calculateStats(allGuidedTours, upcomingGuidedTours, guidesData, pendingPaymentsCount);
+
         const now = new Date();
-        const today = new Date().toDateString();
 
-        const recent = filteredTours
+        // Unassigned upcoming tours (need guide assignment)
+        const recent = upcomingGuidedTours
           .filter(tour => {
-            // Show unassigned tours for today, tomorrow, and future dates
             if (tour.cancelled) return false;
-
             const tourDate = new Date(tour.date);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0); // Reset to start of day for comparison
-
-            // Only show tours from today onwards
-            if (tourDate < today) return false;
-
-            // Only show unassigned tours (no guide assigned)
+            const todayDate = new Date();
+            todayDate.setHours(0, 0, 0, 0);
+            if (tourDate < todayDate) return false;
             const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
-
-            // Show only unassigned tours
             return !hasGuide;
           })
-          .sort((a, b) => new Date(a.date) - new Date(b.date)) // Sort by date ascending (earliest first)
+          .sort((a, b) => {
+            const dateA = new Date(a.date + ' ' + a.time);
+            const dateB = new Date(b.date + ' ' + b.time);
+            return dateA - dateB;
+          })
           .slice(0, 10);
 
-        const upcoming = filteredTours
+        // Upcoming tours list
+        const upcoming = upcomingGuidedTours
           .filter(tour => {
             if (tour.cancelled) return false;
-
             const tourDate = new Date(tour.date);
-            if (tourDate < now) return false; // Must be future tours
-
-            // Show all upcoming tours regardless of guide assignment or payment status
+            if (tourDate < now) return false;
             return true;
           })
-          .sort((a, b) => new Date(a.date) - new Date(b.date))
-          .slice(0, 5);
-          
+          .sort((a, b) => {
+            const dateA = new Date(a.date + ' ' + a.time);
+            const dateB = new Date(b.date + ' ' + b.time);
+            return dateA - dateB;
+          })
+          .slice(0, 15);
+
         setRecentTours(recent);
         setUpcomingTours(upcoming);
       }
@@ -103,321 +127,324 @@ const Dashboard = () => {
       setError('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
-      setLastRefresh(new Date());
     }
   };
 
-  const calculateStats = (tours, guides) => {
+  const calculateStats = (allTours, upcomingTours, guides, pendingPaymentsCount = 0) => {
     const now = new Date();
-    const today = new Date().toDateString();
-    
-    const totalTours = tours.length;
-    const activeTours = tours.filter(tour => !tour.cancelled).length;
-    const totalGuides = guides.length;
-    
-    const upcomingTours = tours.filter(tour => {
-      const tourDate = new Date(tour.date);
-      return !tour.cancelled && tourDate >= now;
-    }).length;
-    
-    // Count tours with unpaid or partial payment status
-    const unpaidTours = tours.filter(tour => {
+    now.setHours(0, 0, 0, 0);
+
+    // Count unassigned UPCOMING tours (future tours without guide)
+    const unassignedTours = upcomingTours.filter(tour => {
       if (tour.cancelled) return false;
       const tourDate = new Date(tour.date);
-      if (tourDate >= now) return false; // Only count past tours
-
-      // Check enhanced payment status
-      if (tour.payment_status) {
-        return tour.payment_status === 'unpaid' || tour.payment_status === 'partial';
-      }
-      // Fallback to legacy paid field
-      return !tour.paid;
+      tourDate.setHours(0, 0, 0, 0);
+      if (tourDate < now) return false;
+      const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
+      return !hasGuide;
     }).length;
-    
-    const todayTours = tours.filter(tour => 
-      !tour.cancelled && new Date(tour.date).toDateString() === today
-    ).length;
 
+    // Count paid PAST tours (for display purposes)
+    const pastTours = allTours.filter(tour => {
+      if (tour.cancelled) return false;
+      const tourDate = new Date(tour.date);
+      tourDate.setHours(0, 0, 0, 0);
+      return tourDate < now; // Past tours only
+    });
+
+    const paidTours = pastTours.filter(tour => {
+      if (tour.payment_status) {
+        return tour.payment_status === 'paid';
+      }
+      return tour.paid === 1 || tour.paid === true || tour.paid === '1';
+    }).length;
+
+    // Use API count for unpaid tours (authoritative source - checks payments table)
     setStats({
-      totalTours,
-      activeTours,
-      totalGuides,
-      upcomingTours,
-      unpaidTours,
-      todayTours
+      unassignedTours,
+      unpaidTours: pendingPaymentsCount,
+      paidTours,
+      totalGuidedTours: allTours.filter(t => !t.cancelled).length
     });
   };
 
-  const quickActions = [
-    {
-      title: 'Add New Tour',
-      description: 'Schedule a new guided tour',
-      icon: FiPlus,
-      color: 'blue',
-      link: '/tours#add'
-    },
-    {
-      title: 'Payment Management',
-      description: 'Record and track payments',
-      icon: FiDollarSign,
-      color: 'green',
-      link: '/payments'
-    },
-    {
-      title: 'Manage Guides',
-      description: 'View and edit guide information',
-      icon: FiUsers,
-      color: 'purple',
-      link: '/guides'
-    },
-    {
-      title: 'Ticket Inventory',
-      description: 'Manage museum tickets',
-      icon: FiTag,
-      color: 'orange',
-      link: '/tickets'
-    }
-  ];
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-terracotta-500"></div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {/* Header with Tuscan styling */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-stone-900">Dashboard</h1>
+          <p className="text-stone-500 text-sm mt-1">Welcome to Florence with Locals</p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className="hidden sm:inline text-sm text-stone-500">
+            Last sync: {formatTimeAgo(lastSync)}
+          </span>
+          <button
+            onClick={syncNow}
+            disabled={isSyncing}
+            className={`p-3 min-h-[44px] min-w-[44px] rounded-tuscan-lg hover:bg-stone-100 active:bg-stone-200 transition-all touch-manipulation flex items-center justify-center ${
+              isSyncing ? 'text-terracotta-500' : 'text-stone-500 hover:text-terracotta-600'
+            }`}
+            title={isSyncing ? 'Syncing...' : 'Sync now'}
+          >
+            <FiRefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Sync Error Alert */}
+      {syncError && (
+        <div className="bg-gold-50 border border-gold-200 text-gold-800 px-4 py-3 rounded-tuscan-lg flex items-center text-sm shadow-tuscan-sm">
+          <FiAlertCircle className="mr-2 flex-shrink-0 text-gold-600" />
+          <span>Sync error: {syncError}</span>
+        </div>
+      )}
+
       {/* Error Alert */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start">
-          <FiAlertCircle className="text-xl mr-3 mt-0.5 flex-shrink-0" />
+        <div className="bg-terracotta-50 border border-terracotta-200 text-terracotta-800 px-4 py-3 rounded-tuscan-lg flex items-start shadow-tuscan-sm">
+          <FiAlertCircle className="text-xl mr-3 mt-0.5 flex-shrink-0 text-terracotta-600" />
           <div className="flex-1">
             <p className="font-medium">Error</p>
-            <p className="text-sm mt-1">{error}</p>
+            <p className="text-sm mt-1 text-terracotta-700">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="ml-4 text-red-500 hover:text-red-700"
+            className="ml-2 p-2 min-h-[44px] min-w-[44px] text-terracotta-500 hover:text-terracotta-700 hover:bg-terracotta-100 active:bg-terracotta-200 rounded-lg transition-colors touch-manipulation flex items-center justify-center"
           >
-            ×
+            <span className="text-xl font-bold">×</span>
           </button>
         </div>
       )}
-      {/* Welcome Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold mb-2">Welcome to Florence with Locals Tour Guide Management System</h1>
-            <p className="text-blue-100 text-sm md:text-base">
-              Manage your tours, guides, and bookings efficiently
-            </p>
-            <p className="text-blue-200 text-xs mt-2">
-              Last updated: {lastRefresh.toLocaleTimeString()}
-            </p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={FiRefreshCw}
-              onClick={() => loadDashboardData(true)}
-              disabled={loading}
-              className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30"
-            >
-              Refresh
-            </Button>
-            <div className="hidden md:block">
-              <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                <FiMapPin className="text-2xl" />
-              </div>
+
+      {/* Stats Grid with Tuscan styling - 2 columns on desktop */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Unassigned Tours Card */}
+        <div className="group bg-gradient-to-br from-gold-50 to-gold-100/50 rounded-tuscan-xl border border-gold-200/50 p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gold-700 mb-2">Unassigned Tours</p>
+              <p className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
+                {stats.unassignedTours}
+              </p>
+              <p className="text-xs text-stone-500 mt-2 flex items-center">
+                <FiCalendar className="mr-1" />
+                Future tours without guide
+              </p>
+            </div>
+            <div className="w-14 h-14 bg-gold-200/50 rounded-tuscan-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+              <FiUsers className="text-gold-600 text-2xl" />
             </div>
           </div>
+          {stats.unassignedTours > 0 && (
+            <div className="mt-4 pt-4 border-t border-gold-200/50">
+              <Link
+                to="/tours"
+                className="text-sm font-medium text-gold-700 hover:text-gold-800 flex items-center group-hover:translate-x-1 transition-transform"
+              >
+                Assign guides now
+                <span className="ml-1">→</span>
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* Guide Payment Status Card */}
+        <div className={`group rounded-tuscan-xl border p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300 ${
+          stats.unpaidTours > 0
+            ? 'bg-gradient-to-br from-terracotta-50 to-terracotta-100/50 border-terracotta-200/50'
+            : 'bg-gradient-to-br from-olive-50 to-olive-100/50 border-olive-200/50'
+        }`}>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <p className={`text-sm font-medium mb-2 ${
+                stats.unpaidTours > 0 ? 'text-terracotta-700' : 'text-olive-700'
+              }`}>
+                Guide Payments Pending
+              </p>
+              <p className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
+                {stats.unpaidTours}
+              </p>
+              <p className="text-xs text-stone-500 mt-2 flex items-center">
+                <FiDollarSign className="mr-1" />
+                Past guided tours awaiting payment
+              </p>
+              {stats.paidTours > 0 && (
+                <p className="text-xs text-olive-600 mt-1">
+                  {stats.paidTours} tours already paid
+                </p>
+              )}
+            </div>
+            <div className={`w-14 h-14 rounded-tuscan-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300 ${
+              stats.unpaidTours > 0 ? 'bg-terracotta-200/50' : 'bg-olive-200/50'
+            }`}>
+              <FiDollarSign className={`text-2xl ${
+                stats.unpaidTours > 0 ? 'text-terracotta-600' : 'text-olive-600'
+              }`} />
+            </div>
+          </div>
+          {stats.unpaidTours > 0 && (
+            <div className="mt-4 pt-4 border-t border-terracotta-200/50">
+              <Link
+                to="/payments"
+                className="text-sm font-medium text-terracotta-700 hover:text-terracotta-800 flex items-center group-hover:translate-x-1 transition-transform"
+              >
+                Process payments
+                <span className="ml-1">→</span>
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatsCard
-          title="Total Tours"
-          value={stats.totalTours}
-          icon={FiCalendar}
-          color="blue"
-        />
-        <StatsCard
-          title="Active Tours"
-          value={stats.activeTours}
-          icon={FiClock}
-          color="green"
-        />
-        <StatsCard
-          title="Total Guides"
-          value={stats.totalGuides}
-          icon={FiUsers}
-          color="purple"
-        />
-        <StatsCard
-          title="Upcoming"
-          value={stats.upcomingTours}
-          icon={FiTrendingUp}
-          color="orange"
-        />
-        <StatsCard
-          title="Today's Tours"
-          value={stats.todayTours}
-          icon={FiMapPin}
-          color="blue"
-        />
-        <StatsCard
-          title="Unpaid"
-          value={stats.unpaidTours}
-          icon={FiDollarSign}
-          color={stats.unpaidTours > 0 ? "red" : "green"}
-        />
-      </div>
-
-      {/* Quick Actions */}
-      <Card>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {quickActions.map((action) => (
-            <Link key={action.link} to={action.link}>
-              <ActionCard
-                title={action.title}
-                description={action.description}
-                icon={action.icon}
-                color={action.color}
-              />
-            </Link>
-          ))}
-        </div>
-      </Card>
-
-      {/* Recent Activity and Upcoming Tours */}
+      {/* Tours Lists */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Upcoming Tours */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Upcoming Tours</h2>
+        <div className="bg-white rounded-tuscan-xl shadow-tuscan border border-stone-200/50 overflow-hidden">
+          <div className="px-5 py-4 bg-gradient-to-r from-olive-500 to-olive-600 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white flex items-center">
+              <FiCalendar className="mr-2" />
+              Upcoming Tours
+            </h2>
             <Link to="/tours">
-              <Button variant="ghost" size="sm" icon={FiEye}>
+              <button className="text-olive-100 hover:text-white text-sm font-medium flex items-center transition-colors">
                 View All
-              </Button>
+                <FiEye className="ml-1" />
+              </button>
             </Link>
           </div>
-          
-          {upcomingTours.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <FiCalendar className="text-3xl mx-auto mb-2 opacity-50" />
-              <p>No upcoming tours</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {upcomingTours.map((tour) => (
-                <div
-                  key={tour.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-900">{tour.title}</h3>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                      <span>{new Date(tour.date).toLocaleDateString('en-GB')}</span>
-                      <span>{tour.time}</span>
-                      <span>{tour.guide_name || 'Unassigned'}</span>
+
+          <div className="p-4">
+            {upcomingTours.length === 0 ? (
+              <div className="text-center py-8 text-stone-400">
+                <FiCalendar className="text-4xl mx-auto mb-3 opacity-50" />
+                <p className="font-medium">No upcoming tours</p>
+                <p className="text-sm mt-1">New bookings will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {upcomingTours.map((tour) => (
+                  <div
+                    key={tour.id}
+                    className="group flex items-center justify-between p-3 rounded-tuscan-lg border border-stone-100 hover:border-olive-200 hover:bg-olive-50/30 transition-all duration-200 cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-stone-800 truncate group-hover:text-olive-700 transition-colors">
+                        {tour.title}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-2 md:gap-3 text-sm text-stone-500 mt-1">
+                        <span className="flex items-center">
+                          <FiCalendar className="mr-1 text-stone-400" />
+                          {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </span>
+                        <span className="flex items-center">
+                          <FiClock className="mr-1 text-stone-400" />
+                          {tour.time}
+                        </span>
+                        <span className={`flex items-center ${tour.guide_name ? 'text-olive-600' : 'text-gold-600'}`}>
+                          <FiUsers className="mr-1" />
+                          {tour.guide_name || 'Unassigned'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      {tour.language && (
+                        <span className="hidden sm:inline-flex items-center px-2 py-1 bg-renaissance-50 text-renaissance-700 text-xs font-medium rounded-full">
+                          {tour.language}
+                        </span>
+                      )}
+                      {tour.booking_channel && (
+                        <span className="inline-flex px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium rounded-full">
+                          {tour.booking_channel}
+                        </span>
+                      )}
                     </div>
                   </div>
-                  {tour.booking_channel && (
-                    <div className="ml-2">
-                      <span className="inline-block px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                        {tour.booking_channel}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Unassigned Tours */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Unassigned Tours</h2>
+        <div className="bg-white rounded-tuscan-xl shadow-tuscan border border-stone-200/50 overflow-hidden">
+          <div className="px-5 py-4 bg-gradient-to-r from-gold-500 to-gold-600 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white flex items-center">
+              <FiAlertCircle className="mr-2" />
+              Needs Attention
+            </h2>
             <Link to="/tours">
-              <Button variant="ghost" size="sm" icon={FiEye}>
+              <button className="text-gold-100 hover:text-white text-sm font-medium flex items-center transition-colors">
                 View All
-              </Button>
+                <FiEye className="ml-1" />
+              </button>
             </Link>
           </div>
-          
-          {recentTours.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <FiClock className="text-3xl mx-auto mb-2 opacity-50" />
-              <p>No unassigned tours</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {recentTours.map((tour) => (
-                <div
-                  key={tour.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-900">{tour.title}</h3>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                      <span>{new Date(tour.date).toLocaleDateString('en-GB')}</span>
-                      <span>{tour.time}</span>
-                      <span>{tour.guide_name || 'Unassigned'}</span>
+
+          <div className="p-4">
+            {recentTours.length === 0 ? (
+              <div className="text-center py-8 text-stone-400">
+                <FiClock className="text-4xl mx-auto mb-3 opacity-50" />
+                <p className="font-medium">All tours are assigned!</p>
+                <p className="text-sm mt-1">Great job keeping up</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentTours.map((tour) => (
+                  <div
+                    key={tour.id}
+                    className="group flex items-center justify-between p-3 rounded-tuscan-lg border border-stone-100 hover:border-gold-200 hover:bg-gold-50/30 transition-all duration-200 cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-stone-800 truncate group-hover:text-gold-700 transition-colors">
+                        {tour.title}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-2 md:gap-3 text-sm text-stone-500 mt-1">
+                        <span className="flex items-center">
+                          <FiCalendar className="mr-1 text-stone-400" />
+                          {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </span>
+                        <span className="flex items-center">
+                          <FiClock className="mr-1 text-stone-400" />
+                          {tour.time}
+                        </span>
+                        <span className="text-gold-600 font-medium">
+                          Needs Guide
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-full ${
+                        tour.payment_status === 'paid' || tour.paid
+                          ? 'bg-olive-100 text-olive-700'
+                          : tour.payment_status === 'partial'
+                          ? 'bg-gold-100 text-gold-700'
+                          : 'bg-terracotta-100 text-terracotta-700'
+                      }`}>
+                        {tour.payment_status === 'paid' || tour.paid
+                          ? 'Paid'
+                          : tour.payment_status === 'partial'
+                          ? 'Partial'
+                          : 'Unpaid'}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
-                      tour.payment_status === 'paid' || tour.paid
-                        ? 'bg-green-100 text-green-700'
-                        : tour.payment_status === 'partial'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {tour.payment_status === 'paid' || tour.paid
-                        ? 'Paid'
-                        : tour.payment_status === 'partial'
-                        ? 'Partial'
-                        : 'Unpaid'}
-                    </span>
-                    {tour.booking_channel && (
-                      <span className="inline-block px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                        {tour.booking_channel}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Call to Action - if no tours exist */}
-      {stats.totalTours === 0 && (
-        <Card className="text-center py-12">
-          <FiCalendar className="text-4xl text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No tours yet</h3>
-          <p className="text-gray-600 mb-6">Get started by adding your first tour or importing from Bokun</p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/tours#add">
-              <Button variant="primary" icon={FiPlus}>
-                Add New Tour
-              </Button>
-            </Link>
-            <Link to="/tours#bokun">
-              <Button variant="outline" icon={FiRefreshCw}>
-                Sync from Bokun
-              </Button>
-            </Link>
+                ))}
+              </div>
+            )}
           </div>
-        </Card>
-      )}
+        </div>
+      </div>
     </div>
   );
 };

@@ -12,6 +12,9 @@
 
 require_once 'config.php';
 
+// Apply rate limiting (read operations)
+applyRateLimit('read');
+
 // Handle request based on parameters
 $guide_id = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
 $period = isset($_GET['period']) ? $_GET['period'] : null;
@@ -20,6 +23,8 @@ $action = isset($_GET['action']) ? $_GET['action'] : null;
 try {
     if ($action === 'overview') {
         getPaymentOverview($conn);
+    } elseif ($action === 'pending_tours') {
+        getPendingTours($conn);
     } elseif ($guide_id) {
         if ($period) {
             getGuidePaymentsByPeriod($conn, $guide_id, $period);
@@ -36,8 +41,10 @@ try {
 
 /**
  * Get payment summary for all guides
+ * Fixed: unpaid_tours now correctly counts PAST tours with guide assigned but NO payment recorded
  */
 function getAllGuidePaymentSummaries($conn) {
+    // Get base summary from view
     $sql = "SELECT * FROM guide_payment_summary ORDER BY total_payments_received DESC, guide_name";
 
     $result = $conn->query($sql);
@@ -49,6 +56,54 @@ function getAllGuidePaymentSummaries($conn) {
             $row['total_payments_received'] = floatval($row['total_payments_received']);
             $row['cash_payments'] = floatval($row['cash_payments']);
             $row['bank_payments'] = floatval($row['bank_payments']);
+
+            // Calculate CORRECT unpaid_tours count:
+            // Past tours (completed) + Guide assigned + NO payment recorded for that tour
+            $guide_id = intval($row['guide_id']);
+            $unpaidQuery = $conn->prepare("
+                SELECT COUNT(*) as unpaid_count
+                FROM tours t
+                WHERE t.guide_id = ?
+                  AND t.date < CURDATE()
+                  AND t.cancelled = 0
+                  AND t.title NOT LIKE '%Entry Ticket%'
+                  AND t.title NOT LIKE '%Entrance Ticket%'
+                  AND t.title NOT LIKE '%Priority Ticket%'
+                  AND t.title NOT LIKE '%Skip the Line%'
+                  AND t.title NOT LIKE '%Skip-the-Line%'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM payments p
+                      WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
+                  )
+            ");
+            $unpaidQuery->bind_param("i", $guide_id);
+            $unpaidQuery->execute();
+            $unpaidResult = $unpaidQuery->get_result();
+            $unpaidRow = $unpaidResult->fetch_assoc();
+            $row['unpaid_tours'] = intval($unpaidRow['unpaid_count']);
+
+            // Calculate paid_tours correctly (past tours WITH payment recorded)
+            $paidQuery = $conn->prepare("
+                SELECT COUNT(DISTINCT t.id) as paid_count
+                FROM tours t
+                INNER JOIN payments p ON p.tour_id = t.id AND p.guide_id = t.guide_id
+                WHERE t.guide_id = ?
+                  AND t.date < CURDATE()
+                  AND t.cancelled = 0
+                  AND t.title NOT LIKE '%Entry Ticket%'
+                  AND t.title NOT LIKE '%Entrance Ticket%'
+                  AND t.title NOT LIKE '%Priority Ticket%'
+                  AND t.title NOT LIKE '%Skip the Line%'
+                  AND t.title NOT LIKE '%Skip-the-Line%'
+            ");
+            $paidQuery->bind_param("i", $guide_id);
+            $paidQuery->execute();
+            $paidResult = $paidQuery->get_result();
+            $paidRow = $paidResult->fetch_assoc();
+            $row['paid_tours'] = intval($paidRow['paid_count']);
+
+            // Total tours = unpaid + paid (past completed tours only, excluding tickets)
+            $row['total_tours'] = $row['unpaid_tours'] + $row['paid_tours'];
 
             // Calculate percentages
             if ($row['total_tours'] > 0) {
@@ -108,7 +163,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
                                 t.time as tour_time,
                                 t.customer_name,
                                 t.payment_status as tour_payment_status
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.guide_id = ?
                             ORDER BY pt.payment_date DESC, pt.created_at DESC");
@@ -134,7 +189,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
                                 SUM(CASE WHEN pt.payment_method = 'cash' THEN pt.amount ELSE 0 END) as cash_amount,
                                 SUM(CASE WHEN pt.payment_method = 'bank_transfer' THEN pt.amount ELSE 0 END) as bank_amount,
                                 AVG(pt.amount) as avg_payment
-                            FROM payment_transactions pt
+                            FROM payments pt
                             WHERE pt.guide_id = ?
                             GROUP BY YEAR(pt.payment_date), MONTH(pt.payment_date)
                             ORDER BY year DESC, month DESC
@@ -234,7 +289,7 @@ function getGuidePaymentsByPeriod($conn, $guide_id, $period) {
                                 t.date as tour_date,
                                 t.time as tour_time,
                                 t.customer_name
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.guide_id = ?
                               AND YEAR(pt.payment_date) = ?
@@ -290,7 +345,7 @@ function getPaymentOverview($conn) {
                                 AVG(amount) as avg_payment,
                                 MIN(payment_date) as first_payment,
                                 MAX(payment_date) as last_payment
-                            FROM payment_transactions");
+                            FROM payments");
 
     if ($result && $row = $result->fetch_assoc()) {
         $stats['overall'] = [
@@ -307,7 +362,7 @@ function getPaymentOverview($conn) {
                                 payment_method,
                                 COUNT(*) as count,
                                 SUM(amount) as total_amount
-                            FROM payment_transactions
+                            FROM payments
                             GROUP BY payment_method
                             ORDER BY total_amount DESC");
 
@@ -321,20 +376,59 @@ function getPaymentOverview($conn) {
     }
     $stats['payment_methods'] = $payment_methods;
 
-    // Tour status breakdown
-    $result = $conn->query("SELECT
-                                payment_status,
-                                COUNT(*) as count
-                            FROM tours
-                            GROUP BY payment_status");
-
+    // Tour status breakdown - based on actual payments table
+    // Count tours that have payment records vs those that don't
+    // Only count past tours with guides assigned (eligible for guide payment)
     $tour_statuses = [];
-    while ($row = $result->fetch_assoc()) {
-        $tour_statuses[] = [
-            'status' => $row['payment_status'],
-            'count' => intval($row['count'])
-        ];
+
+    // Count tours with payments (paid)
+    $result = $conn->query("SELECT COUNT(DISTINCT t.id) as count
+                            FROM tours t
+                            INNER JOIN payments p ON p.tour_id = t.id
+                            WHERE t.date < CURDATE()
+                              AND t.cancelled = 0
+                              AND t.guide_id IS NOT NULL
+                              AND t.title NOT LIKE '%Entry Ticket%'
+                              AND t.title NOT LIKE '%Entrance Ticket%'
+                              AND t.title NOT LIKE '%Priority Ticket%'
+                              AND t.title NOT LIKE '%Skip the Line%'
+                              AND t.title NOT LIKE '%Skip-the-Line%'");
+    if ($result && $row = $result->fetch_assoc()) {
+        $tour_statuses[] = ['status' => 'paid', 'count' => intval($row['count'])];
     }
+
+    // Count tours without payments (unpaid) - past tours with guide but no payment record
+    $result = $conn->query("SELECT COUNT(*) as count
+                            FROM tours t
+                            WHERE t.date < CURDATE()
+                              AND t.cancelled = 0
+                              AND t.guide_id IS NOT NULL
+                              AND t.title NOT LIKE '%Entry Ticket%'
+                              AND t.title NOT LIKE '%Entrance Ticket%'
+                              AND t.title NOT LIKE '%Priority Ticket%'
+                              AND t.title NOT LIKE '%Skip the Line%'
+                              AND t.title NOT LIKE '%Skip-the-Line%'
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM payments p WHERE p.tour_id = t.id
+                              )");
+    if ($result && $row = $result->fetch_assoc()) {
+        $tour_statuses[] = ['status' => 'unpaid', 'count' => intval($row['count'])];
+    }
+
+    // Count upcoming tours (future)
+    $result = $conn->query("SELECT COUNT(*) as count
+                            FROM tours t
+                            WHERE t.date >= CURDATE()
+                              AND t.cancelled = 0
+                              AND t.title NOT LIKE '%Entry Ticket%'
+                              AND t.title NOT LIKE '%Entrance Ticket%'
+                              AND t.title NOT LIKE '%Priority Ticket%'
+                              AND t.title NOT LIKE '%Skip the Line%'
+                              AND t.title NOT LIKE '%Skip-the-Line%'");
+    if ($result && $row = $result->fetch_assoc()) {
+        $tour_statuses[] = ['status' => 'upcoming', 'count' => intval($row['count'])];
+    }
+
     $stats['tour_statuses'] = $tour_statuses;
 
     // Recent payment activity (last 30 days)
@@ -342,7 +436,7 @@ function getPaymentOverview($conn) {
                                 DATE(payment_date) as date,
                                 COUNT(*) as payment_count,
                                 SUM(amount) as daily_amount
-                            FROM payment_transactions
+                            FROM payments
                             WHERE payment_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                             GROUP BY DATE(payment_date)
                             ORDER BY date DESC");
@@ -358,6 +452,61 @@ function getPaymentOverview($conn) {
     $stats['recent_activity'] = $recent_activity;
 
     echo json_encode(['success' => true, 'data' => $stats]);
+}
+
+/**
+ * Get all pending (unpaid) tours across all guides
+ * Returns past tours with assigned guides that have NO payment record in payments table
+ */
+function getPendingTours($conn) {
+    $sql = "SELECT
+                t.id,
+                t.title,
+                t.date,
+                t.time,
+                t.guide_id,
+                g.name as guide_name,
+                g.email as guide_email,
+                t.customer_name,
+                t.participants,
+                t.expected_amount,
+                t.payment_status,
+                t.bokun_booking_id
+            FROM tours t
+            JOIN guides g ON t.guide_id = g.id
+            WHERE t.date < CURDATE()
+              AND t.cancelled = 0
+              AND t.title NOT LIKE '%Entry Ticket%'
+              AND t.title NOT LIKE '%Entrance Ticket%'
+              AND t.title NOT LIKE '%Priority Ticket%'
+              AND t.title NOT LIKE '%Skip the Line%'
+              AND t.title NOT LIKE '%Skip-the-Line%'
+              AND NOT EXISTS (
+                  SELECT 1 FROM payments p
+                  WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
+              )
+            ORDER BY t.date DESC";
+
+    $result = $conn->query($sql);
+
+    if ($result) {
+        $tours = [];
+        while ($row = $result->fetch_assoc()) {
+            // Format amounts
+            $row['expected_amount'] = $row['expected_amount'] ? floatval($row['expected_amount']) : null;
+            $row['participants'] = intval($row['participants'] ?? 0);
+            $tours[] = $row;
+        }
+
+        echo json_encode([
+            'success' => true,
+            'data' => $tours,
+            'count' => count($tours)
+        ]);
+    } else {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to fetch pending tours: ' . $conn->error]);
+    }
 }
 
 $conn->close();

@@ -1,0 +1,139 @@
+{
+  "name": "florence-tour-toolkit",
+  "version": "1.0.0",
+  "description": "Custom development toolkit for Florence With Locals Tour Guide Management System",
+  "author": "Florence Development Team",
+  "repository": "https://github.com/DhaNu1204/guide-florence-with-locals",
+  "skills": [
+    {
+      "id": "ui-designer",
+      "name": "UI Designer",
+      "description": "Tuscan-inspired UI components and design patterns for the tour management dashboard",
+      "path": "skills/ui-designer/SKILL.md",
+      "triggers": [
+        "design",
+        "ui",
+        "component",
+        "style",
+        "tailwind",
+        "color",
+        "button",
+        "card",
+        "form"
+      ]
+    },
+    {
+      "id": "mobile-optimizer",
+      "name": "Mobile Optimizer",
+      "description": "Mobile-first optimization patterns for responsive tour booking interfaces",
+      "path": "skills/mobile-optimizer/SKILL.md",
+      "triggers": [
+        "mobile",
+        "responsive",
+        "touch",
+        "swipe",
+        "breakpoint",
+        "viewport"
+      ]
+    },
+    {
+      "id": "security-hardener",
+      "name": "Security Hardener",
+      "description": "Security fixes and hardening patterns for PHP backend and React frontend",
+      "path": "skills/security-hardener/SKILL.md",
+      "triggers": [
+        "security",
+        "vulnerability",
+        "auth",
+        "credentials",
+        "encrypt",
+        "cors",
+        "xss",
+        "sql injection"
+      ]
+    },
+    {
+      "id": "reliability-engineer",
+      "name": "Reliability Engineer",
+      "description": "Monitoring, error handling, and deployment patterns for 100% uptime",
+      "path": "skills/reliability-engineer/SKILL.md",
+      "triggers": [
+        "reliability",
+        "monitoring",
+        "error",
+        "deploy",
+        "backup",
+        "health check",
+        "retry"
+      ]
+    },
+    {
+      "id": "php-backend",
+      "name": "PHP Backend",
+      "description": "PHP API patterns specific to this project's architecture",
+      "path": "skills/php-backend/SKILL.md",
+      "triggers": [
+        "php",
+        "api",
+        "endpoint",
+        "mysql",
+        "database",
+        "crud"
+      ]
+    },
+    {
+      "id": "react-patterns",
+      "name": "React Patterns",
+      "description": "React component patterns matching the existing codebase structure",
+      "path": "skills/react-patterns/SKILL.md",
+      "triggers": [
+        "react",
+        "component",
+        "hook",
+        "context",
+        "page",
+        "modal"
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "id": "code-reviewer",
+      "name": "Code Reviewer",
+      "description": "Reviews code changes for security, performance, and pattern consistency",
+      "path": "agents/code-reviewer/AGENT.md"
+    },
+    {
+      "id": "deployment-checker",
+      "name": "Deployment Checker",
+      "description": "Pre-deployment validation and checklist verification",
+      "path": "agents/deployment-checker/AGENT.md"
+    }
+  ],
+  "projectContext": {
+    "frontend": {
+      "framework": "React 18",
+      "buildTool": "Vite 5",
+      "styling": "TailwindCSS 3.4",
+      "routing": "React Router 7.5",
+      "httpClient": "Axios 1.8",
+      "monitoring": "Sentry",
+      "entryPoint": "guide-florence-with-locals/src/main.jsx"
+    },
+    "backend": {
+      "language": "PHP 8.2",
+      "database": "MySQL 8.0",
+      "apiPath": "guide-florence-with-locals/public_html/api/",
+      "configFile": "guide-florence-with-locals/public_html/api/config.php"
+    },
+    "integration": {
+      "bookingApi": "Bokun API",
+      "authMethod": "HMAC-SHA1"
+    },
+    "deployment": {
+      "host": "Hostinger",
+      "productionUrl": "https://withlocals.deetech.cc",
+      "sshPort": 65002
+    }
+  }
+}

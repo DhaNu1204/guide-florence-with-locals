@@ -6,7 +6,12 @@ import PaymentRecordForm from '../components/PaymentRecordForm';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format } from "date-fns";
-import { FiDollarSign, FiTrendingUp, FiUsers, FiCalendar, FiDownload, FiPlus, FiFilter, FiRefreshCw, FiAlertCircle, FiCheckCircle, FiAlertTriangle, FiX, FiEdit2, FiCheck, FiXCircle } from 'react-icons/fi';
+import { FiDollarSign, FiTrendingUp, FiUsers, FiCalendar, FiDownload, FiPlus, FiFilter, FiRefreshCw, FiAlertCircle, FiCheckCircle, FiAlertTriangle, FiX, FiEdit2, FiCheck, FiXCircle, FiTrash2, FiFileText } from 'react-icons/fi';
+import {
+  generateGuidePaymentSummaryPDF,
+  generatePendingPaymentsPDF,
+  generatePaymentTransactionsPDF
+} from '../utils/pdfGenerator';
 
 const Payments = () => {
   const { setPageTitle } = usePageTitle();
@@ -69,13 +74,13 @@ const Payments = () => {
       if (overviewResult.success) setPaymentOverview(overviewResult.data);
       if (guidesResult.success) setGuidePayments(guidesResult.data);
 
-      // Load unpaid tours for the alert
-      const toursResponse = await fetch(`${API_BASE_URL}/tours.php`);
-      if (toursResponse.ok) {
-        const toursResult = await toursResponse.json();
-        if (toursResult.success) {
-          const allTours = toursResult.data || [];
-          const unpaidToursData = allTours.filter(tour => !tour.paid && tour.guide_id);
+      // Load unpaid tours from API - uses server-side logic checking payments table
+      // This ensures consistency with the database (tours with NO payment record)
+      const pendingToursResponse = await fetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
+      if (pendingToursResponse.ok) {
+        const pendingToursResult = await pendingToursResponse.json();
+        if (pendingToursResult.success) {
+          const unpaidToursData = pendingToursResult.data || [];
           setUnpaidTours(unpaidToursData);
           setShowUnpaidAlert(unpaidToursData.length > 0);
         }
@@ -228,6 +233,42 @@ const Payments = () => {
     }
   };
 
+  const deletePayment = async (paymentId, tourTitle) => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete this payment for "${tourTitle}"?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+      const response = await fetch(`${API_BASE_URL}/payments.php?id=${paymentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        // Reload guide details to show updated data
+        await loadGuideDetails(selectedGuide);
+        // Also reload the main payment data to update summaries
+        await loadPaymentData();
+        showNotification('Payment deleted successfully!', 'success');
+      } else {
+        showNotification(result.error || 'Failed to delete payment', 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting payment:', error);
+      showNotification('Network error. Please try again.', 'error');
+    }
+  };
+
   const paymentMethods = [
     { value: 'cash', label: 'Cash' },
     { value: 'bank_transfer', label: 'Bank Transfer' },
@@ -236,24 +277,81 @@ const Payments = () => {
     { value: 'other', label: 'Other' }
   ];
 
-  const downloadReport = async (period = '30') => {
+  // Download PDF report - fetches data and generates professional PDF
+  const downloadReport = async (period = '30', startDate = null, endDate = null, guideId = null) => {
     try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (period * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+      // Use provided dates or fall back to period-based calculation
+      let reportStartDate, reportEndDate;
+
+      if (startDate && endDate) {
+        reportStartDate = startDate;
+        reportEndDate = endDate;
+      } else {
+        reportEndDate = new Date().toISOString().split('T')[0];
+        reportStartDate = new Date(Date.now() - (period * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+      }
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      const url = `${API_BASE_URL}/payment-reports.php?type=export&format=txt&start_date=${startDate}&end_date=${endDate}`;
+      let url = `${API_BASE_URL}/payment-reports.php?type=detailed&start_date=${reportStartDate}&end_date=${reportEndDate}`;
 
-      // Create a temporary link to download the file
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `payment-report-${startDate}-to-${endDate}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (guideId) {
+        url += `&guide_id=${guideId}`;
+      }
+
+      // Fetch the data
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch report data');
+
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to load report data');
+
+      const transactions = result.data.transactions || [];
+
+      // Find guide name if filtered
+      let guideName = null;
+      if (guideId) {
+        const guide = guidePayments.find(g => g.guide_id == guideId);
+        guideName = guide?.guide_name;
+      }
+
+      // Generate PDF
+      generatePaymentTransactionsPDF(transactions, {
+        startDate: reportStartDate,
+        endDate: reportEndDate,
+        guideName,
+        filename: guideName ? `payment-report-${guideName.toLowerCase().replace(/\s+/g, '-')}` : 'payment-transactions-report'
+      });
+
+      showNotification('PDF report generated successfully!', 'success');
     } catch (err) {
-      console.error('Error downloading report:', err);
-      showNotification('Failed to download report. Please try again.', 'error');
+      console.error('Error generating PDF report:', err);
+      showNotification('Failed to generate PDF report. Please try again.', 'error');
+    }
+  };
+
+  // Download Guide Payment Summary as PDF
+  const downloadGuideSummaryPDF = () => {
+    try {
+      generateGuidePaymentSummaryPDF(guidePayments, {
+        filename: 'guide-payment-summary'
+      });
+      showNotification('Guide summary PDF generated successfully!', 'success');
+    } catch (err) {
+      console.error('Error generating guide summary PDF:', err);
+      showNotification('Failed to generate PDF. Please try again.', 'error');
+    }
+  };
+
+  // Download Pending Payments as PDF
+  const downloadPendingPaymentsPDF = () => {
+    try {
+      generatePendingPaymentsPDF(unpaidTours, {
+        filename: 'pending-guide-payments'
+      });
+      showNotification('Pending payments PDF generated successfully!', 'success');
+    } catch (err) {
+      console.error('Error generating pending payments PDF:', err);
+      showNotification('Failed to generate PDF. Please try again.', 'error');
     }
   };
 
@@ -261,7 +359,7 @@ const Payments = () => {
     return (
       <div className="p-6">
         <div className="flex justify-center items-center h-64">
-          <div className="text-gray-500">Loading payment data...</div>
+          <div className="text-stone-500">Loading payment data...</div>
         </div>
       </div>
     );
@@ -270,8 +368,8 @@ const Payments = () => {
   if (error) {
     return (
       <div className="p-6">
-        <Card className="border-red-200 bg-red-50">
-          <div className="text-red-700 text-center">
+        <Card className="border-terracotta-200 bg-terracotta-50">
+          <div className="text-terracotta-700 text-center">
             <p>Error loading payment data: {error}</p>
             <Button
               onClick={loadPaymentData}
@@ -290,12 +388,12 @@ const Payments = () => {
     <div className="p-6 space-y-6">
       {/* Notification */}
       {notification && (
-        <div className={`p-4 rounded-lg flex items-start space-x-3 ${
+        <div className={`p-4 rounded-tuscan-lg flex items-start space-x-3 ${
           notification.type === 'success'
-            ? 'bg-green-50 border border-green-200 text-green-700'
+            ? 'bg-olive-50 border border-olive-200 text-olive-700'
             : notification.type === 'warning'
-            ? 'bg-yellow-50 border border-yellow-200 text-yellow-700'
-            : 'bg-red-50 border border-red-200 text-red-700'
+            ? 'bg-gold-50 border border-gold-200 text-gold-700'
+            : 'bg-terracotta-50 border border-terracotta-200 text-terracotta-700'
         }`}>
           <div className="flex-shrink-0">
             {notification.type === 'success' ? (
@@ -315,7 +413,7 @@ const Payments = () => {
           </div>
           <button
             onClick={() => setNotification(null)}
-            className="flex-shrink-0 text-gray-400 hover:text-gray-600"
+            className="flex-shrink-0 text-stone-400 hover:text-stone-600"
           >
             <FiX className="text-lg" />
           </button>
@@ -324,16 +422,16 @@ const Payments = () => {
       {/* Header with Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Payment Management</h1>
-          <p className="text-gray-600">Track and manage tour payments</p>
+          <h1 className="text-2xl font-bold text-stone-900">Payment Management</h1>
+          <p className="text-stone-600">Track and manage tour payments</p>
         </div>
         <div className="flex gap-2">
           <Button
-            onClick={() => downloadReport(30)}
+            onClick={downloadGuideSummaryPDF}
             variant="outline"
-            icon={FiDownload}
+            icon={FiFileText}
           >
-            Download Report
+            PDF Report
           </Button>
           <Button
             onClick={() => setActiveTab('record')}
@@ -345,10 +443,11 @@ const Payments = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-stone-200">
         <nav className="-mb-px flex space-x-8">
           {[
             { id: 'overview', name: 'Overview', icon: FiTrendingUp },
+            { id: 'pending', name: 'Pending Payments', icon: FiAlertCircle, badge: unpaidTours.length },
             { id: 'guides', name: 'Guide Payments', icon: FiUsers },
             { id: 'record', name: 'Record Payment', icon: FiPlus },
             { id: 'reports', name: 'Reports', icon: FiCalendar }
@@ -358,12 +457,17 @@ const Payments = () => {
               onClick={() => setActiveTab(tab.id)}
               className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
                 activeTab === tab.id
-                  ? 'border-purple-500 text-purple-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'border-terracotta-500 text-terracotta-600'
+                  : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
               }`}
             >
               <tab.icon className="w-4 h-4" />
               {tab.name}
+              {tab.badge > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium rounded-full bg-terracotta-100 text-terracotta-800">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -378,11 +482,11 @@ const Payments = () => {
               <Card>
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <FiDollarSign className="h-8 w-8 text-orange-500" />
+                    <FiDollarSign className="h-8 w-8 text-gold-500" />
                   </div>
                   <div className="ml-4">
-                    <div className="text-sm font-medium text-gray-500">Total Payments to Guides</div>
-                    <div className="text-2xl font-semibold text-gray-900">
+                    <div className="text-sm font-medium text-stone-500">Total Payments to Guides</div>
+                    <div className="text-2xl font-semibold text-stone-900">
                       {formatCurrency(paymentOverview.overall.total_amount)}
                     </div>
                   </div>
@@ -392,11 +496,11 @@ const Payments = () => {
               <Card>
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <FiTrendingUp className="h-8 w-8 text-blue-500" />
+                    <FiTrendingUp className="h-8 w-8 text-renaissance-500" />
                   </div>
                   <div className="ml-4">
-                    <div className="text-sm font-medium text-gray-500">Transactions</div>
-                    <div className="text-2xl font-semibold text-gray-900">
+                    <div className="text-sm font-medium text-stone-500">Transactions</div>
+                    <div className="text-2xl font-semibold text-stone-900">
                       {paymentOverview.overall.total_transactions}
                     </div>
                   </div>
@@ -406,11 +510,11 @@ const Payments = () => {
               <Card>
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <FiDollarSign className="h-8 w-8 text-purple-500" />
+                    <FiDollarSign className="h-8 w-8 text-terracotta-500" />
                   </div>
                   <div className="ml-4">
-                    <div className="text-sm font-medium text-gray-500">Avg Payment</div>
-                    <div className="text-2xl font-semibold text-gray-900">
+                    <div className="text-sm font-medium text-stone-500">Avg Payment</div>
+                    <div className="text-2xl font-semibold text-stone-900">
                       {formatCurrency(paymentOverview.overall.avg_payment)}
                     </div>
                   </div>
@@ -420,11 +524,11 @@ const Payments = () => {
               <Card>
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <FiCalendar className="h-8 w-8 text-orange-500" />
+                    <FiCalendar className="h-8 w-8 text-olive-500" />
                   </div>
                   <div className="ml-4">
-                    <div className="text-sm font-medium text-gray-500">Last Payment</div>
-                    <div className="text-sm font-semibold text-gray-900">
+                    <div className="text-sm font-medium text-stone-500">Last Payment</div>
+                    <div className="text-sm font-semibold text-stone-900">
                       {paymentOverview.overall.last_payment || 'N/A'}
                     </div>
                   </div>
@@ -435,11 +539,11 @@ const Payments = () => {
 
           {/* Unpaid Tours Alert */}
           {showUnpaidAlert && (
-            <Card className="border-l-4 border-l-red-500 bg-red-50">
+            <Card className="border-l-4 border-l-terracotta-500 bg-terracotta-50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
-                  <FiAlertCircle className="h-6 w-6 text-red-600 mr-3" />
-                  <div className="text-red-600">
+                  <FiAlertCircle className="h-6 w-6 text-terracotta-600 mr-3" />
+                  <div className="text-terracotta-600">
                     <strong>Unpaid Tours</strong>
                     <p className="text-sm">
                       {unpaidTours.length} completed tours require payment processing
@@ -460,20 +564,20 @@ const Payments = () => {
           {/* Payment Methods Breakdown */}
           {paymentOverview?.payment_methods && paymentOverview.payment_methods.length > 0 && (
             <Card>
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Payment Methods</h3>
+              <div className="px-6 py-4 border-b border-stone-200">
+                <h3 className="text-lg font-medium text-stone-900">Payment Methods</h3>
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {paymentOverview.payment_methods.map((method, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-gray-500 mb-1">
+                    <div key={index} className="bg-stone-50 rounded-tuscan-lg p-4">
+                      <div className="text-sm font-medium text-stone-500 mb-1">
                         {formatPaymentMethod(method.method)}
                       </div>
-                      <div className="text-xl font-semibold text-gray-900">
+                      <div className="text-xl font-semibold text-stone-900">
                         {formatCurrency(method.amount)}
                       </div>
-                      <div className="text-sm text-gray-600">
+                      <div className="text-sm text-stone-600">
                         {method.count} transactions
                       </div>
                     </div>
@@ -486,15 +590,15 @@ const Payments = () => {
           {/* Tour Status Breakdown */}
           {paymentOverview?.tour_statuses && paymentOverview.tour_statuses.length > 0 && (
             <Card>
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Tour Payment Status</h3>
+              <div className="px-6 py-4 border-b border-stone-200">
+                <h3 className="text-lg font-medium text-stone-900">Tour Payment Status</h3>
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {paymentOverview.tour_statuses.map((status, index) => (
                     <div key={index} className="text-center">
-                      <div className="text-2xl font-bold text-gray-900">{status.count}</div>
-                      <div className="text-sm text-gray-600 capitalize">
+                      <div className="text-2xl font-bold text-stone-900">{status.count}</div>
+                      <div className="text-sm text-stone-600 capitalize">
                         {status.status} Tours
                       </div>
                     </div>
@@ -506,65 +610,184 @@ const Payments = () => {
         </div>
       )}
 
+      {activeTab === 'pending' && (
+        <div className="space-y-6">
+          <Card>
+            <div className="px-6 py-4 border-b border-stone-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-stone-900">
+                    Pending Guide Payments
+                    <span className="ml-2 text-sm font-normal text-stone-500">
+                      ({unpaidTours.length} tours awaiting payment)
+                    </span>
+                  </h3>
+                  <p className="text-sm text-stone-500 mt-1">
+                    Completed tours with assigned guides that have not yet been paid
+                  </p>
+                </div>
+                {unpaidTours.length > 0 && (
+                  <Button
+                    onClick={downloadPendingPaymentsPDF}
+                    variant="outline"
+                    size="sm"
+                    icon={FiFileText}
+                  >
+                    Download PDF
+                  </Button>
+                )}
+              </div>
+            </div>
+            {unpaidTours.length === 0 ? (
+              <div className="p-8 text-center">
+                <FiCheckCircle className="w-12 h-12 text-olive-500 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-stone-900 mb-2">All Caught Up!</h4>
+                <p className="text-stone-500">No pending guide payments at this time.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-stone-200">
+                  <thead className="bg-stone-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Tour Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Guide Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Participants
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Expected Payment
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-stone-200">
+                    {unpaidTours
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((tour) => (
+                        <tr key={tour.id}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {new Date(tour.date).toLocaleDateString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-stone-900 max-w-xs truncate" title={tour.title}>
+                              {tour.title}
+                            </div>
+                            {tour.time && (
+                              <div className="text-xs text-stone-500">{tour.time}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {tour.guide_name || 'Unknown Guide'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {tour.participants || tour.adults || '-'}
+                            {tour.children > 0 && ` + ${tour.children} children`}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
+                            {tour.expected_amount ? formatCurrency(tour.expected_amount) : '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <Button
+                              size="sm"
+                              icon={FiPlus}
+                              onClick={() => {
+                                setActiveTab('record');
+                                // Pre-select the tour/guide if possible
+                              }}
+                            >
+                              Record Payment
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
       {activeTab === 'guides' && (
         <div className="space-y-6">
           <Card>
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Guide Payment Summary</h3>
+            <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between">
+              <h3 className="text-lg font-medium text-stone-900">Guide Payment Summary</h3>
+              <Button
+                onClick={downloadGuideSummaryPDF}
+                variant="outline"
+                size="sm"
+                icon={FiFileText}
+              >
+                Download PDF
+              </Button>
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-stone-200">
+                <thead className="bg-stone-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                       Guide
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                       Total Tours
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                       Paid Tours
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                       Total Payments
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                       Payment Rate
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-stone-200">
                   {guidePayments.map((guide) => (
                     <tr key={guide.guide_id}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-sm font-medium text-stone-900">
                             {guide.guide_name}
                           </div>
-                          <div className="text-sm text-gray-500">
+                          <div className="text-sm text-stone-500">
                             {guide.guide_email}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                         {guide.total_tours}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900">{guide.paid_tours}</span>
+                        <span className="text-sm text-stone-900">{guide.paid_tours}</span>
                         {guide.unpaid_tours > 0 && (
-                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-terracotta-100 text-terracotta-800">
                             {guide.unpaid_tours} unpaid
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                         {formatCurrency(guide.total_payments_received)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
+                        <div className="text-sm text-stone-900">
                           {guide.total_tours > 0
                             ? Math.round((guide.paid_tours / guide.total_tours) * 100)
                             : 0}%
@@ -573,7 +796,7 @@ const Payments = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => loadGuideDetails(guide.guide_id)}
-                          className="text-purple-600 hover:text-purple-900"
+                          className="text-terracotta-600 hover:text-terracotta-800"
                           disabled={detailsLoading && selectedGuide === guide.guide_id}
                         >
                           {detailsLoading && selectedGuide === guide.guide_id ? 'Loading...' : 'View Details'}
@@ -600,8 +823,8 @@ const Payments = () => {
         <div className="space-y-6">
           {/* Date Range Filter */}
           <Card>
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
+            <div className="px-6 py-4 border-b border-stone-200">
+              <h3 className="text-lg font-medium text-stone-900 flex items-center gap-2">
                 <FiFilter className="w-5 h-5" />
                 Payment Report Filters
               </h3>
@@ -610,28 +833,28 @@ const Payments = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Start Date */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-stone-700 mb-2">
                     Start Date
                   </label>
                   <DatePicker
                     selected={reportStartDate}
                     onChange={setReportStartDate}
                     dateFormat="yyyy-MM-dd"
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full border border-stone-300 rounded-tuscan px-3 py-2 focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent"
                     placeholderText="Select start date"
                   />
                 </div>
 
                 {/* End Date */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-stone-700 mb-2">
                     End Date
                   </label>
                   <DatePicker
                     selected={reportEndDate}
                     onChange={setReportEndDate}
                     dateFormat="yyyy-MM-dd"
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full border border-stone-300 rounded-tuscan px-3 py-2 focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent"
                     placeholderText="Select end date"
                     minDate={reportStartDate}
                   />
@@ -639,13 +862,13 @@ const Payments = () => {
 
                 {/* Guide Filter */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-stone-700 mb-2">
                     Guide (Optional)
                   </label>
                   <select
                     value={selectedGuideForReport}
                     onChange={(e) => setSelectedGuideForReport(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full border border-stone-300 rounded-tuscan px-3 py-2 focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent"
                   >
                     <option value="">All Guides</option>
                     {guidePayments.map(guide => (
@@ -670,8 +893,8 @@ const Payments = () => {
               </div>
 
               {/* Quick Date Filters */}
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="text-sm font-medium text-gray-700 mb-2">Quick Filters:</div>
+              <div className="mt-4 pt-4 border-t border-stone-200">
+                <div className="text-sm font-medium text-stone-700 mb-2">Quick Filters:</div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
@@ -729,12 +952,12 @@ const Payments = () => {
 
           {/* Report Results */}
           <Card>
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-stone-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className="text-lg font-medium text-stone-900">
                   Payment Report Results
                   {reportData.length > 0 && (
-                    <span className="ml-2 text-sm font-normal text-gray-500">
+                    <span className="ml-2 text-sm font-normal text-stone-500">
                       ({reportData.length} payments found)
                     </span>
                   )}
@@ -744,13 +967,26 @@ const Payments = () => {
                     onClick={() => {
                       const startDateStr = format(reportStartDate, 'yyyy-MM-dd');
                       const endDateStr = format(reportEndDate, 'yyyy-MM-dd');
-                      downloadReport(null, startDateStr, endDateStr, selectedGuideForReport);
+                      // Find guide name if filtered
+                      let guideName = null;
+                      if (selectedGuideForReport) {
+                        const guide = guidePayments.find(g => g.guide_id == selectedGuideForReport);
+                        guideName = guide?.guide_name;
+                      }
+                      // Generate PDF directly from loaded report data
+                      generatePaymentTransactionsPDF(reportData, {
+                        startDate: startDateStr,
+                        endDate: endDateStr,
+                        guideName,
+                        filename: guideName ? `payment-report-${guideName.toLowerCase().replace(/\s+/g, '-')}` : 'payment-transactions-report'
+                      });
+                      showNotification('PDF report generated successfully!', 'success');
                     }}
-                    icon={FiDownload}
+                    icon={FiFileText}
                     variant="outline"
                     size="sm"
                   >
-                    Download Report
+                    Download PDF
                   </Button>
                 )}
               </div>
@@ -758,33 +994,33 @@ const Payments = () => {
             <div className="p-6">
               {reportLoading ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-500">Loading payment report...</div>
+                  <div className="text-stone-500">Loading payment report...</div>
                 </div>
               ) : reportData.length > 0 ? (
                 <div className="space-y-6">
                   {/* Summary Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-gray-500">Total Payments</div>
-                      <div className="text-2xl font-semibold text-gray-900">
+                    <div className="bg-stone-50 rounded-tuscan-lg p-4">
+                      <div className="text-sm font-medium text-stone-500">Total Payments</div>
+                      <div className="text-2xl font-semibold text-stone-900">
                         {reportData.length}
                       </div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-gray-500">Total Amount</div>
-                      <div className="text-2xl font-semibold text-gray-900">
+                    <div className="bg-stone-50 rounded-tuscan-lg p-4">
+                      <div className="text-sm font-medium text-stone-500">Total Amount</div>
+                      <div className="text-2xl font-semibold text-stone-900">
                         {formatCurrency(reportData.reduce((sum, payment) => sum + parseFloat(payment.amount), 0))}
                       </div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-gray-500">Cash Payments</div>
-                      <div className="text-2xl font-semibold text-gray-900">
+                    <div className="bg-stone-50 rounded-tuscan-lg p-4">
+                      <div className="text-sm font-medium text-stone-500">Cash Payments</div>
+                      <div className="text-2xl font-semibold text-stone-900">
                         {formatCurrency(reportData.filter(p => p.payment_method === 'cash').reduce((sum, payment) => sum + parseFloat(payment.amount), 0))}
                       </div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-gray-500">Bank Transfers</div>
-                      <div className="text-2xl font-semibold text-gray-900">
+                    <div className="bg-stone-50 rounded-tuscan-lg p-4">
+                      <div className="text-sm font-medium text-stone-500">Bank Transfers</div>
+                      <div className="text-2xl font-semibold text-stone-900">
                         {formatCurrency(reportData.filter(p => p.payment_method === 'bank_transfer').reduce((sum, payment) => sum + parseFloat(payment.amount), 0))}
                       </div>
                     </div>
@@ -792,36 +1028,36 @@ const Payments = () => {
 
                   {/* Payment Table */}
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-stone-200">
+                      <thead className="bg-stone-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Guide</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tour</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Date</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Guide</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Tour</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Amount</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Method</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Reference</th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody className="bg-white divide-y divide-stone-200">
                         {reportData.map((payment, index) => (
-                          <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                               {payment.payment_date}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                               {payment.guide_name}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                               {payment.tour_title}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                               {formatCurrency(payment.amount)}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                               {formatPaymentMethod(payment.payment_method)}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">
                               {payment.transaction_reference || '-'}
                             </td>
                           </tr>
@@ -832,7 +1068,7 @@ const Payments = () => {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <div className="text-gray-500">
+                  <div className="text-stone-500">
                     {reportStartDate && reportEndDate ?
                       'No payments found for the selected date range and filters.' :
                       'Select a date range and click "Load Report" to view payment data.'
@@ -852,12 +1088,12 @@ const Payments = () => {
             <div className="p-6">
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-lg font-semibold text-stone-900">
                   Guide Payment Details
                 </h3>
                 <button
                   onClick={closeGuideDetails}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-stone-400 hover:text-stone-600"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -868,7 +1104,7 @@ const Payments = () => {
               {/* Modal Content */}
               {detailsLoading ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-500">Loading guide details...</div>
+                  <div className="text-stone-500">Loading guide details...</div>
                 </div>
               ) : guideDetails ? (
                 <div className="space-y-6">
@@ -877,11 +1113,11 @@ const Payments = () => {
                     <h4 className="text-md font-semibold mb-4">Guide Information</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <span className="text-gray-500">Name:</span>
+                        <span className="text-stone-500">Name:</span>
                         <span className="ml-2 font-medium">{guideDetails.guide_info?.guide_name}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Email:</span>
+                        <span className="text-stone-500">Email:</span>
                         <span className="ml-2">{guideDetails.guide_info?.guide_email}</span>
                       </div>
                     </div>
@@ -892,15 +1128,15 @@ const Payments = () => {
                     <h4 className="text-md font-semibold mb-4">Payment Summary</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <span className="text-gray-500">Total Payments:</span>
+                        <span className="text-stone-500">Total Payments:</span>
                         <span className="ml-2 font-medium">{formatCurrency(guideDetails.summary?.total_payments_received || 0)}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Cash Payments:</span>
+                        <span className="text-stone-500">Cash Payments:</span>
                         <span className="ml-2 font-medium">{formatCurrency(guideDetails.summary?.cash_payments || 0)}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Bank Transfers:</span>
+                        <span className="text-stone-500">Bank Transfers:</span>
                         <span className="ml-2 font-medium">{formatCurrency(guideDetails.summary?.bank_payments || 0)}</span>
                       </div>
                     </div>
@@ -911,45 +1147,45 @@ const Payments = () => {
                     <h4 className="text-md font-semibold mb-4">Recent Payment Transactions</h4>
                     {guideDetails.transactions && guideDetails.transactions.length > 0 ? (
                       <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
+                        <table className="min-w-full divide-y divide-stone-200">
+                          <thead className="bg-stone-50">
                             <tr>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tour</th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Date</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Tour</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Amount</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Method</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Reference</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Actions</th>
                             </tr>
                           </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
+                          <tbody className="bg-white divide-y divide-stone-200">
                             {guideDetails.transactions.map((transaction, index) => (
                               <tr key={index}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                                   {transaction.payment_date}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                                   {transaction.tour_title}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                                   {editingTransaction === transaction.id ? (
                                     <input
                                       type="number"
                                       step="0.01"
                                       value={editValues.amount || ''}
                                       onChange={(e) => setEditValues({...editValues, amount: e.target.value})}
-                                      className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                      className="w-20 px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
                                     />
                                   ) : (
                                     formatCurrency(transaction.amount)
                                   )}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                                   {editingTransaction === transaction.id ? (
                                     <select
                                       value={editValues.payment_method || ''}
                                       onChange={(e) => setEditValues({...editValues, payment_method: e.target.value})}
-                                      className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                      className="px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
                                     >
                                       {paymentMethods.map(method => (
                                         <option key={method.value} value={method.value}>
@@ -961,35 +1197,44 @@ const Payments = () => {
                                     formatPaymentMethod(transaction.payment_method)
                                   )}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">
                                   {transaction.transaction_reference || '-'}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-900">
                                   {editingTransaction === transaction.id ? (
                                     <div className="flex space-x-2">
                                       <button
                                         onClick={() => saveTransactionEdit(transaction.id)}
-                                        className="text-green-600 hover:text-green-800"
+                                        className="text-olive-600 hover:text-olive-800"
                                         title="Save changes"
                                       >
                                         <FiCheck className="w-4 h-4" />
                                       </button>
                                       <button
                                         onClick={cancelEditTransaction}
-                                        className="text-red-600 hover:text-red-800"
+                                        className="text-terracotta-600 hover:text-terracotta-800"
                                         title="Cancel editing"
                                       >
                                         <FiXCircle className="w-4 h-4" />
                                       </button>
                                     </div>
                                   ) : (
-                                    <button
-                                      onClick={() => startEditTransaction(transaction)}
-                                      className="text-blue-600 hover:text-blue-800"
-                                      title="Edit transaction"
-                                    >
-                                      <FiEdit2 className="w-4 h-4" />
-                                    </button>
+                                    <div className="flex space-x-2">
+                                      <button
+                                        onClick={() => startEditTransaction(transaction)}
+                                        className="text-terracotta-600 hover:text-terracotta-800"
+                                        title="Edit transaction"
+                                      >
+                                        <FiEdit2 className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => deletePayment(transaction.id, transaction.tour_title)}
+                                        className="text-terracotta-600 hover:text-terracotta-800"
+                                        title="Delete payment"
+                                      >
+                                        <FiTrash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
                                   )}
                                 </td>
                               </tr>
@@ -998,13 +1243,13 @@ const Payments = () => {
                         </table>
                       </div>
                     ) : (
-                      <div className="text-gray-500 text-center py-4">No payment transactions found</div>
+                      <div className="text-stone-500 text-center py-4">No payment transactions found</div>
                     )}
                   </Card>
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <div className="text-red-500">Failed to load guide details</div>
+                  <div className="text-terracotta-500">Failed to load guide details</div>
                 </div>
               )}
             </div>
