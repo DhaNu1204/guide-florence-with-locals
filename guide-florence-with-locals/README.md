@@ -17,7 +17,7 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 
 ### 🚀 **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** - FULLY OPERATIONAL ✅
 
-**Latest Update (2026-02-23)**: ✅ **CUSTOM DATE RANGE FILTERING** - Added custom date range filter to Tours page with `start_date`/`end_date` API parameters, dual date picker UI, and "Date Range" button alongside Today/Upcoming/Past 40 Days. Also fixed cache bypass bug where `past` and `start_date` filters weren't invalidating stale cached data.
+**Latest Update (2026-02-23)**: ✅ **UNASSIGNED TOURS REPORT** - New "Report" button in Tours summary card downloads a `.txt` file listing all unassigned tours with date, time, and location (extracted from tour titles: Uffizi, Accademia, Duomo, etc.). Simple format designed for sharing with guides. Also includes custom date range filtering with dual date picker and cache bypass fix.
 
 **Previous Update (2026-01-29)**: ✅ **PAYMENT SYSTEM & PDF REPORTS** - (1) **PDF Report Generation**: Added frontend PDF generation using jsPDF with Tuscan-themed reports for guide payments, pending payments, and monthly summaries. (2) **Payment System Bug Fixes**: Fixed critical VIEW table mismatch where `guide_payment_summary` was querying empty `payment_transactions` table instead of `payments` table. Added new `pending_tours` API endpoint for authoritative pending payment tracking. (3) **API Rate Limiting**: Database-backed rate limiting for all endpoints (login: 5/min, read: 100/min, write: 30/min). (4) **Automated Testing**: 52 tests passing with Vitest + React Testing Library.
 
@@ -74,6 +74,13 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 - **Booking Channel Display** - Clear identification of booking sources (Website, Viator, etc.)
 
 ## 🚀 What's New - Latest Updates
+
+### ✅ **UNASSIGNED TOURS REPORT** (2026-02-23)
+- **Report Download**: New "Unassigned Report" button in Tours summary card
+- **Output**: Clean `.txt` file with date, time, and location for each unassigned tour
+- **Location Extraction**: Automatically derived from tour titles (Uffizi, Accademia, Duomo, Pitti, Boboli, Palazzo Vecchio, San Lorenzo, Santa Croce, Ponte Vecchio, Bargello, Vasari Corridor; defaults to "Florence")
+- **Filter-Aware**: Respects current filter (Today/Upcoming/Past 40 Days/Date Range)
+- **Responsive**: Shows "Unassigned Report" on desktop, "Report" on mobile
 
 ### ✅ **CUSTOM DATE RANGE FILTERING** (2026-02-23)
 - **Custom Date Range**: New "Date Range" button in Tours filter bar with dual date picker (start/end)
@@ -692,9 +699,9 @@ This project is proprietary software developed for Florence with Locals tour ope
 
 ---
 
-**Project Status**: ✅ **FULLY OPERATIONAL** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. **Latest deployment (Feb 23, 2026)**: Custom date range filtering with dual date picker, cache bypass fix for filter switching. **200+ bookings synced** from Viator and GetYourGuide with automatic multi-channel language detection and smart payment tracking.
+**Project Status**: ✅ **FULLY OPERATIONAL** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. **Latest deployment (Feb 23, 2026)**: Unassigned tours report (date/time/location .txt download), custom date range filtering with dual date picker, cache bypass fix for filter switching. **200+ bookings synced** from Viator and GetYourGuide with automatic multi-channel language detection and smart payment tracking.
 
-**Last Updated**: February 23, 2026 - **CUSTOM DATE RANGE FILTERING**: Added `start_date`/`end_date` API parameters and "Date Range" button to Tours page for custom date range queries. Fixed cache bypass bug where past and date range filters returned stale cached data.
+**Last Updated**: February 23, 2026 - **UNASSIGNED TOURS REPORT**: Downloadable .txt report of unassigned tours showing date, time, and location (extracted from tour titles). Plus custom date range filtering and cache bypass fix.
 
 **Live Production URL**: **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** ✅
 

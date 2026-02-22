@@ -3,12 +3,12 @@
 ## ✅ UNASSIGNED TOURS REPORT (2026-02-23)
 
 ### Downloadable Unassigned Tours Report
-- **Purpose**: Generate a plain-text report of all tours with no guide assigned in the current filtered view, for sharing with guides
+- **Purpose**: Generate a plain-text report of unassigned tours (date, time, location) for sharing with guides
 - **Frontend**: New "Unassigned Report" button in the Summary card at bottom of Tours page
   - Iterates existing `groupedTours` memo (respects all active filters: date, guide, upcoming/past/date range)
   - Excludes cancelled tours and ticket products (already filtered by groupedTours)
-  - Groups display with `[GROUP]` prefix, booking count, and total PAX
-  - Individual tours show time, title, PAX, language, and booking channel
+  - Output shows only **date, time, and location** — clean format for guides
+  - Location extracted from tour title via keyword matching: Uffizi, Accademia, Duomo, Pitti, Boboli, Palazzo Vecchio, San Lorenzo, Santa Croce, Ponte Vecchio, Bargello, Vasari Corridor (defaults to "Florence")
   - Downloads as `unassigned_tours_YYYYMMDD_HHmm.txt` via Blob
   - Responsive: shows "Unassigned Report" on desktop, "Report" on mobile
 - **No backend changes**: Entirely client-side using existing filtered data
