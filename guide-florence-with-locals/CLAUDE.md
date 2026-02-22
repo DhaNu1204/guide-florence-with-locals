@@ -49,6 +49,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 14. **Rate Limiting**: DB-backed, per-endpoint (login: 5/min, read: 100/min, write: 30/min)
 15. **Error Tracking**: Sentry.io (100% trace, 10% replay) + file logging with rotation
 16. **CI/CD Pipeline**: GitHub Actions: build verification + deploy to Hostinger + health checks
+17. **Unassigned Tours Report**: Downloadable .txt report of guideless tours from current filter view
 
 ## CRITICAL INFORMATION
 

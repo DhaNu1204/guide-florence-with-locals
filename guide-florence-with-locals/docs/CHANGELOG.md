@@ -1,5 +1,21 @@
 # Changelog - Recent Major Updates
 
+## ✅ UNASSIGNED TOURS REPORT (2026-02-23)
+
+### Downloadable Unassigned Tours Report
+- **Purpose**: Generate a plain-text report of all tours with no guide assigned in the current filtered view, for sharing with guides
+- **Frontend**: New "Unassigned Report" button in the Summary card at bottom of Tours page
+  - Iterates existing `groupedTours` memo (respects all active filters: date, guide, upcoming/past/date range)
+  - Excludes cancelled tours and ticket products (already filtered by groupedTours)
+  - Groups display with `[GROUP]` prefix, booking count, and total PAX
+  - Individual tours show time, title, PAX, language, and booking channel
+  - Downloads as `unassigned_tours_YYYYMMDD_HHmm.txt` via Blob
+  - Responsive: shows "Unassigned Report" on desktop, "Report" on mobile
+- **No backend changes**: Entirely client-side using existing filtered data
+- **File Modified**: `src/pages/Tours.jsx`
+
+---
+
 ## ✅ CUSTOM DATE RANGE FILTERING & CACHE FIX (2026-02-23)
 
 ### Custom Date Range Filter
