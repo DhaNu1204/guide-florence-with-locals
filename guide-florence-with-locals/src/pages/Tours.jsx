@@ -857,7 +857,6 @@ const Tours = () => {
     lines.push('');
 
     let totalUnassigned = 0;
-    let totalPax = 0;
 
     groupedTours.forEach(dateGroup => {
       const unassignedItems = [];
@@ -867,32 +866,16 @@ const Tours = () => {
           if (item._isGroup) {
             const g = item.group;
             if (!g.guide_id) {
-              const pax = g.total_pax || 0;
               const time = g.group_time ? g.group_time.substring(0, 5) : '00:00';
-              const lang = g.tours && g.tours.length > 0 ? getTourLanguage(g.tours[0]) : null;
-              const channel = g.tours && g.tours.length > 0 ? (g.tours[0].booking_channel || 'Website') : 'Website';
-              const bookingCount = g.tours ? g.tours.length : 0;
-              unassignedItems.push({
-                time,
-                text: `[GROUP] ${g.display_name || 'Group'} (${pax} PAX, ${bookingCount} bookings${lang ? ', ' + lang : ''}) [${channel}]`
-              });
+              unassignedItems.push({ time, name: g.display_name || 'Group' });
               totalUnassigned++;
-              totalPax += pax;
             }
           } else {
-            // Individual tour — skip cancelled
             if (item.cancelled) return;
             if (!item.guide_id) {
-              const pax = getParticipantCount(item);
               const time = getBookingTime(item).substring(0, 5);
-              const lang = getTourLanguage(item);
-              const channel = item.booking_channel || 'Website';
-              unassignedItems.push({
-                time,
-                text: `${item.title || 'Untitled Tour'} (${pax} PAX${lang ? ', ' + lang : ''}) [${channel}]`
-              });
+              unassignedItems.push({ time, name: item.title || 'Untitled Tour' });
               totalUnassigned++;
-              totalPax += pax;
             }
           }
         });
@@ -906,7 +889,7 @@ const Tours = () => {
         unassignedItems
           .sort((a, b) => a.time.localeCompare(b.time))
           .forEach(entry => {
-            lines.push(`  ${entry.time}  ${entry.text}`);
+            lines.push(`  ${entry.time}  ${entry.name}`);
           });
         lines.push('');
       }
@@ -918,7 +901,7 @@ const Tours = () => {
     }
 
     lines.push('========================');
-    lines.push(`Total: ${totalUnassigned} unassigned tours, ${totalPax} PAX`);
+    lines.push(`Total: ${totalUnassigned} unassigned tours`);
 
     const content = lines.join('\n');
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
