@@ -215,7 +215,9 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
     let url = `${API_BASE_URL}/tours.php?page=${page}&per_page=${perPage}`;
 
     // Add optional filters
-    if (filters.date) {
+    if (filters.start_date && filters.end_date) {
+      url += `&start_date=${encodeURIComponent(filters.start_date)}&end_date=${encodeURIComponent(filters.end_date)}`;
+    } else if (filters.date) {
       url += `&date=${encodeURIComponent(filters.date)}`;
     }
     if (filters.guide_id) {
@@ -223,6 +225,9 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
     }
     if (filters.upcoming) {
       url += `&upcoming=true`;
+    }
+    if (filters.past) {
+      url += `&past=true`;
     }
 
     const response = await axios.get(addCacheBuster(url));

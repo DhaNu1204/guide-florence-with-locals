@@ -252,6 +252,9 @@ const Tours = () => {
   const [savingChanges, setSavingChanges] = useState({});
   const [showUpcoming, setShowUpcoming] = useState(true); // Default to upcoming to show 2026 data
   const [showPast, setShowPast] = useState(false); // Show past 40 days for payment verification
+  const [showDateRange, setShowDateRange] = useState(false); // Custom date range mode
+  const [rangeStartDate, setRangeStartDate] = useState(''); // YYYY-MM-DD string
+  const [rangeEndDate, setRangeEndDate] = useState(''); // YYYY-MM-DD string
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTour, setSelectedTour] = useState(null);
   const [autoGrouping, setAutoGrouping] = useState(false);
@@ -283,7 +286,11 @@ const Tours = () => {
 
       // Build group filters matching tour filters
       const groupFilters = {};
-      if (filters.upcoming) groupFilters.upcoming = 'true';
+      if (filters.start_date && filters.end_date) {
+        groupFilters.start_date = filters.start_date;
+        groupFilters.end_date = filters.end_date;
+      } else if (filters.upcoming) groupFilters.upcoming = 'true';
+      else if (filters.past) groupFilters.past = 'true';
       else if (filters.date) groupFilters.date = filters.date;
       if (filters.guide_id) groupFilters.guide_id = filters.guide_id;
 
@@ -319,7 +326,10 @@ const Tours = () => {
   // Build current filters object
   const getCurrentFilters = () => {
     const filters = {};
-    if (showPast) {
+    if (showDateRange && rangeStartDate && rangeEndDate) {
+      filters.start_date = rangeStartDate;
+      filters.end_date = rangeEndDate;
+    } else if (showPast) {
       filters.past = true; // Show past 40 days
     } else if (showUpcoming) {
       filters.upcoming = true;
@@ -345,9 +355,11 @@ const Tours = () => {
 
   // Load data when filters change
   useEffect(() => {
+    // Skip fetching if date range mode is active but range is incomplete
+    if (showDateRange && (!rangeStartDate || !rangeEndDate)) return;
     setCurrentPage(1); // Reset to page 1 when filters change
     loadData(false, 1, getCurrentFilters());
-  }, [filterDate, showUpcoming, showPast, selectedGuideId]);
+  }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate, selectedGuideId]);
 
   // Build a Set of tour IDs that belong to groups (for filtering ungrouped tours)
   const groupedTourIds = useMemo(() => {
@@ -938,28 +950,51 @@ const Tours = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">Select Date</label>
-              {/* Date input */}
-              <input
-                type="date"
-                value={filterDate ? format(filterDate, 'yyyy-MM-dd') : ''}
-                onChange={(e) => {
-                  setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
-                  setShowUpcoming(false);
-                  setShowPast(false);
-                }}
-                className="w-full px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500 mb-2"
-              />
+              <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">
+                {showDateRange ? 'Date Range' : 'Select Date'}
+              </label>
+              {/* Date input(s) */}
+              {showDateRange ? (
+                <div className="flex gap-2 items-center mb-2">
+                  <input
+                    type="date"
+                    value={rangeStartDate}
+                    onChange={(e) => setRangeStartDate(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+                  />
+                  <span className="text-stone-400 text-sm flex-shrink-0">to</span>
+                  <input
+                    type="date"
+                    value={rangeEndDate}
+                    min={rangeStartDate || undefined}
+                    onChange={(e) => setRangeEndDate(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+                  />
+                </div>
+              ) : (
+                <input
+                  type="date"
+                  value={filterDate ? format(filterDate, 'yyyy-MM-dd') : ''}
+                  onChange={(e) => {
+                    setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
+                    setShowUpcoming(false);
+                    setShowPast(false);
+                    setShowDateRange(false);
+                  }}
+                  className="w-full px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500 mb-2"
+                />
+              )}
               {/* Period buttons — horizontal scrollable on mobile */}
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide mt-2">
                 <button
                   onClick={() => {
                     setFilterDate(new Date());
                     setShowUpcoming(false);
                     setShowPast(false);
+                    setShowDateRange(false);
                   }}
                   className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
-                    !showUpcoming && !showPast && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+                    !showUpcoming && !showPast && !showDateRange && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
                       ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
                       : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
                   }`}
@@ -970,9 +1005,10 @@ const Tours = () => {
                   onClick={() => {
                     setShowUpcoming(true);
                     setShowPast(false);
+                    setShowDateRange(false);
                   }}
                   className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
-                    showUpcoming && !showPast
+                    showUpcoming && !showPast && !showDateRange
                       ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
                       : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
                   }`}
@@ -984,15 +1020,31 @@ const Tours = () => {
                   onClick={() => {
                     setShowPast(true);
                     setShowUpcoming(false);
+                    setShowDateRange(false);
                   }}
                   className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
-                    showPast
+                    showPast && !showDateRange
                       ? 'bg-amber-600 text-white active:bg-amber-700'
                       : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
                   }`}
                   title="Show completed tours from past 40 days"
                 >
                   Past 40 Days
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDateRange(true);
+                    setShowUpcoming(false);
+                    setShowPast(false);
+                  }}
+                  className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
+                    showDateRange
+                      ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
+                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
+                  }`}
+                  title="Select a custom date range"
+                >
+                  Date Range
                 </button>
               </div>
             </div>

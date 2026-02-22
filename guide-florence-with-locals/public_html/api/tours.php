@@ -141,13 +141,22 @@ switch ($method) {
         $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
         $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
         $past = isset($_GET['past']) && $_GET['past'] === 'true';
+        $startDate = isset($_GET['start_date']) ? $_GET['start_date'] : null;
+        $endDate = isset($_GET['end_date']) ? $_GET['end_date'] : null;
 
         // Build WHERE clause for filtering
         $whereConditions = [];
         $whereParams = [];
         $whereTypes = "";
 
-        if ($past) {
+        if ($startDate && $endDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+            // Custom date range filter
+            $whereConditions[] = "t.date >= ?";
+            $whereConditions[] = "t.date <= ?";
+            $whereParams[] = $startDate;
+            $whereParams[] = $endDate;
+            $whereTypes .= "ss";
+        } elseif ($past) {
             // Show tours from past 40 days (for payment verification)
             $startDate = date('Y-m-d', strtotime('-40 days'));
             $yesterday = date('Y-m-d', strtotime('-1 day'));
