@@ -1,0 +1,234 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_frontend:
+        description: 'Deploy frontend'
+        required: false
+        default: true
+        type: boolean
+      deploy_backend:
+        description: 'Deploy backend'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  NODE_VERSION: '18'
+  PRODUCTION_PATH: /home/u803853690/domains/deetech.cc/public_html/withlocals
+
+jobs:
+  # ===========================================================================
+  # BUILD JOB - Build React frontend
+  # ===========================================================================
+  build:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_frontend != 'false'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          VITE_API_URL: https://withlocals.deetech.cc/api
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: dist/
+          retention-days: 1
+
+  # ===========================================================================
+  # DEPLOY JOB - Deploy to Hostinger via SSH
+  # ===========================================================================
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download frontend build
+        if: github.event.inputs.deploy_frontend != 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: dist/
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create deployment package
+        run: |
+          # Create a clean deployment directory
+          mkdir -p deploy/api
+
+          # Copy backend PHP files (exclude dev files)
+          cp public_html/api/*.php deploy/api/
+
+          # Remove development/test files from deployment
+          rm -f deploy/api/sentry_test.php 2>/dev/null || true
+          rm -f deploy/api/migrate_bokun_credentials.php 2>/dev/null || true
+          rm -f deploy/api/database_check.php 2>/dev/null || true
+
+          # List files to deploy
+          echo "=== Backend files to deploy ==="
+          ls -la deploy/api/
+
+          if [ -d "dist" ]; then
+            echo "=== Frontend files to deploy ==="
+            ls -la dist/
+          fi
+
+      - name: Deploy Backend (PHP files)
+        if: github.event.inputs.deploy_backend != 'false'
+        run: |
+          echo "Deploying backend PHP files..."
+          scp -P ${{ secrets.SSH_PORT }} \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            deploy/api/*.php \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:${{ env.PRODUCTION_PATH }}/api/
+          echo "Backend deployment complete!"
+
+      - name: Deploy Frontend (Built assets)
+        if: github.event.inputs.deploy_frontend != 'false'
+        run: |
+          echo "Deploying frontend assets..."
+          # Use rsync for efficient sync (only changed files)
+          rsync -avz --delete \
+            -e "ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            --exclude='.htaccess' \
+            --exclude='api/' \
+            dist/ \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:${{ env.PRODUCTION_PATH }}/
+          echo "Frontend deployment complete!"
+
+      - name: Set file permissions
+        run: |
+          ssh -p ${{ secrets.SSH_PORT }} \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+            "chmod -R 644 ${{ env.PRODUCTION_PATH }}/api/*.php && \
+             chmod 755 ${{ env.PRODUCTION_PATH }}/api"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  # ===========================================================================
+  # HEALTH CHECK JOB - Verify deployment
+  # ===========================================================================
+  health-check:
+    name: Verify Deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: needs.deploy.result == 'success'
+
+    steps:
+      - name: Wait for deployment to propagate
+        run: sleep 10
+
+      - name: Check API health
+        run: |
+          echo "Checking API endpoints..."
+
+          # Check tours endpoint
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://withlocals.deetech.cc/api/tours.php?upcoming=true&per_page=1")
+
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Tours API: OK ($HTTP_CODE)"
+          else
+            echo "❌ Tours API: Failed ($HTTP_CODE)"
+            exit 1
+          fi
+
+          # Check guides endpoint
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://withlocals.deetech.cc/api/guides.php?per_page=1")
+
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Guides API: OK ($HTTP_CODE)"
+          else
+            echo "❌ Guides API: Failed ($HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Check Frontend health
+        run: |
+          echo "Checking frontend..."
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://withlocals.deetech.cc/")
+
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Frontend: OK ($HTTP_CODE)"
+          else
+            echo "❌ Frontend: Failed ($HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Deployment Summary
+        run: |
+          echo "========================================"
+          echo "🚀 DEPLOYMENT SUCCESSFUL"
+          echo "========================================"
+          echo "Environment: Production"
+          echo "URL: https://withlocals.deetech.cc"
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Commit: ${{ github.sha }}"
+          echo "========================================"
+
+  # ===========================================================================
+  # NOTIFY JOB - Send notifications (optional)
+  # ===========================================================================
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: [deploy, health-check]
+    if: always()
+
+    steps:
+      - name: Notify on success
+        if: needs.health-check.result == 'success'
+        run: |
+          echo "Deployment successful! 🎉"
+          # Add Slack/Discord webhook here if needed
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"✅ Florence Guides deployed successfully!"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify on failure
+        if: needs.deploy.result == 'failure' || needs.health-check.result == 'failure'
+        run: |
+          echo "Deployment failed! ❌"
+          # Add Slack/Discord webhook here if needed
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"❌ Florence Guides deployment failed!"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}

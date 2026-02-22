@@ -114,7 +114,11 @@ export const getTickets = async (forceRefresh = false) => {
     const response = await axios.get(addCacheBuster(`${API_BASE_URL}/tickets.php`));
     
     // Extract tickets array from the response
-    const serverTickets = response.data.tickets || [];
+    // Map 'museum' DB column back to 'code' for frontend compatibility
+    const serverTickets = (response.data.tickets || []).map(t => ({
+      ...t,
+      code: t.museum || t.code || ''
+    }));
     
     // Store in cache with timestamp
     try {
@@ -150,10 +154,14 @@ export const addTicket = async (ticketData) => {
     ...ticketData,
     id: tempId,
     location: ticketData.location || '',
-    code: ticketData.code || '',
+    museum: ticketData.museum || ticketData.code || '',
+    ticket_type: ticketData.ticket_type || '',
     date: ticketData.date || '',
     time: ticketData.time || '',
     quantity: parseInt(ticketData.quantity) || 0,
+    price: parseFloat(ticketData.price) || 0,
+    notes: ticketData.notes || null,
+    status: ticketData.status || 'available',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -240,10 +248,14 @@ export const updateTicket = async (ticketId, ticketData) => {
       },
       body: JSON.stringify({
         location: ticketData.location,
-        code: ticketData.code,
+        museum: ticketData.museum || ticketData.code || '',
+        ticket_type: ticketData.ticket_type || '',
         date: ticketData.date,
         time: ticketData.time,
-        quantity: ticketData.quantity
+        quantity: ticketData.quantity,
+        price: ticketData.price || 0,
+        notes: ticketData.notes || null,
+        status: ticketData.status || 'available'
       })
     });
 

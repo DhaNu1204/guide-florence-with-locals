@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Button from './UI/Button';
 import Input from './UI/Input';
 import Card from './UI/Card';
@@ -7,6 +7,9 @@ import "react-datepicker/dist/react-datepicker.css";
 import { format } from "date-fns";
 import { FiSave, FiDollarSign, FiCalendar, FiUser, FiClock } from 'react-icons/fi';
 import { getTours, getGuides } from '../services/mysqlDB.js';
+import { isTicketProduct } from '../utils/tourFilters';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) => {
   // Get current date and time in Italian timezone
@@ -40,31 +43,71 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
   const [filteredTours, setFilteredTours] = useState([]); // Tours filtered by selected date
   const [guides, setGuides] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingTours, setLoadingTours] = useState(false); // Loading state for date-specific tours
   const [errors, setErrors] = useState({});
 
+  // AbortController ref to prevent race conditions when fetching tours
+  const abortControllerRef = useRef(null);
+
   useEffect(() => {
-    loadToursAndGuides();
+    loadGuides();
+
+    // Cleanup: abort any pending request on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, []);
 
-  const loadToursAndGuides = async () => {
+  // Load only guides on initial mount (tours loaded on-demand by date)
+  const loadGuides = async () => {
     try {
-      // Load tours using the cached service (forces fresh data from server)
-      console.log('PaymentRecordForm: Loading fresh tour data from mysqlDB service');
-      const toursData = await getTours(true); // Force refresh to get latest data
-      setTours(toursData);
-
-      // Load guides using the cached service
       const guidesData = await getGuides();
-      setGuides(guidesData);
-
-      console.log('PaymentRecordForm: Loaded', toursData.length, 'tours and', guidesData.length, 'guides');
+      // Handle paginated response - extract data array
+      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
     } catch (error) {
-      console.error('Error loading tours and guides:', error);
+      console.error('Error loading guides:', error);
     }
   };
 
-  // Function to filter tours by selected date
-  const filterToursByDate = (selectedDate) => {
+  // Load tours for a specific date from the API
+  const loadToursForDate = async (dateString) => {
+    // Cancel any previous request to prevent race conditions
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
+
+    setLoadingTours(true);
+    try {
+      // Fetch tours directly from API with date filter to get ALL tours for that date
+      const response = await fetch(`${API_BASE_URL}/tours.php?date=${dateString}&per_page=100`, {
+        signal: abortControllerRef.current.signal
+      });
+      const result = await response.json();
+
+      // Extract tours array from response
+      const toursData = result && result.data ? result.data : result;
+      setTours(toursData);
+
+      return toursData;
+    } catch (error) {
+      // Handle AbortError gracefully - don't show error to user for cancelled requests
+      if (error.name === 'AbortError') {
+        return [];
+      }
+      console.error('Error loading tours for date:', error);
+      return [];
+    } finally {
+      setLoadingTours(false);
+    }
+  };
+
+  // Function to filter tours by selected date (now fetches on-demand)
+  const filterToursByDate = async (selectedDate) => {
     if (!selectedDate) {
       setFilteredTours([]);
       return;
@@ -72,16 +115,22 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
 
     const dateString = format(selectedDate, 'yyyy-MM-dd');
 
-    console.log('Filtering tours for date:', dateString);
-    console.log('All tours:', tours);
+    // Fetch tours for the selected date from the API
+    const toursForDate = await loadToursForDate(dateString);
 
-    const filtered = tours.filter(tour => {
-      // Check if tour is on the selected date
+    // Filter the fetched tours (they're already for the selected date)
+    const filtered = toursForDate.filter(tour => {
+      // Tours are already filtered by date from the API, but double-check
       if (tour.date !== dateString) return false;
+
+      // Exclude ticket products using smart keyword detection from tourFilters utility
+      // Tickets don't need guide payments
+      if (isTicketProduct(tour)) {
+        return false;
+      }
 
       // Check if tour is cancelled - exclude cancelled tours
       if (tour.cancelled === true || tour.cancelled === 1) {
-        console.log(`Tour ${tour.id} excluded: cancelled`);
         return false;
       }
 
@@ -100,18 +149,8 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
       }
 
       // Get payment and guide status (using cleaned data)
-      const isPaidBoolean = tour.paid === true || tour.paid === 1;
       const paymentStatus = actualPaymentStatus; // Use cleaned status
       const needsGuideAssignment = !tour.guide_id || tour.guide_id === null || tour.guide_id === '' || tour.guide_id === 'null';
-
-      console.log(`Tour ${tour.id}:
-        - paid boolean: ${isPaidBoolean}
-        - original payment_status: ${tour.payment_status}
-        - cleaned payment_status: ${paymentStatus}
-        - total_amount_paid: ${totalAmountPaid}
-        - expected_amount: ${expectedAmount}
-        - guide_id: ${tour.guide_id}
-        - needs_guide_assignment: ${needsGuideAssignment}`);
 
       // BUSINESS LOGIC: Include tours if ANY of these conditions are true:
       // 1. Tour needs guide assignment (regardless of payment status)
@@ -142,16 +181,9 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
         shouldInclude = true;
         reason = 'partially paid (expected: €' + expectedAmount + ', paid: €' + totalAmountPaid + ')';
       }
-      // Exclude fully paid tours with guides assigned
-      else {
-        reason = 'fully paid and guide assigned';
-      }
-
-      console.log(`Tour ${tour.id} ${shouldInclude ? 'INCLUDED' : 'EXCLUDED'}: ${reason}`);
       return shouldInclude;
     });
 
-    console.log('Filtered tours:', filtered);
     setFilteredTours(filtered);
   };
 
@@ -250,7 +282,7 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8080/api/payments.php', {
+      const response = await fetch(`${API_BASE_URL}/payments.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -349,15 +381,25 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
           />
           {errors.tour_date && <div className="text-red-600 text-sm mt-1">{errors.tour_date}</div>}
 
-          {formData.tour_date && filteredTours.length === 0 && (
+          {formData.tour_date && loadingTours && (
+            <div className="text-blue-600 text-sm mt-1 flex items-center gap-2">
+              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Loading tours for {format(formData.tour_date, 'yyyy-MM-dd')}...
+            </div>
+          )}
+
+          {formData.tour_date && !loadingTours && filteredTours.length === 0 && (
             <div className="text-amber-600 text-sm mt-1">
-              No unpaid tours found for {format(formData.tour_date, 'yyyy-MM-dd')}
+              No unpaid tours found for {format(formData.tour_date, 'yyyy-MM-dd')}. All tours on this date may be ticket products or already paid.
             </div>
           )}
         </div>
 
         {/* Step 2: Tour Selection */}
-        {formData.tour_date && filteredTours.length > 0 && (
+        {formData.tour_date && !loadingTours && filteredTours.length > 0 && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Step 2: Select Tour *

@@ -21,6 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // Include database configuration
 require_once 'config.php';
 
+// Apply rate limiting based on HTTP method
+autoRateLimit('tours');
+
 // Create database connection using credentials from config.php
 $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
 
@@ -73,6 +76,44 @@ if ($notesResult->num_rows === 0) {
     }
 }
 
+// Check if tour_groups table exists, create if not (for LEFT JOIN in GET)
+$checkTourGroupsTable = $conn->query("SHOW TABLES LIKE 'tour_groups'");
+if ($checkTourGroupsTable->num_rows === 0) {
+    $conn->query("
+        CREATE TABLE `tour_groups` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `group_date` date NOT NULL,
+            `group_time` time NOT NULL,
+            `display_name` varchar(200) NOT NULL,
+            `guide_id` int(11) DEFAULT NULL,
+            `guide_name` varchar(100) DEFAULT NULL,
+            `notes` text DEFAULT NULL,
+            `max_pax` int(11) NOT NULL DEFAULT 9,
+            `total_pax` int(11) NOT NULL DEFAULT 0,
+            `is_manual_merge` tinyint(1) NOT NULL DEFAULT 0,
+            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_tour_groups_date` (`group_date`),
+            KEY `idx_tour_groups_date_time` (`group_date`, `group_time`),
+            KEY `idx_tour_groups_guide` (`guide_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
+// Check if group_id column exists in tours, add if not
+$checkGroupIdCol = $conn->query("SHOW COLUMNS FROM tours LIKE 'group_id'");
+if ($checkGroupIdCol->num_rows === 0) {
+    $conn->query("ALTER TABLE tours ADD COLUMN `group_id` int(11) DEFAULT NULL AFTER `notes`");
+    $conn->query("ALTER TABLE tours ADD KEY `idx_tours_group_id` (`group_id`)");
+}
+
+// Check if participant_names column exists, add if not
+$checkParticipantNamesCol = $conn->query("SHOW COLUMNS FROM tours LIKE 'participant_names'");
+if ($checkParticipantNamesCol->num_rows === 0) {
+    $conn->query("ALTER TABLE tours ADD COLUMN `participant_names` TEXT DEFAULT NULL AFTER `participants`");
+}
+
 // Get the request method
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -90,13 +131,99 @@ if (is_numeric($lastSegment)) {
 // Handle requests based on method
 switch ($method) {
     case 'GET':
-        // Get all tours with guide names and payment information
-        $sql = "SELECT t.*, g.name as guide_name
+        // Get pagination parameters from query string
+        $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+        $perPage = isset($_GET['per_page']) ? max(1, min(500, intval($_GET['per_page']))) : 50;
+        $offset = ($page - 1) * $perPage;
+
+        // Get optional date filter parameter (YYYY-MM-DD format)
+        $filterDate = isset($_GET['date']) ? $_GET['date'] : null;
+        $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
+        $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
+        $past = isset($_GET['past']) && $_GET['past'] === 'true';
+
+        // Build WHERE clause for filtering
+        $whereConditions = [];
+        $whereParams = [];
+        $whereTypes = "";
+
+        if ($past) {
+            // Show tours from past 40 days (for payment verification)
+            $startDate = date('Y-m-d', strtotime('-40 days'));
+            $yesterday = date('Y-m-d', strtotime('-1 day'));
+            $whereConditions[] = "t.date >= ?";
+            $whereConditions[] = "t.date <= ?";
+            $whereParams[] = $startDate;
+            $whereParams[] = $yesterday;
+            $whereTypes .= "ss";
+        } elseif ($upcoming) {
+            // Show tours from today onwards for the next 60 days
+            $today = date('Y-m-d');
+            $endDate = date('Y-m-d', strtotime('+60 days'));
+            $whereConditions[] = "t.date >= ?";
+            $whereConditions[] = "t.date <= ?";
+            $whereParams[] = $today;
+            $whereParams[] = $endDate;
+            $whereTypes .= "ss";
+        } elseif ($filterDate) {
+            // Validate date format
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filterDate)) {
+                $whereConditions[] = "t.date = ?";
+                $whereParams[] = $filterDate;
+                $whereTypes .= "s";
+            }
+        }
+
+        if ($guideId) {
+            $whereConditions[] = "t.guide_id = ?";
+            $whereParams[] = $guideId;
+            $whereTypes .= "i";
+        }
+
+        $whereClause = count($whereConditions) > 0
+            ? "WHERE " . implode(" AND ", $whereConditions)
+            : "";
+
+        // Get total count for pagination metadata (with filters)
+        $countSql = "SELECT COUNT(*) as total FROM tours t $whereClause";
+        if (count($whereParams) > 0) {
+            $countStmt = $conn->prepare($countSql);
+            $countStmt->bind_param($whereTypes, ...$whereParams);
+            $countStmt->execute();
+            $countResult = $countStmt->get_result();
+        } else {
+            $countResult = $conn->query($countSql);
+        }
+        $totalRecords = 0;
+
+        if ($countResult) {
+            $countRow = $countResult->fetch_assoc();
+            $totalRecords = intval($countRow['total']);
+        }
+
+        // Get all tours with guide names, payment information, and group info (with pagination and filters)
+        $sql = "SELECT t.*, g.name as guide_name,
+                       tg.display_name as group_display_name,
+                       tg.total_pax as group_total_pax,
+                       tg.max_pax as group_max_pax,
+                       tg.is_manual_merge as group_is_manual_merge,
+                       tg.guide_id as group_guide_id,
+                       tg.guide_name as group_guide_name
                 FROM tours t
                 LEFT JOIN guides g ON t.guide_id = g.id
-                ORDER BY t.date ASC, t.time ASC";
+                LEFT JOIN tour_groups tg ON t.group_id = tg.id
+                $whereClause
+                ORDER BY t.date ASC, t.time ASC
+                LIMIT ? OFFSET ?";
 
-        $result = $conn->query($sql);
+        // Add pagination params to the end
+        $allParams = array_merge($whereParams, [$perPage, $offset]);
+        $allTypes = $whereTypes . "ii";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($allTypes, ...$allParams);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
         if ($result) {
             $tours = [];
@@ -109,6 +236,9 @@ switch ($method) {
 
                 // Convert cancelled to boolean for frontend
                 $row['cancelled'] = isset($row['cancelled']) && $row['cancelled'] == 1 ? true : false;
+
+                // Convert rescheduled to boolean for frontend
+                $row['rescheduled'] = isset($row['rescheduled']) && $row['rescheduled'] == 1 ? true : false;
 
                 // Format payment-related fields
                 if (isset($row['total_amount_paid'])) {
@@ -123,9 +253,44 @@ switch ($method) {
                     $row['payment_status'] = 'unpaid';
                 }
 
+                // Format group info
+                if (isset($row['group_id']) && $row['group_id']) {
+                    $row['group_id'] = intval($row['group_id']);
+                    $row['group_info'] = [
+                        'id' => $row['group_id'],
+                        'display_name' => $row['group_display_name'],
+                        'total_pax' => intval($row['group_total_pax'] ?? 0),
+                        'max_pax' => intval($row['group_max_pax'] ?? 9),
+                        'is_manual_merge' => (bool)($row['group_is_manual_merge'] ?? false),
+                        'guide_id' => $row['group_guide_id'] ? intval($row['group_guide_id']) : null,
+                        'guide_name' => $row['group_guide_name'] ?? null
+                    ];
+                } else {
+                    $row['group_id'] = null;
+                    $row['group_info'] = null;
+                }
+                // Remove redundant group columns from top-level row
+                unset($row['group_display_name'], $row['group_total_pax'], $row['group_max_pax'],
+                      $row['group_is_manual_merge'], $row['group_guide_id'], $row['group_guide_name']);
+
                 $tours[] = $row;
             }
-            echo json_encode($tours);
+
+            // Calculate pagination metadata
+            $totalPages = ceil($totalRecords / $perPage);
+
+            // Return paginated response with metadata
+            echo json_encode([
+                'data' => $tours,
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $totalRecords,
+                    'total_pages' => $totalPages,
+                    'has_next' => $page < $totalPages,
+                    'has_prev' => $page > 1
+                ]
+            ]);
         } else {
             header("HTTP/1.1 500 Internal Server Error");
             echo json_encode(["error" => "Failed to get tours: " . $conn->error]);
@@ -267,16 +432,25 @@ switch ($method) {
             $bindValues[] = $data['time'];
         }
         
-        if (isset($data['guideId'])) {
+        // Handle both guideId and guide_id for backward compatibility
+        if (isset($data['guideId']) || isset($data['guide_id'])) {
             $setFields[] = "guide_id = ?";
+            $guideValue = isset($data['guide_id']) ? $data['guide_id'] : $data['guideId'];
             // Convert empty string to NULL for database
-            if ($data['guideId'] === '' || $data['guideId'] === null) {
+            if ($guideValue === '' || $guideValue === null) {
                 $bindTypes .= "s";
                 $bindValues[] = null;
             } else {
                 $bindTypes .= "i";
-                $bindValues[] = $data['guideId'];
+                $bindValues[] = $guideValue;
             }
+        }
+
+        // Handle notes field
+        if (isset($data['notes'])) {
+            $setFields[] = "notes = ?";
+            $bindTypes .= "s";
+            $bindValues[] = $data['notes'];
         }
         
         if (isset($data['booking_channel'])) {
@@ -362,6 +536,13 @@ switch ($method) {
                         $tour['cancelled'] = (bool)$tour['cancelled'];
                     } else {
                         $tour['cancelled'] = false;
+                    }
+
+                    // Convert rescheduled to boolean for frontend
+                    if (isset($tour['rescheduled'])) {
+                        $tour['rescheduled'] = (bool)$tour['rescheduled'];
+                    } else {
+                        $tour['rescheduled'] = false;
                     }
 
                     // Format payment-related fields

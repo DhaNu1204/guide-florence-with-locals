@@ -4,7 +4,7 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [token, setToken] = useState(localStorage.getItem('authToken'));
+  const [token, setToken] = useState(localStorage.getItem('token'));
   const [userRole, setUserRole] = useState(localStorage.getItem('userRole'));
   const [userName, setUserName] = useState(localStorage.getItem('userName'));
   const [loading, setLoading] = useState(true);
@@ -32,7 +32,7 @@ export const AuthProvider = ({ children }) => {
           localStorage.setItem('userRole', data.role);
           localStorage.setItem('userName', data.username);
         } else {
-          localStorage.removeItem('authToken');
+          localStorage.removeItem('token');
           localStorage.removeItem('userRole');
           localStorage.removeItem('userName');
           setToken(null);
@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (error) {
         console.error('Token verification failed:', error);
-        localStorage.removeItem('authToken');
+        localStorage.removeItem('token');
         localStorage.removeItem('userRole');
         localStorage.removeItem('userName');
         setToken(null);
@@ -68,7 +68,7 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (data.success) {
-        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('token', data.token);
         localStorage.setItem('userRole', data.role);
         localStorage.setItem('userName', data.username);
         setToken(data.token);
@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('authToken');
+    localStorage.removeItem('token');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
     setToken(null);

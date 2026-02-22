@@ -12,6 +12,9 @@
 
 require_once 'config.php';
 
+// Apply rate limiting (read operations)
+applyRateLimit('read');
+
 // Get parameters
 $type = isset($_GET['type']) ? $_GET['type'] : 'summary';
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : null;
@@ -73,15 +76,17 @@ function generateSummaryReport($conn, $start_date, $end_date, $format) {
     ];
 
     // Overall statistics for the period
+    // Group-aware: count groups as 1 tour unit
     $stmt = $conn->prepare("SELECT
                                 COUNT(DISTINCT pt.id) as total_transactions,
-                                COUNT(DISTINCT pt.tour_id) as tours_with_payments,
+                                COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) as tours_with_payments,
                                 COUNT(DISTINCT pt.guide_id) as guides_with_payments,
                                 SUM(pt.amount) as total_amount,
                                 AVG(pt.amount) as avg_payment,
                                 MIN(pt.amount) as min_payment,
                                 MAX(pt.amount) as max_payment
-                            FROM payment_transactions pt
+                            FROM payments pt
+                            JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.payment_date BETWEEN ? AND ?");
 
     $stmt->bind_param("ss", $start_date, $end_date);
@@ -102,7 +107,7 @@ function generateSummaryReport($conn, $start_date, $end_date, $format) {
                                 COUNT(*) as transaction_count,
                                 SUM(amount) as total_amount,
                                 AVG(amount) as avg_amount
-                            FROM payment_transactions
+                            FROM payments
                             WHERE payment_date BETWEEN ? AND ?
                             GROUP BY payment_method
                             ORDER BY total_amount DESC");
@@ -120,16 +125,18 @@ function generateSummaryReport($conn, $start_date, $end_date, $format) {
     $report['payment_methods'] = $payment_methods;
 
     // Guide performance for the period
+    // Group-aware: count groups as 1 tour unit
     $stmt = $conn->prepare("SELECT
                                 g.id,
                                 g.name,
                                 g.email,
                                 COUNT(DISTINCT pt.id) as payment_count,
-                                COUNT(DISTINCT pt.tour_id) as tours_paid,
+                                COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) as tours_paid,
                                 SUM(pt.amount) as total_earned,
                                 AVG(pt.amount) as avg_payment
                             FROM guides g
-                            JOIN payment_transactions pt ON g.id = pt.guide_id
+                            JOIN payments pt ON g.id = pt.guide_id
+                            JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.payment_date BETWEEN ? AND ?
                             GROUP BY g.id, g.name, g.email
                             ORDER BY total_earned DESC");
@@ -151,7 +158,7 @@ function generateSummaryReport($conn, $start_date, $end_date, $format) {
                                 DATE(payment_date) as date,
                                 COUNT(*) as transaction_count,
                                 SUM(amount) as daily_total
-                            FROM payment_transactions
+                            FROM payments
                             WHERE payment_date BETWEEN ? AND ?
                             GROUP BY DATE(payment_date)
                             ORDER BY date");
@@ -212,7 +219,7 @@ function generateDetailedReport($conn, $start_date, $end_date, $guide_id, $forma
                 t.time as tour_time,
                 t.customer_name,
                 t.payment_status as tour_payment_status
-            FROM payment_transactions pt
+            FROM payments pt
             JOIN guides g ON pt.guide_id = g.id
             JOIN tours t ON pt.tour_id = t.id
             WHERE pt.payment_date BETWEEN ? AND ?";
@@ -319,7 +326,7 @@ function exportReport($conn, $start_date, $end_date, $guide_id, $format) {
                                     COUNT(DISTINCT pt.id) as total_transactions,
                                     COUNT(DISTINCT pt.guide_id) as guides_with_payments,
                                     SUM(pt.amount) as total_amount
-                                FROM payment_transactions pt
+                                FROM payments pt
                                 WHERE pt.payment_date BETWEEN ? AND ?");
 
         $stmt->bind_param("ss", $start_date, $end_date);
@@ -341,7 +348,7 @@ function exportReport($conn, $start_date, $end_date, $guide_id, $format) {
                     g.name as guide_name,
                     t.title as tour_title,
                     t.customer_name
-                FROM payment_transactions pt
+                FROM payments pt
                 JOIN guides g ON pt.guide_id = g.id
                 JOIN tours t ON pt.tour_id = t.id
                 WHERE pt.payment_date BETWEEN ? AND ?";

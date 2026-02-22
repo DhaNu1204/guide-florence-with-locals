@@ -13,6 +13,9 @@
 
 require_once 'config.php';
 
+// Apply rate limiting based on HTTP method
+autoRateLimit('payments');
+
 // Handle request based on HTTP method
 $method = $_SERVER['REQUEST_METHOD'];
 $tour_id = isset($_GET['tour_id']) ? intval($_GET['tour_id']) : null;
@@ -81,10 +84,13 @@ function getAllPayments($conn) {
                 t.date as tour_date,
                 t.time as tour_time,
                 t.customer_name,
+                t.group_id,
+                tg.display_name as group_display_name,
                 g.name as guide_name,
                 g.email as guide_email
-            FROM payment_transactions pt
+            FROM payments pt
             JOIN tours t ON pt.tour_id = t.id
+            LEFT JOIN tour_groups tg ON t.group_id = tg.id
             JOIN guides g ON pt.guide_id = g.id
             ORDER BY pt.payment_date DESC, pt.created_at DESC";
 
@@ -123,7 +129,7 @@ function getPaymentById($conn, $payment_id) {
                                 t.customer_name,
                                 g.name as guide_name,
                                 g.email as guide_email
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN tours t ON pt.tour_id = t.id
                             JOIN guides g ON pt.guide_id = g.id
                             WHERE pt.id = ?");
@@ -157,7 +163,7 @@ function getPaymentsByTour($conn, $tour_id) {
                                 pt.created_at,
                                 g.name as guide_name,
                                 g.email as guide_email
-                            FROM payment_transactions pt
+                            FROM payments pt
                             JOIN guides g ON pt.guide_id = g.id
                             WHERE pt.tour_id = ?
                             ORDER BY pt.payment_date DESC, pt.created_at DESC");
@@ -173,14 +179,19 @@ function getPaymentsByTour($conn, $tour_id) {
 
     // Also get tour info and current payment status
     $tour_stmt = $conn->prepare("SELECT
-                                    title,
-                                    payment_status,
-                                    total_amount_paid,
-                                    expected_amount,
-                                    customer_name,
-                                    date,
-                                    time
-                                FROM tours WHERE id = ?");
+                                    t.title,
+                                    t.payment_status,
+                                    t.total_amount_paid,
+                                    t.expected_amount,
+                                    t.customer_name,
+                                    t.date,
+                                    t.time,
+                                    t.group_id,
+                                    tg.display_name as group_display_name,
+                                    tg.total_pax as group_total_pax
+                                FROM tours t
+                                LEFT JOIN tour_groups tg ON t.group_id = tg.id
+                                WHERE t.id = ?");
     $tour_stmt->bind_param("i", $tour_id);
     $tour_stmt->execute();
     $tour_result = $tour_stmt->get_result();
@@ -231,18 +242,96 @@ function createPayment($conn) {
         return;
     }
 
-    // Validate tour and guide exist
-    $stmt = $conn->prepare("SELECT id FROM tours WHERE id = ? AND guide_id = ?");
-    $stmt->bind_param("ii", $input['tour_id'], $input['guide_id']);
+    // Validate tour exists
+    $stmt = $conn->prepare("SELECT id, guide_id FROM tours WHERE id = ?");
+    $stmt->bind_param("i", $input['tour_id']);
     $stmt->execute();
-    if (!$stmt->get_result()->fetch_assoc()) {
+    $tour_result = $stmt->get_result()->fetch_assoc();
+    if (!$tour_result) {
         http_response_code(400);
-        echo json_encode(['error' => 'Invalid tour ID or guide ID mismatch']);
+        echo json_encode(['error' => 'Invalid tour ID']);
         return;
     }
 
+    // Validate guide exists
+    $stmt = $conn->prepare("SELECT id FROM guides WHERE id = ?");
+    $stmt->bind_param("i", $input['guide_id']);
+    $stmt->execute();
+    if (!$stmt->get_result()->fetch_assoc()) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid guide ID']);
+        return;
+    }
+
+    // If tour has no guide assigned, update it with the selected guide
+    if ($tour_result['guide_id'] === null || $tour_result['guide_id'] === '') {
+        $update_stmt = $conn->prepare("UPDATE tours SET guide_id = ? WHERE id = ?");
+        $update_stmt->bind_param("ii", $input['guide_id'], $input['tour_id']);
+        $update_stmt->execute();
+    }
+
+    // Group-aware duplicate check: if tour is in a group, check if any tour in
+    // the same group already has a payment for this guide (1 group = 1 payment)
+    $groupCheck = $conn->prepare("SELECT group_id FROM tours WHERE id = ?");
+    $groupCheck->bind_param("i", $input['tour_id']);
+    $groupCheck->execute();
+    $groupRow = $groupCheck->get_result()->fetch_assoc();
+
+    if ($groupRow && $groupRow['group_id']) {
+        $tour_group_id = intval($groupRow['group_id']);
+        $dupCheck = $conn->prepare("
+            SELECT p.id, t.customer_name, t.id as paid_tour_id
+            FROM payments p
+            INNER JOIN tours t ON p.tour_id = t.id
+            WHERE t.group_id = ? AND p.guide_id = ?
+            LIMIT 1
+        ");
+        $dupCheck->bind_param("ii", $tour_group_id, $input['guide_id']);
+        $dupCheck->execute();
+        $dupResult = $dupCheck->get_result();
+
+        if ($dupRow = $dupResult->fetch_assoc()) {
+            // Allow bypass with force flag for intentional additional payments
+            if (!isset($input['force_group_payment']) || !$input['force_group_payment']) {
+                http_response_code(409);
+                echo json_encode([
+                    'error' => 'Duplicate group payment',
+                    'message' => 'A payment already exists for this tour group (booking: ' . ($dupRow['customer_name'] ?? 'N/A') . '). Grouped tours only need one guide payment.',
+                    'existing_payment_id' => intval($dupRow['id']),
+                    'paid_tour_id' => intval($dupRow['paid_tour_id']),
+                    'group_id' => $tour_group_id
+                ]);
+                return;
+            }
+        }
+    } else {
+        // Per-tour duplicate check: prevent duplicate payment for same tour_id + guide_id
+        // This catches cases where a group was dissolved after payment, or ungrouped tours
+        $perTourCheck = $conn->prepare("
+            SELECT p.id, p.amount, p.payment_date
+            FROM payments p
+            WHERE p.tour_id = ? AND p.guide_id = ?
+            LIMIT 1
+        ");
+        $perTourCheck->bind_param("ii", $input['tour_id'], $input['guide_id']);
+        $perTourCheck->execute();
+        $perTourResult = $perTourCheck->get_result();
+
+        if ($perTourDup = $perTourResult->fetch_assoc()) {
+            if (!isset($input['force_payment']) || !$input['force_payment']) {
+                http_response_code(409);
+                echo json_encode([
+                    'error' => 'Duplicate tour payment',
+                    'message' => 'A payment already exists for this tour and guide (payment #' . $perTourDup['id'] . ' on ' . $perTourDup['payment_date'] . '). Use force_payment to add another.',
+                    'existing_payment_id' => intval($perTourDup['id'])
+                ]);
+                return;
+            }
+        }
+    }
+
     // Insert payment transaction
-    $stmt = $conn->prepare("INSERT INTO payment_transactions
+    $stmt = $conn->prepare("INSERT INTO payments
                             (tour_id, guide_id, amount, payment_method, payment_date, payment_time, transaction_reference, notes)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
@@ -294,7 +383,7 @@ function updatePayment($conn, $payment_id) {
     $input = json_decode(file_get_contents('php://input'), true);
 
     // Check if payment exists
-    $stmt = $conn->prepare("SELECT id FROM payment_transactions WHERE id = ?");
+    $stmt = $conn->prepare("SELECT id FROM payments WHERE id = ?");
     $stmt->bind_param("i", $payment_id);
     $stmt->execute();
     if (!$stmt->get_result()->fetch_assoc()) {
@@ -353,7 +442,7 @@ function updatePayment($conn, $payment_id) {
         return;
     }
 
-    $sql = "UPDATE payment_transactions SET " . implode(", ", $update_fields) . " WHERE id = ?";
+    $sql = "UPDATE payments SET " . implode(", ", $update_fields) . " WHERE id = ?";
     $values[] = $payment_id;
     $types .= "i";
 
@@ -373,7 +462,7 @@ function updatePayment($conn, $payment_id) {
  */
 function deletePayment($conn, $payment_id) {
     // Get tour_id before deletion for updating status
-    $stmt = $conn->prepare("SELECT tour_id FROM payment_transactions WHERE id = ?");
+    $stmt = $conn->prepare("SELECT tour_id FROM payments WHERE id = ?");
     $stmt->bind_param("i", $payment_id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -387,7 +476,7 @@ function deletePayment($conn, $payment_id) {
     $tour_id = $payment['tour_id'];
 
     // Delete payment
-    $stmt = $conn->prepare("DELETE FROM payment_transactions WHERE id = ?");
+    $stmt = $conn->prepare("DELETE FROM payments WHERE id = ?");
     $stmt->bind_param("i", $payment_id);
 
     if ($stmt->execute()) {

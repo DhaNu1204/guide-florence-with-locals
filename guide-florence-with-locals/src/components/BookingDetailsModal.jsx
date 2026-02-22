@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FiX, FiCalendar, FiClock, FiUser, FiUsers, FiTag, FiMail, FiPhone, FiFileText, FiDollarSign, FiCheckCircle, FiSave } from 'react-icons/fi';
+import { FiX, FiCalendar, FiClock, FiUser, FiUsers, FiTag, FiMail, FiPhone, FiFileText, FiDollarSign, FiCheckCircle, FiSave, FiCopy, FiCheck } from 'react-icons/fi';
 
 // Helper function to extract booking details from bokun_data
 const extractBookingDetails = (ticket) => {
@@ -32,8 +32,23 @@ const extractBookingDetails = (ticket) => {
       museum: ''
     },
     specialRequests: '',
-    notes: ticket.notes || ''
+    notes: ticket.notes || '',
+    participantNames: []
   };
+
+  // Parse participant_names from stored column (JSON string)
+  if (ticket.participant_names) {
+    try {
+      const parsed = typeof ticket.participant_names === 'string'
+        ? JSON.parse(ticket.participant_names)
+        : ticket.participant_names;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        details.participantNames = parsed;
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+  }
 
   // Determine museum type from title
   if (ticket.title?.includes('Uffizi')) {
@@ -108,6 +123,93 @@ const extractBookingDetails = (ticket) => {
   }
 
   return details;
+};
+
+const ParticipantsSection = ({ details }) => {
+  const [copied, setCopied] = useState(false);
+  const hasNames = details.participantNames && details.participantNames.length > 0;
+
+  const handleCopyAll = async () => {
+    if (!hasNames) return;
+    const text = details.participantNames
+      .map(p => `${p.first} ${p.last}`)
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <section>
+      <div className="flex items-center mb-3">
+        <FiUsers className="text-olive-600 text-xl mr-2" />
+        <h3 className="text-lg font-semibold text-stone-900">
+          Participants ({details.participants.total})
+        </h3>
+      </div>
+      <div className="bg-stone-50 rounded-tuscan-lg p-4">
+        {/* Count badges */}
+        <div className="grid grid-cols-3 gap-4 mb-3">
+          <div className="text-center p-3 bg-white rounded-tuscan-lg shadow-tuscan-sm">
+            <p className="text-sm text-stone-600">Adults</p>
+            <p className="text-2xl font-bold text-stone-900">{details.participants.adults}</p>
+          </div>
+          <div className="text-center p-3 bg-white rounded-tuscan-lg shadow-tuscan-sm">
+            <p className="text-sm text-stone-600">Children</p>
+            <p className="text-2xl font-bold text-stone-900">{details.participants.children}</p>
+          </div>
+          <div className="text-center p-3 bg-terracotta-50 rounded-tuscan-lg shadow-tuscan-sm">
+            <p className="text-sm text-terracotta-600">Total</p>
+            <p className="text-2xl font-bold text-terracotta-700">{details.participants.total}</p>
+          </div>
+        </div>
+
+        {/* Participant names list */}
+        {hasNames ? (
+          <div className="mt-3 pt-3 border-t border-stone-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-stone-600">Names</span>
+              <button
+                onClick={handleCopyAll}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-tuscan-lg transition-colors touch-manipulation min-h-[36px]
+                  bg-terracotta-500 text-white hover:bg-terracotta-600 active:bg-terracotta-700"
+              >
+                {copied ? <FiCheck size={14} /> : <FiCopy size={14} />}
+                {copied ? 'Copied!' : 'Copy All Names'}
+              </button>
+            </div>
+            <ol className="space-y-1 select-text">
+              {details.participantNames.map((p, i) => (
+                <li key={i} className="flex items-center gap-2 text-sm text-stone-900 py-1 px-2 rounded-tuscan hover:bg-white transition-colors">
+                  <span className="text-xs text-stone-400 w-5 text-right flex-shrink-0">{i + 1}.</span>
+                  <span className="font-medium">{p.first} {p.last}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : (
+          <p className="text-xs text-stone-500 italic flex items-center mt-1">
+            <FiFileText className="mr-1" />
+            Individual names not available for this booking
+          </p>
+        )}
+      </div>
+    </section>
+  );
 };
 
 const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
@@ -357,32 +459,7 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
               </section>
 
               {/* Participants */}
-              <section>
-                <div className="flex items-center mb-3">
-                  <FiUsers className="text-olive-600 text-xl mr-2" />
-                  <h3 className="text-lg font-semibold text-stone-900">Participants</h3>
-                </div>
-                <div className="bg-stone-50 rounded-tuscan-lg p-4">
-                  <div className="grid grid-cols-3 gap-4 mb-3">
-                    <div className="text-center p-3 bg-white rounded-tuscan-lg shadow-tuscan-sm">
-                      <p className="text-sm text-stone-600">Adults</p>
-                      <p className="text-2xl font-bold text-stone-900">{details.participants.adults}</p>
-                    </div>
-                    <div className="text-center p-3 bg-white rounded-tuscan-lg shadow-tuscan-sm">
-                      <p className="text-sm text-stone-600">Children</p>
-                      <p className="text-2xl font-bold text-stone-900">{details.participants.children}</p>
-                    </div>
-                    <div className="text-center p-3 bg-terracotta-50 rounded-tuscan-lg shadow-tuscan-sm">
-                      <p className="text-sm text-terracotta-600">Total</p>
-                      <p className="text-2xl font-bold text-terracotta-700">{details.participants.total}</p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-stone-500 italic flex items-center">
-                    <FiFileText className="mr-1" />
-                    Individual names not provided by {details.booking.channel}
-                  </p>
-                </div>
-              </section>
+              <ParticipantsSection details={details} />
 
               {/* Booking Details */}
               <section>
@@ -412,14 +489,6 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
                       <div>
                         <span className="text-sm font-medium text-stone-600">External Reference:</span>
                         <p className="text-stone-900 font-mono text-sm">{details.booking.externalReference}</p>
-                      </div>
-                    )}
-                    {details.booking.totalPrice && (
-                      <div>
-                        <span className="text-sm font-medium text-stone-600">Total Price:</span>
-                        <p className="text-stone-900 font-medium">
-                          {details.booking.currency} {details.booking.totalPrice}
-                        </p>
                       </div>
                     )}
                   </div>

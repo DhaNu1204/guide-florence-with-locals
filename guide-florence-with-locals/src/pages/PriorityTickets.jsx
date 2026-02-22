@@ -349,7 +349,7 @@ const PriorityTickets = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 overflow-x-hidden">
       {/* Error Alert */}
       {error && (
         <div className="bg-terracotta-50 border border-terracotta-200 text-terracotta-700 px-4 py-3 rounded-tuscan-lg flex items-start">
@@ -373,9 +373,9 @@ const PriorityTickets = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-stone-600 mb-1">Total Tickets</p>
-              <p className="text-3xl font-bold text-stone-900">{stats.totalTickets}</p>
+              <p className="text-2xl md:text-3xl font-bold text-stone-900">{stats.totalTickets}</p>
             </div>
-            <div className="w-12 h-12 bg-gold-100 rounded-tuscan-lg flex items-center justify-center">
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-gold-100 rounded-tuscan-lg flex items-center justify-center">
               <FiTag className="text-gold-600 text-xl" />
             </div>
           </div>
@@ -385,9 +385,9 @@ const PriorityTickets = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-stone-600 mb-1">Upcoming</p>
-              <p className="text-3xl font-bold text-stone-900">{stats.upcomingTickets}</p>
+              <p className="text-2xl md:text-3xl font-bold text-stone-900">{stats.upcomingTickets}</p>
             </div>
-            <div className="w-12 h-12 bg-olive-100 rounded-tuscan-lg flex items-center justify-center">
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-olive-100 rounded-tuscan-lg flex items-center justify-center">
               <FiCalendar className="text-olive-600 text-xl" />
             </div>
           </div>
@@ -397,9 +397,9 @@ const PriorityTickets = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-stone-600 mb-1">Uffizi</p>
-              <p className="text-3xl font-bold text-stone-900">{stats.uffiziTickets}</p>
+              <p className="text-2xl md:text-3xl font-bold text-stone-900">{stats.uffiziTickets}</p>
             </div>
-            <div className="w-12 h-12 bg-terracotta-100 rounded-tuscan-lg flex items-center justify-center">
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-terracotta-100 rounded-tuscan-lg flex items-center justify-center">
               <FiTag className="text-terracotta-600 text-xl" />
             </div>
           </div>
@@ -409,9 +409,9 @@ const PriorityTickets = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-stone-600 mb-1">Accademia</p>
-              <p className="text-3xl font-bold text-stone-900">{stats.accademiaTickets}</p>
+              <p className="text-2xl md:text-3xl font-bold text-stone-900">{stats.accademiaTickets}</p>
             </div>
-            <div className="w-12 h-12 bg-renaissance-100 rounded-tuscan-lg flex items-center justify-center">
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-renaissance-100 rounded-tuscan-lg flex items-center justify-center">
               <FiTag className="text-renaissance-600 text-xl" />
             </div>
           </div>
@@ -504,8 +504,9 @@ const PriorityTickets = () => {
       {/* Ticket Bookings List - Day-wise */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-stone-900">
-            Ticket Bookings ({filteredTickets.length} of {ticketBookings.length})
+          <h2 className="text-lg md:text-xl font-semibold text-stone-900">
+            <span className="hidden md:inline">Ticket Bookings ({filteredTickets.length} of {ticketBookings.length})</span>
+            <span className="md:hidden">Tickets ({filteredTickets.length}/{ticketBookings.length})</span>
           </h2>
         </div>
 
@@ -542,8 +543,8 @@ const PriorityTickets = () => {
                     </span>
                   </div>
 
-                  {/* Tickets Table */}
-                  <div className="overflow-x-auto">
+                  {/* Desktop Table */}
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-stone-50 border-b border-stone-200">
                         <tr>
@@ -644,14 +645,103 @@ const PriorityTickets = () => {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Cards */}
+                  <div className="md:hidden divide-y divide-stone-100">
+                    {dayTickets.map((ticket) => (
+                      <div
+                        key={ticket.id}
+                        className={`p-3 active:bg-stone-100 touch-manipulation ${ticket.cancelled ? 'bg-terracotta-50/50' : ''}`}
+                        onClick={() => handleRowClick(ticket)}
+                      >
+                        {/* Row 1: Time + Museum badge + Cancelled */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-stone-900">{ticket.time || '-'}</span>
+                          <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${getTicketTypeBadgeColor(ticket.title)}`}>
+                            {getTicketType(ticket.title)}
+                          </span>
+                          {ticket.cancelled && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-terracotta-100 text-terracotta-800">
+                              Cancelled
+                            </span>
+                          )}
+                        </div>
+                        {/* Row 2: Customer name */}
+                        <p className="text-sm text-stone-900 mt-1 line-clamp-1">
+                          {ticket.customer_name || 'N/A'}
+                        </p>
+                        {/* Row 3: PAX + Channel */}
+                        <div className="flex items-center justify-between mt-1.5">
+                          <div className="flex items-center gap-1 text-sm text-stone-700">
+                            <FiUsers size={14} className="text-stone-400" />
+                            <span className="font-medium">
+                              {(() => {
+                                const breakdown = getParticipantBreakdown(ticket);
+                                if (breakdown.children > 0) {
+                                  return `${breakdown.adults}A / ${breakdown.children}C`;
+                                }
+                                return `${breakdown.adults || breakdown.total || 'N/A'} PAX`;
+                              })()}
+                            </span>
+                          </div>
+                          {ticket.booking_channel ? (
+                            <span className="inline-block px-2 py-0.5 bg-renaissance-100 text-renaissance-700 text-xs font-medium rounded-tuscan">
+                              {ticket.booking_channel}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-stone-400">Direct</span>
+                          )}
+                        </div>
+                        {/* Row 4: Notes */}
+                        <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                          {editingNotes[ticket.id] !== undefined ? (
+                            <div className="flex items-start gap-2">
+                              <textarea
+                                value={editingNotes[ticket.id]}
+                                onChange={(e) => handleNotesChange(ticket.id, e.target.value)}
+                                className="flex-1 px-2 py-1.5 text-sm border border-stone-300 rounded-tuscan focus:ring-2 focus:ring-terracotta-500 focus:border-terracotta-500 resize-none"
+                                rows="2"
+                                placeholder="Add notes..."
+                              />
+                              <div className="flex flex-col gap-1">
+                                <button
+                                  onClick={() => saveNotes(ticket.id)}
+                                  disabled={savingChanges[ticket.id]}
+                                  className="p-1.5 text-olive-600 hover:bg-olive-50 rounded-tuscan disabled:opacity-50 touch-manipulation"
+                                >
+                                  <FiSave size={16} />
+                                </button>
+                                <button
+                                  onClick={() => cancelNotesEdit(ticket.id)}
+                                  disabled={savingChanges[ticket.id]}
+                                  className="p-1.5 text-terracotta-600 hover:bg-terracotta-50 rounded-tuscan disabled:opacity-50 touch-manipulation"
+                                >
+                                  <FiX size={16} />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p
+                              onClick={() => handleNotesChange(ticket.id, ticket.notes || '')}
+                              className={`text-xs truncate active:bg-stone-100 px-1 py-0.5 rounded-tuscan ${
+                                ticket.notes ? 'text-stone-600' : 'text-stone-400 italic'
+                              }`}
+                            >
+                              {ticket.notes || 'Tap to add notes...'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               );
             })}
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4 border-t border-stone-200">
-                <p className="text-sm text-stone-600">
+              <div className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-stone-200 gap-3">
+                <p className="text-xs md:text-sm text-stone-600">
                   Showing {((currentPage - 1) * ticketsPerPage) + 1} - {Math.min(currentPage * ticketsPerPage, filteredTickets.length)} of {filteredTickets.length}
                 </p>
                 <div className="flex items-center space-x-2">

@@ -1,0 +1,2759 @@
+PHP Warning:  Undefined array key "REQUEST_METHOD" in D:\florence-with-locals-guide-assign-list\guide-florence-with-locals\public_html\api\config.php on line 144
+
+Warning: Undefined array key "REQUEST_METHOD" in D:\florence-with-locals-guide-assign-list\guide-florence-with-locals\public_html\api\config.php on line 144
+Successfully connected to database in development environment
+Fetching product details from Bokun API...
+=========================================
+
+Product ID: 828971
+Fetching details...
+BokunAPI: Making GET request to https://api.bokun.is/activity.json/828971
+BokunAPI: Headers: ["X-Bokun-Date: 2025-10-14 22:33:09","X-Bokun-AccessKey: 2c413c402bd9402092b4a3f5157c899e","X-Bokun-Signature: DzmlA0eOv69nPzVGup7XrXOC\/Dk=","Content-Type: application\/json;charset=UTF-8"]
+BokunAPI: Response code: 200
+BokunAPI: Response body: {"id":828971,"externalId":"426324P3","productGroupId":0,"productCategory":"ACTIVITIES","box":false,"inventoryLocal":true,"inventorySupportsPricing":false,"inventorySupportsAvailability":true,"creationDate":"Thu Dec 28 10:59:34 UTC 2023","lastModified":"Wed Jun 04 09:23:58 UTC 2025","lastPublished":"2025-03-05T12:11:54.049Z","published":false,"title":"Private Tour-Pitti Palace \u0026 Palatina Gallery, Boboli Gardens Tkts","description":"Visit Palazzo Pitti, the final residence of the Medici famil
+Product Details:
+{
+    "id": 828971,
+    "externalId": "426324P3",
+    "productGroupId": 0,
+    "productCategory": "ACTIVITIES",
+    "box": false,
+    "inventoryLocal": true,
+    "inventorySupportsPricing": false,
+    "inventorySupportsAvailability": true,
+    "creationDate": "Thu Dec 28 10:59:34 UTC 2023",
+    "lastModified": "Wed Jun 04 09:23:58 UTC 2025",
+    "lastPublished": "2025-03-05T12:11:54.049Z",
+    "published": false,
+    "title": "Private Tour-Pitti Palace & Palatina Gallery, Boboli Gardens Tkts",
+    "description": "Visit Palazzo Pitti, the final residence of the Medici family, with a private guide. The palace houses paintings, ancient statues, furnishings, and mosaics of immeasurable beauty and historical importance. Discover how the Medici came to possess this exquisite estate beyond the city's core, just across the iconic Ponte Vecchio. Venture within the Pitti Palace, where the Palatine Gallery houses an astonishing array of exquisite Renaissance and Baroque masterpieces. Afterwards, explore the Boboli Gardens \u2013 the opulent grounds stretching behind the Palace. Stroll through enchanting gardens and marvel at the caves, fountains, and sculptures that have turned this expansive green expanse into an open-air museum of unparalleled beauty.",
+    "excerpt": "Visit Palazzo Pitti, the final residence of the Medici family, with a private guide.",
+    "cancellationPolicy": {
+        "id": 191800,
+        "title": "Standard Viator policy",
+        "penaltyRules": [
+            {
+                "id": 209721,
+                "cutoffHours": 24,
+                "charge": 100,
+                "chargeType": "percentage",
+                "percentage": 100
+            },
+            {
+                "id": 209720,
+                "cutoffHours": 24000,
+                "charge": 0,
+                "chargeType": "percentage",
+                "percentage": 0
+            }
+        ],
+        "tax": null,
+        "defaultPolicy": false,
+        "policyType": "ADVANCED",
+        "simpleCutoffHours": null,
+        "policyTypeEnum": "ADVANCED"
+    },
+    "overrideBarcodeFormat": false,
+    "barcodeType": "CODE_128",
+    "timeZone": "Europe\/Rome",
+    "mainContactFields": [
+        {
+            "field": "FIRST_NAME",
+            "required": true,
+            "requiredBeforeDeparture": false
+        },
+        {
+            "field": "LAST_NAME",
+            "required": true,
+            "requiredBeforeDeparture": false
+        },
+        {
+            "field": "PHONE_NUMBER",
+            "required": true,
+            "requiredBeforeDeparture": false
+        }
+    ],
+    "requiredCustomerFields": [
+        "firstName",
+        "lastName",
+        "phoneNumber"
+    ],
+    "keywords": [
+        "private",
+        "Palace",
+        "&",
+        "Gallery",
+        "Pitti",
+        "Gardens",
+        "Palatina",
+        "Boboli",
+        "Tour"
+    ],
+    "flags": [],
+    "slug": null,
+    "baseLanguage": "en_GB",
+    "languages": [
+        "EN_GB"
+    ],
+    "paymentCurrencies": [],
+    "customFields": [],
+    "tagGroups": [],
+    "categories": [],
+    "keyPhoto": {
+        "id": 6574650,
+        "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg",
+        "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+        "alternateText": null,
+        "height": null,
+        "width": null,
+        "fileName": "\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg",
+        "flags": [],
+        "derived": [
+            {
+                "name": "thumbnail",
+                "url": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=80&h=80&mode=crop",
+                "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=80&h=80&mode=crop"
+            },
+            {
+                "name": "preview",
+                "url": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=300&h=300",
+                "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=300&h=300"
+            },
+            {
+                "name": "large",
+                "url": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=660&h=660",
+                "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=660&h=660"
+            }
+        ]
+    },
+    "photos": [
+        {
+            "id": 6574650,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4d57627d-4d6d-426d-b37d-2905f98c1d27.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6574651,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/05ebc361-6472-41c1-bf6b-4774fed729c4.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6574652,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/eb4ef4bb-251a-4b81-9d7f-6179142b9371.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6574653,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/161ba419-8202-4a7b-8985-c1c2430525c5.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6574654,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/aa789b01-893e-4c74-9113-fa0a77ba1915.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6574655,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/18487d30-2efe-4f7f-a78e-6f046736db4c.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6574656,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/2fabaf22-94b5-4f76-817e-ce5f341045ec.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6574657,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg",
+            "description": "Pitti Palace &amp; Palatina Gallery, Boboli Gardens private Tour",
+            "alternateText": null,
+            "height": null,
+            "width": null,
+            "fileName": "\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/38eef10a-e113-4d73-ad80-e2f245a77cb8.jpg?w=660&h=660"
+                }
+            ]
+        }
+    ],
+    "videos": [],
+    "vendor": {
+        "id": 96929,
+        "title": "Florence With Locals Group Tours",
+        "currencyCode": "EUR",
+        "showInvoiceIdOnTicket": false,
+        "showAgentDetailsOnTicket": false,
+        "showPaymentsOnInvoice": false,
+        "companyEmailIsDefault": false
+    },
+    "boxedVendor": null,
+    "storedExternally": false,
+    "pluginId": null,
+    "reviewRating": 0,
+    "reviewCount": 0,
+    "activityType": "DAY_TOUR_OR_ACTIVITY",
+    "bookingType": "DATE_AND_TIME",
+    "scheduleType": "RECURRING",
+    "cutoffType": "RELATIVE_TO_START_TIME",
+    "cutoffReferenceHour": 0,
+    "cutoffReferenceMinute": 0,
+    "earlyBookingLimitType": "UNLIMITED",
+    "earlyBookingLimitSpecificDateTime": null,
+    "earlyBookingLimitDaysBefore": null,
+    "earlyBookingLimitMonthsBefore": null,
+    "earlyBookingLimitTime": null,
+    "capacityType": "LIMITED",
+    "passExpiryType": null,
+    "fixedPassExpiryDate": null,
+    "meetingType": "MEET_ON_LOCATION",
+    "privateActivity": true,
+    "passCapacity": 10,
+    "passValidForDays": 0,
+    "passesAvailable": 0,
+    "affiliateHubProduct": false,
+    "dressCode": false,
+    "passportRequired": false,
+    "supportedAccessibilityTypes": [
+        "STROLLER_OR_PRAM"
+    ],
+    "startPoints": [
+        {
+            "id": 376733,
+            "type": null,
+            "title": "Treasury of the Grand Dukes",
+            "code": null,
+            "address": {
+                "id": 13276662,
+                "created": [
+                    2023,
+                    12,
+                    28,
+                    10,
+                    59,
+                    34
+                ],
+                "addressLine1": "1 Piazza de' Pitti",
+                "addressLine2": null,
+                "addressLine3": null,
+                "city": "FI Firenze",
+                "state": "Toscana",
+                "postalCode": "50125",
+                "countryCode": "IT",
+                "mapZoomLevel": 8,
+                "geoPoint": {
+                    "latitude": 43.7652635,
+                    "longitude": 11.2499825
+                },
+                "unLocode": {
+                    "country": "",
+                    "city": ""
+                },
+                "origin": "GOOGLE_PLACES",
+                "originId": "ChIJ67u7wFVRKhMRI2dB4hJimzk",
+                "googlePlaceId": null
+            },
+            "pickupTicketDescription": null,
+            "dropoffTicketDescription": null,
+            "labels": []
+        }
+    ],
+    "bookingQuestions": [],
+    "passengerFields": [],
+    "inclusions": [],
+    "included": "2-hour private guided tour with a local expert guide<br \/>Tickets and reservations for the Palatine Gallery and the Boboli Gardens<br \/>Entrance to the Gallery of Modern Art and the Treasury of the Grand Dukes inside Palazzo Pitti<br \/>One-day museum pass valid for entrance to the Bardini Gardens<br \/>Radios with headsets",
+    "exclusions": [],
+    "excluded": "Hotel pickup and drop off",
+    "requirements": null,
+    "knowBeforeYouGoItems": [
+        "STROLLER_OR_PRAM_ACCESSIBLE",
+        "PUBLIC_TRANSPORTATION_NEARBY"
+    ],
+    "attention": "<ul><li>Not wheelchair accessible<\/li><li>Not suitable for pets<\/li><li>Infants must not sit on laps<\/li><li>Infant seats unavailable<\/li><li><\/li><\/ul>",
+    "locationCode": {
+        "country": "IT",
+        "location": "Florence",
+        "name": "Florence"
+    },
+    "googlePlace": {
+        "country": "Italy",
+        "countryCode": "IT",
+        "city": "Florence",
+        "cityCode": "Florence",
+        "geoLocationCenter": {
+            "lat": 43.767918,
+            "lng": 11.252379
+        },
+        "addressTypes": []
+    },
+    "tripadvisorReview": {
+        "url": "https:\/\/www.tripadvisor.com\/AttractionProductReview-g187895-d26496015-Private_Tour_Pitti_Palace_Palatina_Gallery_Boboli_Gardens_Tkts-Florence_Tuscany.html",
+        "name": "Private Tour-Pitti Palace & Palatina Gallery, Boboli Gardens Tkts",
+        "rating": 0,
+        "ranking": "",
+        "numReviews": 0
+    },
+    "resourceSlots": null,
+    "bookingCutoffMinutes": 0,
+    "bookingCutoffHours": 0,
+    "bookingCutoffDays": 2,
+    "bookingCutoffWeeks": 0,
+    "requestDeadlineMinutes": 0,
+    "requestDeadlineHours": 0,
+    "requestDeadlineDays": 2,
+    "requestDeadlineWeeks": 0,
+    "boxedActivityId": 0,
+    "comboActivity": false,
+    "comboParts": null,
+    "returnProduct": null,
+    "offers": null,
+    "ticketPerComboComponent": false,
+    "ticketComboComponents": null,
+    "pickupActivityId": null,
+    "allowCustomizedBookings": false,
+    "reservationTimeout": null,
+    "vendorReservationTimeout": null,
+    "dayBasedAvailability": false,
+    "selectFromDayOptions": false,
+    "dayOptions": [],
+    "activityCategories": [
+        "CULTURAL_AND_THEME_TOURS",
+        "WALKING_TOUR"
+    ],
+    "activityAttributes": [
+        "PRIVATE_ACTIVITY"
+    ],
+    "guidanceTypes": [
+        {
+            "id": null,
+            "created": [
+                2025,
+                10,
+                14,
+                22,
+                33,
+                9,
+                798079162
+            ],
+            "guidanceType": "GUIDED",
+            "languages": [
+                "en",
+                "de",
+                "it",
+                "fr",
+                "es"
+            ],
+            "displayLanguages": [
+                "English",
+                "German",
+                "Italian",
+                "French",
+                "Spanish"
+            ]
+        }
+    ],
+    "defaultRateId": 1594236,
+    "rates": [
+        {
+            "id": 1594236,
+            "title": "Private Tour-Pitti Palace & Palatina Gallery, Boboli Gardens Tkts",
+            "description": null,
+            "index": 0,
+            "rateCode": null,
+            "pricedPerPerson": true,
+            "minPerBooking": 1,
+            "maxPerBooking": 15,
+            "cancellationPolicy": {
+                "id": 191800,
+                "title": "Standard Viator policy",
+                "penaltyRules": [
+                    {
+                        "id": 209721,
+                        "cutoffHours": 24,
+                        "charge": 100,
+                        "chargeType": "percentage",
+                        "percentage": 100
+                    },
+                    {
+                        "id": 209720,
+                        "cutoffHours": 24000,
+                        "charge": 0,
+                        "chargeType": "percentage",
+                        "percentage": 0
+                    }
+                ],
+                "tax": null,
+                "defaultPolicy": false,
+                "policyType": "ADVANCED",
+                "simpleCutoffHours": null,
+                "policyTypeEnum": "ADVANCED"
+            },
+            "fixedPassExpiryDate": null,
+            "passValidForDays": 0,
+            "pickupSelectionType": "UNAVAILABLE",
+            "pickupPricingType": "INCLUDED_IN_PRICE",
+            "pickupPricedPerPerson": true,
+            "dropoffSelectionType": "UNAVAILABLE",
+            "dropoffPricingType": "INCLUDED_IN_PRICE",
+            "dropoffPricedPerPerson": true,
+            "extraConfigs": [],
+            "startTimeIds": [
+                2823028,
+                2823029,
+                2823030,
+                2823031,
+                2823032
+            ],
+            "allStartTimes": false,
+            "tieredPricingEnabled": false,
+            "tiers": [],
+            "pricingCategoryIds": [
+                783460,
+                783461,
+                783462
+            ],
+            "allPricingCategories": false,
+            "details": [],
+            "textItems": []
+        }
+    ],
+    "ticketPerPerson": false,
+    "durationType": "HOURS",
+    "duration": 2,
+    "durationMinutes": 0,
+    "durationHours": 2,
+    "durationDays": 0,
+    "durationWeeks": 0,
+    "durationText": "2 hours",
+    "minAge": 0,
+    "originalDefaultPrice": null,
+    "nextDefaultPrice": 129,
+    "nextDefaultPriceMoney": {
+        "amount": 129,
+        "currency": "EUR"
+    },
+    "pickupService": false,
+    "pickupAllotment": false,
+    "pickupAllotmentType": null,
+    "useComponentPickupAllotments": false,
+    "pickupFlags": [],
+    "customPickupAllowed": false,
+    "pickupMinutesBefore": 0,
+    "pickupTimeWindowInMinutes": 0,
+    "pickupTimeLocationBased": false,
+    "pickupTimeByLocations": [],
+    "noPickupMsg": null,
+    "ticketMsg": "",
+    "showGlobalPickupMsg": false,
+    "showNoPickupMsg": false,
+    "pickupPlaceGroups": [],
+    "dropoffService": false,
+    "dropoffFlags": [],
+    "customDropoffAllowed": false,
+    "useSameAsPickUpPlaces": false,
+    "dropoffPlaceGroups": [],
+    "difficultyLevel": "EASY",
+    "pricingCategories": [
+        {
+            "id": 783460,
+            "title": "Adult",
+            "ticketCategory": "ADULT",
+            "occupancy": 1,
+            "groupSize": 0,
+            "ageQualified": true,
+            "minAge": 18,
+            "maxAge": 99,
+            "dependent": false,
+            "masterCategoryId": 0,
+            "maxPerMaster": 0,
+            "sumDependentCategories": false,
+            "maxDependentSum": 0,
+            "internalUseOnly": false,
+            "flags": [],
+            "defaultCategory": true,
+            "fullTitle": "Adult (18 - 99)"
+        },
+        {
+            "id": 783461,
+            "title": "Child",
+            "ticketCategory": "CHILD",
+            "occupancy": 1,
+            "groupSize": 0,
+            "ageQualified": true,
+            "minAge": 6,
+            "maxAge": 17,
+            "dependent": false,
+            "masterCategoryId": 0,
+            "maxPerMaster": 0,
+            "sumDependentCategories": false,
+            "maxDependentSum": 0,
+            "internalUseOnly": false,
+            "flags": [],
+            "defaultCategory": false,
+            "fullTitle": "Child (6 - 17)"
+        },
+        {
+            "id": 783462,
+            "title": "Infant",
+            "ticketCategory": "INFANT",
+            "occupancy": 1,
+            "groupSize": 0,
+            "ageQualified": true,
+            "minAge": 0,
+            "maxAge": 5,
+            "dependent": false,
+            "masterCategoryId": 0,
+            "maxPerMaster": 0,
+            "sumDependentCategories": false,
+            "maxDependentSum": 0,
+            "internalUseOnly": false,
+            "flags": [],
+            "defaultCategory": false,
+            "fullTitle": "Infant (0 - 5)"
+        }
+    ],
+    "activityPriceCatalogs": [
+        {
+            "catalog": {
+                "id": 107509,
+                "title": "Default",
+                "defaultCurrency": "EUR",
+                "isVendorDefaultCatalog": true,
+                "currencies": [
+                    "EUR"
+                ]
+            },
+            "catalogId": 107509,
+            "currencies": [
+                {
+                    "currency": "EUR",
+                    "currencyId": 2,
+                    "default": true
+                }
+            ]
+        }
+    ],
+    "agendaItems": [
+        {
+            "id": 2348647,
+            "index": 0,
+            "title": "",
+            "excerpt": null,
+            "body": "On this Private tour, you will explore Pitti Palace and two major attractions: the superb Palatina Gallery and the spectacular Boboli Gardens, in the company of an experienced, fluently English-speaking guide.",
+            "day": 1,
+            "flags": [],
+            "location": {
+                "address": "Piazza Dei Pitti 1",
+                "city": "Florence",
+                "countryCode": "IT",
+                "postCode": "50125",
+                "latitude": 43.765625,
+                "longitude": 11.250004,
+                "zoomLevel": 6,
+                "origin": null,
+                "originId": null,
+                "wholeAddress": "Piazza Dei Pitti 1, 50125 Florence"
+            },
+            "address": null,
+            "keyPhoto": null,
+            "photos": []
+        },
+        {
+            "id": 2348648,
+            "index": 0,
+            "title": "",
+            "excerpt": null,
+            "body": "The Palatine Gallery encloses Renaissance and Baroque artistry that leaves an indelible impression. Here, we shall be captivated by a curated collection that boasts the grandest assembly of Raphael's works, complemented by the masterpieces of eminent Italian artists like Titian, Caravaggio, and the celebrated female artist of yore, Artemisia Gentileschi. Uniquely set in a sumptuous period ambience, this gallery distinguishes itself from the modern norm. Traverse from hall to hall, where renowned masterpieces await your gaze, set amidst exquisite 17th-century furnishings. This ensemble encompasses tables with semi-precious stone inlays, ornate vases, and awe-inspiring stuccoed and frescoed ceilings.",
+            "day": 1,
+            "flags": [],
+            "location": {
+                "address": "Amici di Palazzo Pitti, Piazza Pitti 1",
+                "city": "Florence",
+                "countryCode": "IT",
+                "postCode": "50125",
+                "latitude": 43.76672,
+                "longitude": 11.251073,
+                "zoomLevel": 6,
+                "origin": null,
+                "originId": null,
+                "wholeAddress": "Amici di Palazzo Pitti, Piazza Pitti 1, 50125 Florence"
+            },
+            "address": null,
+            "keyPhoto": null,
+            "photos": []
+        },
+        {
+            "id": 2348649,
+            "index": 0,
+            "title": "",
+            "excerpt": null,
+            "body": "Leave the Palace behind and enter a splendid open-air museum. Within this space, artists and architects from the Medici court ingeniously turned ordinary orchards into quintessential Italian gardens. Decorated with grottoes, fountains, and ancient and Renaissance sculptures, the Boboli Gardens evolved into a serene retreat for the grand dukes, offering picturesque city vistas and respite from the clamour of busy urban streets.\n\nThe tour ends inside the Boboli Gardens. After the tour, you can linger in the garden to enjoy the stunning views or visit the nearby Garden of Villa Bardini or the other museums contained within the Palace, like the Gallery of Modern Art and the Treasury of the Grand Dukes, at your own pace with your museum pass valid for the entire day.",
+            "day": 1,
+            "flags": [],
+            "location": {
+                "address": "Piazza Dei Pitti 1, ",
+                "city": "Florence",
+                "countryCode": "IT",
+                "postCode": "50125",
+                "latitude": 43.7625,
+                "longitude": 11.248395,
+                "zoomLevel": 6,
+                "origin": null,
+                "originId": null,
+                "wholeAddress": "Piazza Dei Pitti 1, , 50125 Florence"
+            },
+            "address": null,
+            "keyPhoto": null,
+            "photos": []
+        }
+    ],
+    "startTimes": [
+        {
+            "id": 2823029,
+            "label": null,
+            "externalLabel": null,
+            "hour": 10,
+            "minute": 15,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "H",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 2,
+            "durationMinutes": 0,
+            "durationHours": 2,
+            "durationDays": 0,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2823028,
+            "label": null,
+            "externalLabel": null,
+            "hour": 11,
+            "minute": 15,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "H",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 2,
+            "durationMinutes": 0,
+            "durationHours": 2,
+            "durationDays": 0,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2823030,
+            "label": null,
+            "externalLabel": null,
+            "hour": 13,
+            "minute": 15,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "H",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 2,
+            "durationMinutes": 0,
+            "durationHours": 2,
+            "durationDays": 0,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2823031,
+            "label": null,
+            "externalLabel": null,
+            "hour": 14,
+            "minute": 15,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "H",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 2,
+            "durationMinutes": 0,
+            "durationHours": 2,
+            "durationDays": 0,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2823032,
+            "label": null,
+            "externalLabel": null,
+            "hour": 15,
+            "minute": 15,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "H",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 2,
+            "durationMinutes": 0,
+            "durationHours": 2,
+            "durationDays": 0,
+            "durationWeeks": 0,
+            "flags": []
+        }
+    ],
+    "bookableExtras": [],
+    "route": null,
+    "widgetSettings": null,
+    "hasOpeningHours": false,
+    "defaultOpeningHours": null,
+    "seasonalOpeningHours": [],
+    "displaySettings": {
+        "showPickupPlaces": false,
+        "showRouteMap": false,
+        "selectRateBasedOnStartTime": false,
+        "customFields": []
+    },
+    "hasBoxes": false,
+    "bookingLabels": [],
+    "marketplaceVisibilityType": "PUBLIC",
+    "requestDeadline": 172800000,
+    "bookingCutoff": 2880,
+    "actualId": 828971,
+    "nextDefaultPriceAsText": "EUR 129.00",
+    "actualVendor": {
+        "id": 96929,
+        "title": "Florence With Locals Group Tours",
+        "currencyCode": "EUR",
+        "showInvoiceIdOnTicket": false,
+        "showAgentDetailsOnTicket": false,
+        "showPaymentsOnInvoice": false,
+        "companyEmailIsDefault": false
+    }
+}
+
+---
+
+Product ID: 809838
+Fetching details...
+BokunAPI: Making GET request to https://api.bokun.is/activity.json/809838
+BokunAPI: Headers: ["X-Bokun-Date: 2025-10-14 22:33:10","X-Bokun-AccessKey: 2c413c402bd9402092b4a3f5157c899e","X-Bokun-Signature: 3XZw5n4hjnljio2YwQe8O5oHk3o=","Content-Type: application\/json;charset=UTF-8"]
+BokunAPI: Response code: 200
+BokunAPI: Response body: {"id":809838,"externalId":"426324P2","productGroupId":0,"productCategory":"ACTIVITIES","box":false,"inventoryLocal":true,"inventorySupportsPricing":false,"inventorySupportsAvailability":true,"creationDate":"Sun Oct 15 20:14:23 UTC 2023","lastModified":"Mon Aug 25 01:59:28 UTC 2025","lastPublished":"2025-08-25T01:59:28.483Z","published":false,"title":"Skip the Line: Accademia Gallery Priority Entry Ticket with eBook","description":"Get in advance and skip the lines to see one of Florence\u0027s m
+Product Details:
+{
+    "id": 809838,
+    "externalId": "426324P2",
+    "productGroupId": 0,
+    "productCategory": "ACTIVITIES",
+    "box": false,
+    "inventoryLocal": true,
+    "inventorySupportsPricing": false,
+    "inventorySupportsAvailability": true,
+    "creationDate": "Sun Oct 15 20:14:23 UTC 2023",
+    "lastModified": "Mon Aug 25 01:59:28 UTC 2025",
+    "lastPublished": "2025-08-25T01:59:28.483Z",
+    "published": false,
+    "title": "Skip the Line: Accademia Gallery Priority Entry Ticket with eBook",
+    "description": "Get in advance and skip the lines to see one of Florence's most iconic places, the world-famous Accademia Gallery. Admire Michelangelo's David sculpture and other Renaissance masterpieces without waiting for hours to get in. See an original Stradivarius violin. Unearth the brilliance of history's most esteemed artist, Michelangelo, as you immerse yourself in his myriad sculptures at the can't-miss Accademia Gallery of Art. Spare yourself the inefficiency of queuing and optimize your Florence experience by securing a Priority entrance ticket to the gallery. Attain reserved access to the museum, granting you extended moments to savor the artworks on display truly.",
+    "excerpt": "Get in advance and skip the lines to see one of Florence's most iconic places, the world-famous Accademia Gallery",
+    "cancellationPolicy": {
+        "id": 191800,
+        "title": "Standard Viator policy",
+        "penaltyRules": [
+            {
+                "id": 209721,
+                "cutoffHours": 24,
+                "charge": 100,
+                "chargeType": "percentage",
+                "percentage": 100
+            },
+            {
+                "id": 209720,
+                "cutoffHours": 24000,
+                "charge": 0,
+                "chargeType": "percentage",
+                "percentage": 0
+            }
+        ],
+        "tax": null,
+        "defaultPolicy": false,
+        "policyType": "ADVANCED",
+        "simpleCutoffHours": null,
+        "policyTypeEnum": "ADVANCED"
+    },
+    "overrideBarcodeFormat": false,
+    "barcodeType": "CODE_128",
+    "timeZone": "Europe\/Rome",
+    "mainContactFields": [
+        {
+            "field": "FIRST_NAME",
+            "required": true,
+            "requiredBeforeDeparture": false
+        },
+        {
+            "field": "LAST_NAME",
+            "required": true,
+            "requiredBeforeDeparture": false
+        },
+        {
+            "field": "PHONE_NUMBER",
+            "required": true,
+            "requiredBeforeDeparture": false
+        }
+    ],
+    "requiredCustomerFields": [
+        "firstName",
+        "lastName",
+        "phoneNumber"
+    ],
+    "keywords": [
+        "Accademia",
+        "Ticket",
+        "Entry",
+        "&",
+        "Priority",
+        "Florence",
+        "Gallery",
+        "David"
+    ],
+    "flags": [],
+    "slug": null,
+    "baseLanguage": "en_GB",
+    "languages": [
+        "EN_GB"
+    ],
+    "paymentCurrencies": [],
+    "customFields": [],
+    "tagGroups": [],
+    "categories": [],
+    "keyPhoto": {
+        "id": 8920993,
+        "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg",
+        "description": "Florence Accademia Gallery &amp; David Priority Entry Tickets",
+        "alternateText": null,
+        "height": "480",
+        "width": "719",
+        "fileName": "\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg",
+        "flags": [],
+        "derived": [
+            {
+                "name": "thumbnail",
+                "url": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=80&h=80&mode=crop",
+                "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=80&h=80&mode=crop"
+            },
+            {
+                "name": "preview",
+                "url": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=300&h=300",
+                "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=300&h=300"
+            },
+            {
+                "name": "large",
+                "url": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=660&h=660",
+                "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=660&h=660"
+            }
+        ]
+    },
+    "photos": [
+        {
+            "id": 8920993,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Tickets",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7f33e886-2d41-4e81-9829-e143bc262d3b.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 8920994,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket tour",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/1284566e-7c75-4454-8e68-c72b8e0be250.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350019,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/902a9fd7-70d2-429a-9644-31700696526e.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/902a9fd7-70d2-429a-9644-31700696526e.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/902a9fd7-70d2-429a-9644-31700696526e.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/902a9fd7-70d2-429a-9644-31700696526e.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/902a9fd7-70d2-429a-9644-31700696526e.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/902a9fd7-70d2-429a-9644-31700696526e.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/902a9fd7-70d2-429a-9644-31700696526e.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/902a9fd7-70d2-429a-9644-31700696526e.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350020,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/fff68047-3779-452e-b2c1-ef6236e3f1fe.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350021,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/cfdd0f69-8b0d-4095-9ff7-921d2ed6c192.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350018,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/52f41210-59fd-49ed-8225-cb062e93dfec.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350022,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/25c3c0a0-a3f8-4bb2-97fc-bad984ed91e3.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350023,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/1414c365-2878-4734-89ab-00543fdc841e.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/1414c365-2878-4734-89ab-00543fdc841e.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/1414c365-2878-4734-89ab-00543fdc841e.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/1414c365-2878-4734-89ab-00543fdc841e.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/1414c365-2878-4734-89ab-00543fdc841e.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/1414c365-2878-4734-89ab-00543fdc841e.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/1414c365-2878-4734-89ab-00543fdc841e.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/1414c365-2878-4734-89ab-00543fdc841e.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350024,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/7cc2bbf6-7ec2-49c4-a8ad-68f66ca26f2c.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350025,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/dd9c0480-d3b4-428a-b194-e2a0214e01b0.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350026,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/968d87d5-f384-49ad-85a3-1d5fec776716.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350027,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/4feb7026-f1b9-4a14-a77d-564b9f1a76a2.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350028,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/0d7070a7-565a-418c-8f35-b36f739ce59c.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350029,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/e65d511c-87f0-485f-a13c-b745965fa4a1.jpg?w=660&h=660"
+                }
+            ]
+        },
+        {
+            "id": 6350030,
+            "originalUrl": "https:\/\/bokun.s3.amazonaws.com\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg",
+            "description": "Florence Accademia Gallery &amp; David Priority Entry Ticket",
+            "alternateText": null,
+            "height": "480",
+            "width": "719",
+            "fileName": "\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg",
+            "flags": [],
+            "derived": [
+                {
+                    "name": "thumbnail",
+                    "url": "https:\/\/imgcdn.bokun.tools\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg?w=80&h=80&mode=crop",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg?w=80&h=80&mode=crop"
+                },
+                {
+                    "name": "preview",
+                    "url": "https:\/\/imgcdn.bokun.tools\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg?w=300&h=300",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg?w=300&h=300"
+                },
+                {
+                    "name": "large",
+                    "url": "https:\/\/imgcdn.bokun.tools\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg?w=660&h=660",
+                    "cleanUrl": "https:\/\/imgcdn.bokun.tools\/12490709-5cd9-46e4-a2c4-39dc2613b16e.jpg?w=660&h=660"
+                }
+            ]
+        }
+    ],
+    "videos": [],
+    "vendor": {
+        "id": 96929,
+        "title": "Florence With Locals Group Tours",
+        "currencyCode": "EUR",
+        "showInvoiceIdOnTicket": false,
+        "showAgentDetailsOnTicket": false,
+        "showPaymentsOnInvoice": false,
+        "companyEmailIsDefault": false
+    },
+    "boxedVendor": null,
+    "storedExternally": false,
+    "pluginId": null,
+    "reviewRating": 0,
+    "reviewCount": 0,
+    "activityType": "DAY_TOUR_OR_ACTIVITY",
+    "bookingType": "DATE_AND_TIME",
+    "scheduleType": "RECURRING",
+    "cutoffType": "RELATIVE_TO_START_TIME",
+    "cutoffReferenceHour": 0,
+    "cutoffReferenceMinute": 0,
+    "earlyBookingLimitType": "UNLIMITED",
+    "earlyBookingLimitSpecificDateTime": null,
+    "earlyBookingLimitDaysBefore": null,
+    "earlyBookingLimitMonthsBefore": null,
+    "earlyBookingLimitTime": null,
+    "capacityType": "LIMITED",
+    "passExpiryType": null,
+    "fixedPassExpiryDate": null,
+    "meetingType": "MEET_ON_LOCATION",
+    "privateActivity": false,
+    "passCapacity": 10,
+    "passValidForDays": 0,
+    "passesAvailable": 0,
+    "affiliateHubProduct": false,
+    "dressCode": false,
+    "passportRequired": false,
+    "supportedAccessibilityTypes": [
+        "WHEELCHAIR",
+        "STROLLER_OR_PRAM"
+    ],
+    "startPoints": [],
+    "bookingQuestions": [],
+    "passengerFields": [],
+    "inclusions": [],
+    "included": "Skip-the-ticket-line entrance tickets to the Accademia Gallery<br \/>Assistance at the meeting point<br \/>Accademia booking fees and taxes<br \/>Access to all sections of the museum",
+    "exclusions": [],
+    "excluded": "This is not a guided tour<br \/>It's not a flexible ticket<br \/>Hotel pickup and drop-off",
+    "requirements": null,
+    "knowBeforeYouGoItems": [
+        "WHEELCHAIR_ACCESSIBLE",
+        "STROLLER_OR_PRAM_ACCESSIBLE",
+        "PUBLIC_TRANSPORTATION_NEARBY"
+    ],
+    "attention": "<ul><li>Not suitable for pets<\/li><li>Infants must not sit on laps<\/li><li>Infant seats unavailable<\/li><li>Wheelchair accessible<\/li><li>Bring a Passport or ID card for children<\/li><li>NOTE: For Accademia Gallery, children aged 0-5 years do not require a ticket. For children 6-17, Please bring a copy of your child's passport \/ ID card.<\/li><li>Tickets are valid for the reserved entry time selected upon booking<\/li><li>It is not possible to use this ticket after 45 minutes of the reserved entrance time.<\/li><li>During periods of high visitor traffic, your admission may be slightly delayed to maintain security; museum access is regulated based on the number of people inside.<\/li><li>To obtain your physical ticket, present your VIATOR voucher to a FLORENCE WITH LOCALS staff member. They will be located in front of the Carrefour Supermarket at Via Ricasoli, 115 (RED Number), Florence. Please note that this is not an office address; a staff member will be standing outside the supermarket to exchange your voucher for the physical ticket.<\/li><li>Please ensure you arrive for ticket collection 15 minutes before your scheduled reservation time.\n\nTo obtain your physical ticket, present your VIATOR voucher to a FLORENCE WITH LOCALS staff member. They will be located in front of the Carrefour Supermarket at Via Ricasoli, 115 (RED Number), Florence.\n\nPlease note that this is not an office address; a staff member will be standing outside the supermarket to exchange your voucher for the physical ticket.\n\nContact : +39 3272491282<\/li><\/ul>",
+    "locationCode": {
+        "country": "IT",
+        "location": "Florence",
+        "name": "Florence"
+    },
+    "googlePlace": {
+        "country": "Italy",
+        "countryCode": "IT",
+        "city": "Florence",
+        "cityCode": "Florence",
+        "geoLocationCenter": {
+            "lat": 43.767918,
+            "lng": 11.252379
+        },
+        "addressTypes": []
+    },
+    "tripadvisorReview": {
+        "url": "https:\/\/www.tripadvisor.com\/AttractionProductReview-g187895-d26521149-Skip_the_Line_Accademia_Gallery_Priority_Entry_Ticket_with_eBook-Florence_Tuscany.html",
+        "name": "Skip the Line: Accademia Gallery Priority Entry Ticket with eBook",
+        "rating": 4.1,
+        "ranking": "",
+        "numReviews": 38
+    },
+    "resourceSlots": null,
+    "bookingCutoffMinutes": 0,
+    "bookingCutoffHours": 0,
+    "bookingCutoffDays": 0,
+    "bookingCutoffWeeks": 0,
+    "requestDeadlineMinutes": 0,
+    "requestDeadlineHours": 0,
+    "requestDeadlineDays": 2,
+    "requestDeadlineWeeks": 0,
+    "boxedActivityId": 0,
+    "comboActivity": false,
+    "comboParts": null,
+    "returnProduct": null,
+    "offers": null,
+    "ticketPerComboComponent": false,
+    "ticketComboComponents": null,
+    "pickupActivityId": null,
+    "allowCustomizedBookings": false,
+    "reservationTimeout": null,
+    "vendorReservationTimeout": null,
+    "dayBasedAvailability": false,
+    "selectFromDayOptions": false,
+    "dayOptions": [],
+    "activityCategories": [
+        "CULTURAL_AND_THEME_TOURS",
+        "MUSEUMS_AND_EXHIBITIONS",
+        "SKIP_THE_LINE",
+        "SIGHTSEEING_ATTRACTION"
+    ],
+    "activityAttributes": [
+        "SKIP_THE_LINE"
+    ],
+    "guidanceTypes": [],
+    "defaultRateId": 1554164,
+    "rates": [
+        {
+            "id": 1554164,
+            "title": "Skip the Line: Accademia Gallery Priority Entry Ticket with eBook",
+            "description": null,
+            "index": 0,
+            "rateCode": null,
+            "pricedPerPerson": true,
+            "minPerBooking": 1,
+            "maxPerBooking": 14,
+            "cancellationPolicy": {
+                "id": 191800,
+                "title": "Standard Viator policy",
+                "penaltyRules": [
+                    {
+                        "id": 209721,
+                        "cutoffHours": 24,
+                        "charge": 100,
+                        "chargeType": "percentage",
+                        "percentage": 100
+                    },
+                    {
+                        "id": 209720,
+                        "cutoffHours": 24000,
+                        "charge": 0,
+                        "chargeType": "percentage",
+                        "percentage": 0
+                    }
+                ],
+                "tax": null,
+                "defaultPolicy": false,
+                "policyType": "ADVANCED",
+                "simpleCutoffHours": null,
+                "policyTypeEnum": "ADVANCED"
+            },
+            "fixedPassExpiryDate": null,
+            "passValidForDays": 0,
+            "pickupSelectionType": "UNAVAILABLE",
+            "pickupPricingType": "INCLUDED_IN_PRICE",
+            "pickupPricedPerPerson": true,
+            "dropoffSelectionType": "UNAVAILABLE",
+            "dropoffPricingType": "INCLUDED_IN_PRICE",
+            "dropoffPricedPerPerson": true,
+            "extraConfigs": [],
+            "startTimeIds": [
+                2714616,
+                2714617,
+                2949379,
+                2949380,
+                2949381,
+                2949382,
+                3237862,
+                3246325,
+                3266055,
+                3266056,
+                3266662,
+                3274839,
+                3414815,
+                3414816,
+                3414817,
+                3414818,
+                3414820,
+                3414821,
+                3414822,
+                3414823,
+                3414825,
+                3414826,
+                3414828,
+                3414829,
+                3414831,
+                3414834,
+                3414835,
+                3414836,
+                3414837,
+                3414838,
+                3414839,
+                3414840,
+                3414842,
+                3414843,
+                3414844,
+                3414845,
+                3414847,
+                3414848,
+                3414850,
+                3414851,
+                3414852,
+                3414853,
+                3414855,
+                3414856,
+                3414858,
+                3414864,
+                3414942,
+                3414943,
+                4225105
+            ],
+            "allStartTimes": false,
+            "tieredPricingEnabled": false,
+            "tiers": [],
+            "pricingCategoryIds": [
+                783460,
+                783461,
+                783462
+            ],
+            "allPricingCategories": false,
+            "details": [],
+            "textItems": []
+        }
+    ],
+    "ticketPerPerson": false,
+    "durationType": "DAYS",
+    "duration": 1,
+    "durationMinutes": 0,
+    "durationHours": 0,
+    "durationDays": 1,
+    "durationWeeks": 0,
+    "durationText": "1 day",
+    "minAge": 0,
+    "originalDefaultPrice": null,
+    "nextDefaultPrice": 32.95,
+    "nextDefaultPriceMoney": {
+        "amount": 32.95,
+        "currency": "EUR"
+    },
+    "pickupService": false,
+    "pickupAllotment": false,
+    "pickupAllotmentType": null,
+    "useComponentPickupAllotments": false,
+    "pickupFlags": [],
+    "customPickupAllowed": false,
+    "pickupMinutesBefore": 0,
+    "pickupTimeWindowInMinutes": 0,
+    "pickupTimeLocationBased": false,
+    "pickupTimeByLocations": [],
+    "noPickupMsg": null,
+    "ticketMsg": "Please ensure you arrive for ticket collection 15 minutes before your scheduled reservation time.\n\nTo obtain your physical ticket, present your VIATOR voucher to a FLORENCE WITH LOCALS staff member. They will be located in front of the Carrefour Supermarket at Via Ricasoli, 115 (RED Number), Florence.\n\nPlease note that this is not an office address; a staff member will be standing outside the supermarket to exchange your voucher for the physical ticket.\n\nContact : +39 3272491282",
+    "showGlobalPickupMsg": false,
+    "showNoPickupMsg": false,
+    "pickupPlaceGroups": [],
+    "dropoffService": false,
+    "dropoffFlags": [],
+    "customDropoffAllowed": false,
+    "useSameAsPickUpPlaces": false,
+    "dropoffPlaceGroups": [],
+    "difficultyLevel": "EASY",
+    "pricingCategories": [
+        {
+            "id": 783460,
+            "title": "Adult",
+            "ticketCategory": "ADULT",
+            "occupancy": 1,
+            "groupSize": 0,
+            "ageQualified": true,
+            "minAge": 18,
+            "maxAge": 99,
+            "dependent": false,
+            "masterCategoryId": 0,
+            "maxPerMaster": 0,
+            "sumDependentCategories": false,
+            "maxDependentSum": 0,
+            "internalUseOnly": false,
+            "flags": [],
+            "defaultCategory": true,
+            "fullTitle": "Adult (18 - 99)"
+        },
+        {
+            "id": 783461,
+            "title": "Child",
+            "ticketCategory": "CHILD",
+            "occupancy": 1,
+            "groupSize": 0,
+            "ageQualified": true,
+            "minAge": 6,
+            "maxAge": 17,
+            "dependent": false,
+            "masterCategoryId": 0,
+            "maxPerMaster": 0,
+            "sumDependentCategories": false,
+            "maxDependentSum": 0,
+            "internalUseOnly": false,
+            "flags": [],
+            "defaultCategory": false,
+            "fullTitle": "Child (6 - 17)"
+        },
+        {
+            "id": 783462,
+            "title": "Infant",
+            "ticketCategory": "INFANT",
+            "occupancy": 1,
+            "groupSize": 0,
+            "ageQualified": true,
+            "minAge": 0,
+            "maxAge": 5,
+            "dependent": false,
+            "masterCategoryId": 0,
+            "maxPerMaster": 0,
+            "sumDependentCategories": false,
+            "maxDependentSum": 0,
+            "internalUseOnly": false,
+            "flags": [],
+            "defaultCategory": false,
+            "fullTitle": "Infant (0 - 5)"
+        }
+    ],
+    "activityPriceCatalogs": [
+        {
+            "catalog": {
+                "id": 107509,
+                "title": "Default",
+                "defaultCurrency": "EUR",
+                "isVendorDefaultCatalog": true,
+                "currencies": [
+                    "EUR"
+                ]
+            },
+            "catalogId": 107509,
+            "currencies": [
+                {
+                    "currency": "EUR",
+                    "currencyId": 2,
+                    "default": true
+                }
+            ]
+        }
+    ],
+    "agendaItems": [
+        {
+            "id": 2276139,
+            "index": 0,
+            "title": "",
+            "excerpt": null,
+            "body": "The Accademia Gallery in Florence, a former 14th-century hospital transformed into a gallery connected to the fine art school nearby, stands as an essential destination in Florence. However, its popularity draws substantial crowds. By acquiring these special Priority entrance tickets, you can effortlessly glide past the extensive queues and enjoy immediate access to renowned artistic treasures. You'll encounter unparalleled Renaissance artworks, including the iconic masterpiece Michelangelo's David. Furthermore, these tickets allow you to explore leisurely, eliminating waiting for a guided tour.\n\nUpon your selected time and date, our assistant will be at the museum to give you your entrance ticket so that you can gain access to the museum as soon as possible.",
+            "day": 1,
+            "flags": [],
+            "location": {
+                "address": "Via Ricasoli, 58\/60, ",
+                "city": "Florence",
+                "countryCode": "IT",
+                "postCode": "50122",
+                "latitude": 43.77676,
+                "longitude": 11.259147,
+                "zoomLevel": 6,
+                "origin": null,
+                "originId": null,
+                "wholeAddress": "Via Ricasoli, 58\/60, , 50122 Florence"
+            },
+            "address": null,
+            "keyPhoto": null,
+            "photos": []
+        }
+    ],
+    "startTimes": [
+        {
+            "id": 4225105,
+            "label": null,
+            "externalLabel": "",
+            "hour": 8,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3237862,
+            "label": null,
+            "externalLabel": "",
+            "hour": 9,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414815,
+            "label": null,
+            "externalLabel": "",
+            "hour": 9,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414816,
+            "label": null,
+            "externalLabel": "",
+            "hour": 9,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3266055,
+            "label": null,
+            "externalLabel": null,
+            "hour": 9,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414817,
+            "label": null,
+            "externalLabel": "",
+            "hour": 9,
+            "minute": 40,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414818,
+            "label": null,
+            "externalLabel": "",
+            "hour": 9,
+            "minute": 50,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414820,
+            "label": null,
+            "externalLabel": "",
+            "hour": 10,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414821,
+            "label": null,
+            "externalLabel": "",
+            "hour": 10,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414822,
+            "label": null,
+            "externalLabel": "",
+            "hour": 10,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3266056,
+            "label": null,
+            "externalLabel": null,
+            "hour": 10,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414823,
+            "label": null,
+            "externalLabel": "",
+            "hour": 10,
+            "minute": 40,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414825,
+            "label": null,
+            "externalLabel": "",
+            "hour": 10,
+            "minute": 50,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3274839,
+            "label": null,
+            "externalLabel": "",
+            "hour": 11,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414826,
+            "label": null,
+            "externalLabel": "",
+            "hour": 11,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414828,
+            "label": null,
+            "externalLabel": "",
+            "hour": 11,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414829,
+            "label": null,
+            "externalLabel": "",
+            "hour": 11,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414831,
+            "label": null,
+            "externalLabel": "",
+            "hour": 11,
+            "minute": 40,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414834,
+            "label": null,
+            "externalLabel": "",
+            "hour": 11,
+            "minute": 50,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414836,
+            "label": null,
+            "externalLabel": "",
+            "hour": 12,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414835,
+            "label": null,
+            "externalLabel": "",
+            "hour": 12,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414837,
+            "label": null,
+            "externalLabel": "",
+            "hour": 12,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414838,
+            "label": null,
+            "externalLabel": "",
+            "hour": 12,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414839,
+            "label": null,
+            "externalLabel": "",
+            "hour": 12,
+            "minute": 40,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414840,
+            "label": null,
+            "externalLabel": "",
+            "hour": 12,
+            "minute": 50,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414842,
+            "label": null,
+            "externalLabel": "",
+            "hour": 13,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414843,
+            "label": null,
+            "externalLabel": "",
+            "hour": 13,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414844,
+            "label": null,
+            "externalLabel": "",
+            "hour": 13,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414845,
+            "label": null,
+            "externalLabel": "",
+            "hour": 13,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414847,
+            "label": null,
+            "externalLabel": "",
+            "hour": 13,
+            "minute": 40,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414848,
+            "label": null,
+            "externalLabel": "",
+            "hour": 13,
+            "minute": 50,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2949379,
+            "label": null,
+            "externalLabel": "",
+            "hour": 14,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414850,
+            "label": null,
+            "externalLabel": "",
+            "hour": 14,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414851,
+            "label": null,
+            "externalLabel": "",
+            "hour": 14,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2949380,
+            "label": null,
+            "externalLabel": "",
+            "hour": 14,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414852,
+            "label": null,
+            "externalLabel": "",
+            "hour": 14,
+            "minute": 40,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414853,
+            "label": null,
+            "externalLabel": "",
+            "hour": 14,
+            "minute": 50,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2949381,
+            "label": null,
+            "externalLabel": "",
+            "hour": 15,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414855,
+            "label": null,
+            "externalLabel": "",
+            "hour": 15,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414856,
+            "label": null,
+            "externalLabel": "",
+            "hour": 15,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3246325,
+            "label": null,
+            "externalLabel": "",
+            "hour": 15,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414858,
+            "label": null,
+            "externalLabel": "",
+            "hour": 15,
+            "minute": 40,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414942,
+            "label": null,
+            "externalLabel": "",
+            "hour": 15,
+            "minute": 50,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2949382,
+            "label": null,
+            "externalLabel": "",
+            "hour": 16,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414943,
+            "label": null,
+            "externalLabel": "",
+            "hour": 16,
+            "minute": 10,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3266662,
+            "label": null,
+            "externalLabel": "",
+            "hour": 16,
+            "minute": 20,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2714616,
+            "label": null,
+            "externalLabel": null,
+            "hour": 16,
+            "minute": 30,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 3414864,
+            "label": null,
+            "externalLabel": "",
+            "hour": 16,
+            "minute": 45,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        },
+        {
+            "id": 2714617,
+            "label": null,
+            "externalLabel": null,
+            "hour": 17,
+            "minute": 0,
+            "overrideTimeWhenPickup": false,
+            "pickupHour": 0,
+            "pickupMinute": 0,
+            "durationType": "D",
+            "voucherPickupMsg": null,
+            "externalId": null,
+            "duration": 1,
+            "durationMinutes": 0,
+            "durationHours": 0,
+            "durationDays": 1,
+            "durationWeeks": 0,
+            "flags": []
+        }
+    ],
+    "bookableExtras": [],
+    "route": null,
+    "widgetSettings": null,
+    "hasOpeningHours": false,
+    "defaultOpeningHours": null,
+    "seasonalOpeningHours": [],
+    "displaySettings": {
+        "showPickupPlaces": false,
+        "showRouteMap": false,
+        "selectRateBasedOnStartTime": false,
+        "customFields": []
+    },
+    "hasBoxes": false,
+    "bookingLabels": [],
+    "marketplaceVisibilityType": "PUBLIC",
+    "requestDeadline": 172800000,
+    "bookingCutoff": 0,
+    "actualId": 809838,
+    "nextDefaultPriceAsText": "EUR 32.95",
+    "actualVendor": {
+        "id": 96929,
+        "title": "Florence With Locals Group Tours",
+        "currencyCode": "EUR",
+        "showInvoiceIdOnTicket": false,
+        "showAgentDetailsOnTicket": false,
+        "showPaymentsOnInvoice": false,
+        "companyEmailIsDefault": false
+    }
+}
+
+---
+

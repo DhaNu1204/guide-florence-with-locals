@@ -1,6 +1,11 @@
 <?php
 require_once 'HttpClient.php';
 
+// Include SentryLogger if available (for error tracking)
+if (file_exists(__DIR__ . '/SentryLogger.php')) {
+    require_once __DIR__ . '/SentryLogger.php';
+}
+
 class BokunAPI {
     private $accessKey;
     private $secretKey;
@@ -148,6 +153,20 @@ class BokunAPI {
             
         } catch (Exception $e) {
             error_log("BokunAPI: Request failed: " . $e->getMessage());
+
+            // Send to Sentry if available
+            if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+                sentry_add_breadcrumb("Bokun API request to $endpoint", 'http', 'error', [
+                    'method' => $method,
+                    'url' => $url
+                ]);
+                sentry_capture_exception($e, [
+                    'bokun_endpoint' => $endpoint,
+                    'bokun_method' => $method,
+                    'http_code' => $httpCode ?? null
+                ]);
+            }
+
             throw $e;
         }
     }
@@ -166,34 +185,73 @@ class BokunAPI {
     
     /**
      * Get bookings for date range
+     * Note: Use SUPPLIER role for OTA bookings (Viator, GetYourGuide)
+     * Use SELLER role for direct bookings
      */
-    public function getBookings($startDate, $endDate, $page = 1, $pageSize = 50) {
-        // Use the booking-search endpoint confirmed working by Bokun support
+    public function getBookings($startDate, $endDate, $page = 1, $pageSize = 200) {
+        // Collect all bookings from both SUPPLIER (OTA) and SELLER (direct) roles
+        $allBookings = [];
+        $seenIds = [];
+
+        // Use larger page size to get more bookings per request
+        $actualPageSize = max($pageSize, 200);
+
+        // Roles to fetch - SUPPLIER for OTA bookings (Viator, GetYourGuide), SELLER for direct
+        $roles = ['SUPPLIER', 'SELLER'];
+
+        foreach ($roles as $role) {
+            try {
+                error_log("BokunAPI: Fetching bookings with role: $role, pageSize: $actualPageSize");
+
+                // Fetch with pagination to get all bookings
+                $pageNum = 0;
+                $hasMore = true;
+
+                while ($hasMore && $pageNum < 10) { // Max 10 pages (2000 bookings) as safety limit
+                    $result = $this->makeRequest('POST', '/booking.json/booking-search', [
+                        'bookingRole' => $role,
+                        'bookingStatuses' => ['CONFIRMED', 'PENDING', 'CANCELLED'],
+                        'pageSize' => $actualPageSize,
+                        'page' => $pageNum,
+                        'startDateRange' => [
+                            'from' => $startDate . 'T00:00:00.000Z',
+                            'to' => $endDate . 'T23:59:59.999Z',
+                            'includeLower' => true,
+                            'includeUpper' => true
+                        ]
+                    ]);
+
+                    if ($result && isset($result['items']) && count($result['items']) > 0) {
+                        error_log("BokunAPI: Page $pageNum - Found " . count($result['items']) . " bookings with role $role");
+                        foreach ($result['items'] as $booking) {
+                            $bookingId = $booking['id'] ?? null;
+                            if ($bookingId && !isset($seenIds[$bookingId])) {
+                                $seenIds[$bookingId] = true;
+                                $allBookings[] = $booking;
+                            }
+                        }
+
+                        // Check if there are more pages
+                        $totalHits = $result['totalHits'] ?? count($result['items']);
+                        $hasMore = (($pageNum + 1) * $actualPageSize) < $totalHits;
+                        $pageNum++;
+                    } else {
+                        $hasMore = false;
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("BokunAPI: Failed to fetch with role $role: " . $e->getMessage());
+                // Continue to next role
+            }
+        }
+
+        if (count($allBookings) > 0) {
+            error_log("BokunAPI: Total unique bookings found: " . count($allBookings));
+            return $allBookings;
+        }
+
+        // Fallback to legacy endpoints if new method fails
         $requests = [
-            // PRIMARY: The endpoint confirmed working by Bokun support (POST /booking.json/booking-search)
-            ['POST', '/booking.json/booking-search', [
-                'bookingRole' => 'SELLER',
-                'bookingStatuses' => ['CONFIRMED', 'PENDING'],
-                'pageSize' => $pageSize,
-                'startDateRange' => [
-                    'from' => $startDate . 'T00:00:00.000Z',
-                    'to' => $endDate . 'T23:59:59.999Z',
-                    'includeLower' => true,
-                    'includeUpper' => true
-                ]
-            ]],
-            // FALLBACK: Try with simpler date format
-            ['POST', '/booking.json/booking-search', [
-                'bookingRole' => 'SELLER',
-                'bookingStatuses' => ['CONFIRMED'],
-                'pageSize' => $pageSize,
-                'startDateRange' => [
-                    'from' => date('c', strtotime($startDate)),
-                    'to' => date('c', strtotime($endDate)),
-                    'includeLower' => true,
-                    'includeUpper' => true
-                ]
-            ]],
             // Legacy endpoints as fallback
             ['GET', '/booking.json/search?start=' . $startDate . '&end=' . $endDate . '&page=' . $page . '&pageSize=' . $pageSize, null],
             ['POST', '/booking.json/search', [
@@ -214,7 +272,16 @@ class BokunAPI {
                 $result = $this->makeRequest($method, $endpoint, $data);
                 if ($result !== null) {
                     error_log("BokunAPI: Success with $method $endpoint");
-                    return $result;
+                    // Extract items array from the response for booking-search endpoint
+                    if (strpos($endpoint, 'booking-search') !== false && isset($result['items'])) {
+                        return $result['items'];
+                    }
+                    // For other endpoints, check if the result is an array of bookings
+                    if (isset($result['items'])) {
+                        return $result['items'];
+                    }
+                    // Legacy endpoints might return the bookings directly
+                    return is_array($result) ? $result : [];
                 }
             } catch (Exception $e) {
                 error_log("BokunAPI: Failed $method $endpoint: " . $e->getMessage());
@@ -245,7 +312,21 @@ class BokunAPI {
         $endpoint = '/activity.json/' . $activityId . '/availabilities?start=' . $startDate . '&end=' . $endDate . '&currency=' . $currency;
         return $this->makeRequest('GET', $endpoint);
     }
-    
+
+    /**
+     * Get activity/product details
+     */
+    public function getProduct($productId) {
+        return $this->makeRequest('GET', '/activity.json/' . $productId);
+    }
+
+    /**
+     * Make a public API request (for testing/exploration)
+     */
+    public function makePublicRequest($method, $endpoint, $data = null) {
+        return $this->makeRequest($method, $endpoint, $data);
+    }
+
     /**
      * Transform Bokun booking to our tour format
      */
@@ -265,28 +346,89 @@ class BokunAPI {
 
         // Calculate participants from productBookings if available
         $participants = 1;
-        if (isset($productBooking['participants'])) {
-            $participants = array_sum(array_column($productBooking['participants'], 'count'));
+        if (isset($productBooking['fields']['totalParticipants'])) {
+            $participants = $productBooking['fields']['totalParticipants'];
+        } elseif (isset($productBooking['totalParticipants'])) {
+            $participants = $productBooking['totalParticipants'];
         } elseif (isset($booking['totalParticipants'])) {
             $participants = $booking['totalParticipants'];
+        } elseif (isset($productBooking['fields']['priceCategoryBookings'])) {
+            // Calculate from priceCategoryBookings
+            $participants = array_sum(array_column($productBooking['fields']['priceCategoryBookings'], 'quantity'));
         }
 
         // Extract date and time from available fields
         $date = null;
         $time = '09:00'; // Default time if not provided
 
-        // Try to get date from startTime first
-        if (isset($productBooking['startTime'])) {
-            $timestamp = is_numeric($productBooking['startTime']) ? $productBooking['startTime'] / 1000 : strtotime($productBooking['startTime']);
-            $date = date('Y-m-d', $timestamp);
-            $time = date('H:i', $timestamp);
+        // PRIORITY: Use startTimeStr if available - this is the LOCAL time (already in tour timezone)
+        // This is more accurate than converting UTC timestamps which can have timezone issues
+        if (isset($productBooking['fields']['startTimeStr'])) {
+            $time = $productBooking['fields']['startTimeStr'];
+        }
+
+        // Extract date from startDateTime or startDate
+        // Note: For date extraction, we use UTC conversion but for TIME we use startTimeStr above
+        $romeTimezone = new DateTimeZone('Europe/Rome');
+        $utcTimezone = new DateTimeZone('UTC');
+
+        if (isset($productBooking['startDateTime'])) {
+            if (is_numeric($productBooking['startDateTime'])) {
+                // Numeric timestamp (milliseconds from epoch)
+                $utcDateTime = new DateTime('@' . intval($productBooking['startDateTime'] / 1000), $utcTimezone);
+            } else {
+                // ISO string format - parse as UTC
+                $utcDateTime = new DateTime($productBooking['startDateTime'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
+            // Only use timestamp-derived time if startTimeStr wasn't available
+            if (!isset($productBooking['fields']['startTimeStr'])) {
+                $time = $utcDateTime->format('H:i');
+            }
+        } elseif (isset($productBooking['startTime'])) {
+            if (is_numeric($productBooking['startTime'])) {
+                $utcDateTime = new DateTime('@' . intval($productBooking['startTime'] / 1000), $utcTimezone);
+            } else {
+                $utcDateTime = new DateTime($productBooking['startTime'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
+            if (!isset($productBooking['fields']['startTimeStr'])) {
+                $time = $utcDateTime->format('H:i');
+            }
+        } elseif (isset($productBooking['startDate'])) {
+            if (is_numeric($productBooking['startDate'])) {
+                $utcDateTime = new DateTime('@' . intval($productBooking['startDate'] / 1000), $utcTimezone);
+            } else {
+                $utcDateTime = new DateTime($productBooking['startDate'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
         } elseif (isset($booking['startTime'])) {
-            $timestamp = is_numeric($booking['startTime']) ? $booking['startTime'] / 1000 : strtotime($booking['startTime']);
-            $date = date('Y-m-d', $timestamp);
-            $time = date('H:i', $timestamp);
-        } elseif (isset($booking['creationDate'])) {
-            // Use creation date as fallback for tour date
-            $date = date('Y-m-d', $booking['creationDate'] / 1000);
+            if (is_numeric($booking['startTime'])) {
+                $utcDateTime = new DateTime('@' . intval($booking['startTime'] / 1000), $utcTimezone);
+            } else {
+                $utcDateTime = new DateTime($booking['startTime'], $utcTimezone);
+            }
+            $utcDateTime->setTimezone($romeTimezone);
+            $date = $utcDateTime->format('Y-m-d');
+            if (!isset($productBooking['fields']['startTimeStr'])) {
+                $time = $utcDateTime->format('H:i');
+            }
+        }
+
+        // CRITICAL: Do NOT use creationDate as tour date!
+        // creationDate is when the booking was MADE, not when the tour happens.
+        // If no tour date found, log error and skip this booking.
+        if (!$date) {
+            error_log("BokunAPI WARNING: No tour date found for booking " . ($booking['confirmationCode'] ?? 'unknown'));
+            error_log("BokunAPI: Available fields: " . json_encode(array_keys($booking)));
+            if (isset($productBooking)) {
+                error_log("BokunAPI: ProductBooking fields: " . json_encode(array_keys($productBooking)));
+            }
+            // Set a flag or throw exception - don't import bookings without tour dates
+            throw new Exception("No tour date found for booking " . ($booking['confirmationCode'] ?? 'unknown'));
         }
 
         // Extract duration - convert to string format for database
@@ -310,13 +452,103 @@ class BokunAPI {
             $totalAmount = floatval($booking['paidAmount']);
         }
 
-        // Map payment status
+        // Map payment status - IMPORTANT: This is for GUIDE payment, not customer payment
+        // All Bokun bookings should start as 'unpaid' for guide payment tracking
+        // The Bokun paymentStatus (INVOICED/PAID) refers to customer payment to the booking platform,
+        // NOT payment to the tour guide. Guide payment must be recorded separately.
         $paymentStatus = 'unpaid';
-        if (isset($booking['paymentStatus'])) {
-            if ($booking['paymentStatus'] === 'PAID' || $booking['paymentStatus'] === 'INVOICED') {
-                $paymentStatus = 'paid';
-            } elseif ($booking['paymentStatus'] === 'PARTIALLY_PAID') {
-                $paymentStatus = 'partial';
+
+        // Extract language information from notes
+        $language = null;
+
+        // Check in booking notes for "Booking languages" or "GUIDE" language
+        if (isset($productBooking['notes']) && is_array($productBooking['notes'])) {
+            foreach ($productBooking['notes'] as $note) {
+                if (isset($note['body'])) {
+                    $noteBody = $note['body'];
+
+                    // Look for "GUIDE : English" or similar patterns
+                    if (preg_match('/GUIDE\s*:\s*([A-Za-z]+)/i', $noteBody, $matches)) {
+                        $language = ucfirst(strtolower($matches[1]));
+                        break;
+                    }
+
+                    // Look for "Booking languages:" section
+                    if (preg_match('/Booking languages.*?:\s*([A-Za-z]+)/is', $noteBody, $matches)) {
+                        $language = ucfirst(strtolower($matches[1]));
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Method 2: Check rate title for language (especially for GetYourGuide bookings)
+        if (!$language && isset($productBooking['fields']['rateId']) && isset($productBooking['product']['id'])) {
+            $rateId = $productBooking['fields']['rateId'];
+            $productId = $productBooking['product']['id'];
+
+            try {
+                // Fetch product details to get rate information
+                $productDetails = $this->getProduct($productId);
+
+                if (isset($productDetails['rates']) && is_array($productDetails['rates'])) {
+                    foreach ($productDetails['rates'] as $rate) {
+                        if (isset($rate['id']) && $rate['id'] == $rateId && isset($rate['title'])) {
+                            $rateTitle = strtolower($rate['title']);
+
+                            // Check if rate title contains language identifier
+                            if (strpos($rateTitle, 'italian') !== false) {
+                                $language = 'Italian';
+                                break;
+                            } elseif (strpos($rateTitle, 'spanish') !== false) {
+                                $language = 'Spanish';
+                                break;
+                            } elseif (strpos($rateTitle, 'french') !== false) {
+                                $language = 'French';
+                                break;
+                            } elseif (strpos($rateTitle, 'german') !== false) {
+                                $language = 'German';
+                                break;
+                            } elseif (strpos($rateTitle, 'english') !== false) {
+                                $language = 'English';
+                                break;
+                            } else {
+                                // If rate title doesn't contain language keyword, assume English for default rate
+                                $language = 'English';
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // Log error but continue processing
+                error_log("Failed to fetch product details for language extraction: " . $e->getMessage());
+            }
+        }
+
+        // Method 3: Check in other booking field locations
+        if (!$language) {
+            if (isset($productBooking['fields']['language'])) {
+                $language = $productBooking['fields']['language'];
+            } elseif (isset($productBooking['product']['language'])) {
+                $language = $productBooking['product']['language'];
+            } elseif (isset($booking['language'])) {
+                $language = $booking['language'];
+            }
+        }
+
+        // Method 4: Extract from product title as last resort
+        if (!$language) {
+            $titleLower = strtolower($productTitle);
+            if (strpos($titleLower, 'italian') !== false) {
+                $language = 'Italian';
+            } elseif (strpos($titleLower, 'spanish') !== false) {
+                $language = 'Spanish';
+            } elseif (strpos($titleLower, 'french') !== false) {
+                $language = 'French';
+            } elseif (strpos($titleLower, 'german') !== false) {
+                $language = 'German';
+            } elseif (strpos($titleLower, 'english') !== false) {
+                $language = 'English';
             }
         }
 
@@ -331,11 +563,13 @@ class BokunAPI {
             'date' => $date,
             'time' => $time,
             'duration' => $duration,
+            'language' => $language,
             'description' => null, // Can be filled from notes later
             'customer_name' => $this->getCustomerName($booking),
             'customer_email' => $customer['email'] ?? null,
             'customer_phone' => $customer['phoneNumber'] ?? null,
             'participants' => $participants,
+            'participant_names' => $this->parseParticipantNames($booking),
             'booking_channel' => $bookingChannel,
             'total_amount_paid' => $totalAmount,
             'expected_amount' => $totalAmount,
@@ -346,7 +580,7 @@ class BokunAPI {
             'guide_id' => null, // Will be assigned later
             'cancelled' => (($productBooking['status'] ?? $booking['status'] ?? '') === 'CANCELLED') ? 1 : 0,
             'bokun_data' => $bokunData,
-            'last_synced' => date('Y-m-d H:i:s'),
+            'last_sync' => date('Y-m-d H:i:s'),
             'created_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s')
         ];
@@ -360,7 +594,58 @@ class BokunAPI {
         }
         return null;
     }
-    
+
+    /**
+     * Parse participant names from booking data.
+     * GYG: names in productBookings[0].specialRequests ("Traveler N: First Name: X\nLast Name: Y")
+     * Viator: no individual names available in search results
+     * Returns JSON string or null.
+     */
+    public function parseParticipantNames($booking) {
+        $productBooking = isset($booking['productBookings']) && !empty($booking['productBookings'])
+            ? $booking['productBookings'][0]
+            : [];
+
+        $names = [];
+
+        // Method 1: GYG special requests format
+        $specialRequests = $productBooking['specialRequests'] ?? null;
+        if ($specialRequests && is_string($specialRequests) && strlen(trim($specialRequests)) > 1) {
+            if (preg_match_all(
+                '/Traveler\s+(\d+):\s*\n?First Name:\s*(.+?)\s*\n?Last Name:\s*(.+?)(?:\n|$)/i',
+                $specialRequests,
+                $matches,
+                PREG_SET_ORDER
+            )) {
+                foreach ($matches as $m) {
+                    $first = trim($m[2]);
+                    $last = trim($m[3]);
+                    if ($first || $last) {
+                        $names[] = [
+                            'first' => $this->titleCase($first),
+                            'last' => $this->titleCase($last)
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Return null if no names found (don't store empty arrays)
+        if (empty($names)) {
+            return null;
+        }
+
+        return json_encode($names);
+    }
+
+    /**
+     * Title-case a name: "ETSUKO" → "Etsuko", "mARIA" → "Maria"
+     */
+    private function titleCase($name) {
+        if (!$name) return '';
+        return mb_convert_case(mb_strtolower(trim($name)), MB_CASE_TITLE, 'UTF-8');
+    }
+
     private function mapBookingStatus($bokunStatus) {
         $statusMap = [
             'CONFIRMED' => 'confirmed',
@@ -394,9 +679,18 @@ class BokunAPI {
         } catch (Exception $e) {
             error_log("BokunAPI: Connection test failed - " . $e->getMessage());
             error_log("BokunAPI: Error code - " . $e->getCode());
-            
+
+            // Send to Sentry if available
+            if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
+                sentry_capture_exception($e, [
+                    'context' => 'bokun_connection_test',
+                    'base_url' => $this->baseUrl,
+                    'vendor_id' => $this->vendorId
+                ]);
+            }
+
             return [
-                'success' => false, 
+                'success' => false,
                 'error' => $e->getMessage(),
                 'error_code' => $e->getCode(),
                 'base_url' => $this->baseUrl,

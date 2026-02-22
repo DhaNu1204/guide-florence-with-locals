@@ -170,7 +170,8 @@ const EditTour = () => {
       }
       
       setTour(tourToEdit);
-      setGuides(guidesData);
+      // Handle paginated response - extract data array
+      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
       
       // Set form data with tour values
       setFormData({
@@ -270,19 +271,20 @@ const EditTour = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 overflow-x-hidden">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button 
-          variant="ghost" 
+      <div className="flex items-center gap-3 md:gap-4">
+        <Button
+          variant="ghost"
           icon={FiArrowLeft}
           onClick={handleCancel}
+          className="min-h-[44px] min-w-[44px] touch-manipulation"
         >
-          Back
+          <span className="hidden md:inline">Back</span>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Edit Tour</h1>
-          <p className="text-gray-600 mt-1">Update tour details and assignment</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Edit Tour</h1>
+          <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1">Update tour details and assignment</p>
         </div>
       </div>
 
@@ -456,11 +458,12 @@ const EditTour = () => {
           </div>
 
           {/* Action buttons */}
-          <div className="flex flex-col sm:flex-row justify-end gap-3 mt-8">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 md:mt-8">
             <Button
               type="button"
               variant="outline"
               onClick={handleCancel}
+              className="w-full sm:w-auto min-h-[44px] touch-manipulation"
             >
               Cancel
             </Button>
@@ -469,6 +472,7 @@ const EditTour = () => {
               variant="primary"
               disabled={isSaving}
               loading={isSaving}
+              className="w-full sm:w-auto min-h-[44px] touch-manipulation"
             >
               Save Changes
             </Button>

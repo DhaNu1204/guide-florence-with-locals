@@ -1,6 +1,9 @@
 <?php
 require_once 'config.php';
 
+// Apply rate limiting for webhooks (30 per minute)
+applyRateLimit('webhook');
+
 // Log all webhook calls for debugging
 function logWebhook($topic, $data, $error = null) {
     global $conn;
@@ -117,7 +120,7 @@ function handleBookingUpdated($bookingId, $data) {
     // Update existing tour if it exists
     $stmt = $conn->prepare("
         UPDATE tours 
-        SET last_synced = NOW(),
+        SET last_sync = NOW(),
             needs_guide_assignment = CASE 
                 WHEN guide_id IS NULL OR guide_id = 1 THEN 1 
                 ELSE 0 
@@ -137,7 +140,7 @@ function handleBookingCancelled($bookingId, $data) {
     $stmt = $conn->prepare("
         UPDATE tours 
         SET cancelled = 1,
-            last_synced = NOW()
+            last_sync = NOW()
         WHERE bokun_booking_id = ?
     ");
     

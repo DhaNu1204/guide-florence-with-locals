@@ -15,6 +15,10 @@ require_once 'config.php';
 // Apply rate limiting (read operations)
 applyRateLimit('read');
 
+// Compute current Rome datetime once for all queries
+// Tours become "pending payment" as soon as their tour time has passed
+$romeNow = (new DateTime('now', new DateTimeZone('Europe/Rome')))->format('Y-m-d H:i:s');
+
 // Handle request based on parameters
 $guide_id = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
 $period = isset($_GET['period']) ? $_GET['period'] : null;
@@ -44,6 +48,7 @@ try {
  * Fixed: unpaid_tours now correctly counts PAST tours with guide assigned but NO payment recorded
  */
 function getAllGuidePaymentSummaries($conn) {
+    global $romeNow;
     // Get base summary from view
     $sql = "SELECT * FROM guide_payment_summary ORDER BY total_payments_received DESC, guide_name";
 
@@ -57,46 +62,50 @@ function getAllGuidePaymentSummaries($conn) {
             $row['cash_payments'] = floatval($row['cash_payments']);
             $row['bank_payments'] = floatval($row['bank_payments']);
 
-            // Calculate CORRECT unpaid_tours count:
-            // Past tours (completed) + Guide assigned + NO payment recorded for that tour
+            // Group-aware unpaid_tours: count groups as 1 tour unit
+            // A tour unit is unpaid if NO tour in it has a payment for the guide
             $guide_id = intval($row['guide_id']);
             $unpaidQuery = $conn->prepare("
-                SELECT COUNT(*) as unpaid_count
-                FROM tours t
-                WHERE t.guide_id = ?
-                  AND t.date < CURDATE()
-                  AND t.cancelled = 0
-                  AND t.title NOT LIKE '%Entry Ticket%'
-                  AND t.title NOT LIKE '%Entrance Ticket%'
-                  AND t.title NOT LIKE '%Priority Ticket%'
-                  AND t.title NOT LIKE '%Skip the Line%'
-                  AND t.title NOT LIKE '%Skip-the-Line%'
-                  AND NOT EXISTS (
-                      SELECT 1 FROM payments p
-                      WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
-                  )
+                SELECT COUNT(*) as unpaid_count FROM (
+                    SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
+                    FROM tours t
+                    LEFT JOIN payments p ON p.tour_id = t.id AND p.guide_id = t.guide_id
+                    WHERE t.guide_id = ?
+                      AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
+                      AND t.cancelled = 0
+                      AND t.title NOT LIKE '%Entry Ticket%'
+                      AND t.title NOT LIKE '%Entrance Ticket%'
+                      AND t.title NOT LIKE '%Priority Ticket%'
+                      AND t.title NOT LIKE '%Skip the Line%'
+                      AND t.title NOT LIKE '%Skip-the-Line%'
+                    GROUP BY tour_unit
+                    HAVING MAX(p.id) IS NULL
+                ) unpaid_units
             ");
-            $unpaidQuery->bind_param("i", $guide_id);
+            $unpaidQuery->bind_param("is", $guide_id, $romeNow);
             $unpaidQuery->execute();
             $unpaidResult = $unpaidQuery->get_result();
             $unpaidRow = $unpaidResult->fetch_assoc();
             $row['unpaid_tours'] = intval($unpaidRow['unpaid_count']);
 
-            // Calculate paid_tours correctly (past tours WITH payment recorded)
+            // Group-aware paid_tours: count groups as 1 tour unit
             $paidQuery = $conn->prepare("
-                SELECT COUNT(DISTINCT t.id) as paid_count
-                FROM tours t
-                INNER JOIN payments p ON p.tour_id = t.id AND p.guide_id = t.guide_id
-                WHERE t.guide_id = ?
-                  AND t.date < CURDATE()
-                  AND t.cancelled = 0
-                  AND t.title NOT LIKE '%Entry Ticket%'
-                  AND t.title NOT LIKE '%Entrance Ticket%'
-                  AND t.title NOT LIKE '%Priority Ticket%'
-                  AND t.title NOT LIKE '%Skip the Line%'
-                  AND t.title NOT LIKE '%Skip-the-Line%'
+                SELECT COUNT(*) as paid_count FROM (
+                    SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
+                    FROM tours t
+                    INNER JOIN payments p ON p.tour_id = t.id AND p.guide_id = t.guide_id
+                    WHERE t.guide_id = ?
+                      AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
+                      AND t.cancelled = 0
+                      AND t.title NOT LIKE '%Entry Ticket%'
+                      AND t.title NOT LIKE '%Entrance Ticket%'
+                      AND t.title NOT LIKE '%Priority Ticket%'
+                      AND t.title NOT LIKE '%Skip the Line%'
+                      AND t.title NOT LIKE '%Skip-the-Line%'
+                    GROUP BY tour_unit
+                ) paid_units
             ");
-            $paidQuery->bind_param("i", $guide_id);
+            $paidQuery->bind_param("is", $guide_id, $romeNow);
             $paidQuery->execute();
             $paidResult = $paidQuery->get_result();
             $paidRow = $paidResult->fetch_assoc();
@@ -135,6 +144,7 @@ function getAllGuidePaymentSummaries($conn) {
  * Get detailed payment information for a specific guide
  */
 function getGuidePaymentDetails($conn, $guide_id) {
+    global $romeNow;
     // Get guide info and summary
     $stmt = $conn->prepare("SELECT * FROM guide_payment_summary WHERE guide_id = ?");
     $stmt->bind_param("i", $guide_id);
@@ -146,6 +156,49 @@ function getGuidePaymentDetails($conn, $guide_id) {
         echo json_encode(['error' => 'Guide not found']);
         return;
     }
+
+    // Override summary counts with group-aware values (1 group = 1 tour unit)
+    $unpaidQuery = $conn->prepare("
+        SELECT COUNT(*) as cnt FROM (
+            SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
+            FROM tours t
+            LEFT JOIN payments p ON p.tour_id = t.id AND p.guide_id = t.guide_id
+            WHERE t.guide_id = ?
+              AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
+              AND t.cancelled = 0
+              AND t.title NOT LIKE '%Entry Ticket%'
+              AND t.title NOT LIKE '%Entrance Ticket%'
+              AND t.title NOT LIKE '%Priority Ticket%'
+              AND t.title NOT LIKE '%Skip the Line%'
+              AND t.title NOT LIKE '%Skip-the-Line%'
+            GROUP BY tour_unit
+            HAVING MAX(p.id) IS NULL
+        ) u
+    ");
+    $unpaidQuery->bind_param("is", $guide_id, $romeNow);
+    $unpaidQuery->execute();
+    $guide_summary['unpaid_tours'] = intval($unpaidQuery->get_result()->fetch_assoc()['cnt']);
+
+    $paidQuery = $conn->prepare("
+        SELECT COUNT(*) as cnt FROM (
+            SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
+            FROM tours t
+            INNER JOIN payments p ON p.tour_id = t.id AND p.guide_id = t.guide_id
+            WHERE t.guide_id = ?
+              AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
+              AND t.cancelled = 0
+              AND t.title NOT LIKE '%Entry Ticket%'
+              AND t.title NOT LIKE '%Entrance Ticket%'
+              AND t.title NOT LIKE '%Priority Ticket%'
+              AND t.title NOT LIKE '%Skip the Line%'
+              AND t.title NOT LIKE '%Skip-the-Line%'
+            GROUP BY tour_unit
+        ) p
+    ");
+    $paidQuery->bind_param("is", $guide_id, $romeNow);
+    $paidQuery->execute();
+    $guide_summary['paid_tours'] = intval($paidQuery->get_result()->fetch_assoc()['cnt']);
+    $guide_summary['total_tours'] = $guide_summary['unpaid_tours'] + $guide_summary['paid_tours'];
 
     // Get detailed payment transactions for this guide
     $stmt = $conn->prepare("SELECT
@@ -179,17 +232,19 @@ function getGuidePaymentDetails($conn, $guide_id) {
     }
 
     // Get monthly breakdown for this guide
+    // Group-aware: count groups as 1 tour unit
     $stmt = $conn->prepare("SELECT
                                 YEAR(pt.payment_date) as year,
                                 MONTH(pt.payment_date) as month,
                                 MONTHNAME(pt.payment_date) as month_name,
                                 COUNT(pt.id) as payment_count,
-                                COUNT(DISTINCT pt.tour_id) as tours_paid,
+                                COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) as tours_paid,
                                 SUM(pt.amount) as total_amount,
                                 SUM(CASE WHEN pt.payment_method = 'cash' THEN pt.amount ELSE 0 END) as cash_amount,
                                 SUM(CASE WHEN pt.payment_method = 'bank_transfer' THEN pt.amount ELSE 0 END) as bank_amount,
                                 AVG(pt.amount) as avg_payment
                             FROM payments pt
+                            JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.guide_id = ?
                             GROUP BY YEAR(pt.payment_date), MONTH(pt.payment_date)
                             ORDER BY year DESC, month DESC
@@ -208,30 +263,101 @@ function getGuidePaymentDetails($conn, $guide_id) {
         $monthly_breakdown[] = $row;
     }
 
-    // Get unpaid tours for this guide
+    // Get unpaid tours for this guide — group-aware (1 group = 1 row)
+    // Uses the same time-based "completed" check and NOT EXISTS pattern as getPendingTours
+    $romeNowEsc = $conn->real_escape_string($romeNow);
     $stmt = $conn->prepare("SELECT
-                                id,
-                                title,
-                                date,
-                                time,
-                                customer_name,
-                                payment_status,
-                                total_amount_paid,
-                                expected_amount
-                            FROM tours
-                            WHERE guide_id = ? AND payment_status IN ('unpaid', 'partial')
-                            ORDER BY date DESC");
+                                t.id,
+                                t.title,
+                                t.date,
+                                t.time,
+                                t.customer_name,
+                                t.participants,
+                                t.expected_amount,
+                                t.group_id
+                            FROM tours t
+                            WHERE t.guide_id = ?
+                              AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
+                              AND t.cancelled = 0
+                              AND t.title NOT LIKE '%Entry Ticket%'
+                              AND t.title NOT LIKE '%Entrance Ticket%'
+                              AND t.title NOT LIKE '%Priority Ticket%'
+                              AND t.title NOT LIKE '%Skip the Line%'
+                              AND t.title NOT LIKE '%Skip-the-Line%'
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM payments p
+                                  WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
+                              )
+                            ORDER BY t.date DESC");
 
     $stmt->bind_param("i", $guide_id);
     $stmt->execute();
     $unpaid_result = $stmt->get_result();
 
-    $unpaid_tours = [];
+    $ungrouped_unpaid = [];
+    $grouped_unpaid = []; // group_id => [tours]
+
     while ($row = $unpaid_result->fetch_assoc()) {
-        $row['total_amount_paid'] = floatval($row['total_amount_paid']);
+        $row['participants'] = intval($row['participants'] ?? 0);
         $row['expected_amount'] = $row['expected_amount'] ? floatval($row['expected_amount']) : null;
-        $unpaid_tours[] = $row;
+
+        if ($row['group_id']) {
+            $gid = intval($row['group_id']);
+            if (!isset($grouped_unpaid[$gid])) {
+                $grouped_unpaid[$gid] = [];
+            }
+            $grouped_unpaid[$gid][] = $row;
+        } else {
+            $row['is_group'] = false;
+            $row['group_id'] = null;
+            $ungrouped_unpaid[] = $row;
+        }
     }
+
+    // Collapse grouped tours into single entries
+    $unpaid_tours = $ungrouped_unpaid;
+
+    foreach ($grouped_unpaid as $gid => $groupTours) {
+        // Check if any tour in this group already has a payment for this guide
+        $checkStmt = $conn->prepare("
+            SELECT COUNT(*) as cnt FROM payments p
+            INNER JOIN tours t ON p.tour_id = t.id
+            WHERE t.group_id = ? AND p.guide_id = ?
+        ");
+        $checkStmt->bind_param("ii", $gid, $guide_id);
+        $checkStmt->execute();
+        $checkResult = $checkStmt->get_result()->fetch_assoc();
+
+        if (intval($checkResult['cnt']) > 0) {
+            continue; // Group already paid via another tour
+        }
+
+        // Get group info
+        $groupStmt = $conn->prepare("SELECT id, display_name, group_date, group_time, total_pax FROM tour_groups WHERE id = ?");
+        $groupStmt->bind_param("i", $gid);
+        $groupStmt->execute();
+        $groupInfo = $groupStmt->get_result()->fetch_assoc();
+
+        $totalPax = array_sum(array_map(function($t) { return $t['participants']; }, $groupTours));
+        $totalExpected = array_sum(array_map(function($t) { return floatval($t['expected_amount'] ?? 0); }, $groupTours));
+
+        $unpaid_tours[] = [
+            'id' => $groupTours[0]['id'],
+            'title' => $groupInfo ? $groupInfo['display_name'] : $groupTours[0]['title'],
+            'date' => $groupInfo ? $groupInfo['group_date'] : $groupTours[0]['date'],
+            'time' => $groupInfo ? $groupInfo['group_time'] : $groupTours[0]['time'],
+            'participants' => $groupInfo ? intval($groupInfo['total_pax']) : $totalPax,
+            'expected_amount' => $totalExpected > 0 ? $totalExpected : null,
+            'group_id' => $gid,
+            'is_group' => true,
+            'booking_count' => count($groupTours)
+        ];
+    }
+
+    // Sort by date DESC
+    usort($unpaid_tours, function($a, $b) {
+        return strcmp($b['date'], $a['date']);
+    });
 
     // Format guide summary monetary values
     $guide_summary['total_payments_received'] = floatval($guide_summary['total_payments_received']);
@@ -335,6 +461,7 @@ function getGuidePaymentsByPeriod($conn, $guide_id, $period) {
  * Get overall payment statistics
  */
 function getPaymentOverview($conn) {
+    global $romeNow;
     // Overall statistics
     $stats = [];
 
@@ -381,50 +508,60 @@ function getPaymentOverview($conn) {
     // Only count past tours with guides assigned (eligible for guide payment)
     $tour_statuses = [];
 
-    // Count tours with payments (paid)
-    $result = $conn->query("SELECT COUNT(DISTINCT t.id) as count
-                            FROM tours t
-                            INNER JOIN payments p ON p.tour_id = t.id
-                            WHERE t.date < CURDATE()
-                              AND t.cancelled = 0
-                              AND t.guide_id IS NOT NULL
-                              AND t.title NOT LIKE '%Entry Ticket%'
-                              AND t.title NOT LIKE '%Entrance Ticket%'
-                              AND t.title NOT LIKE '%Priority Ticket%'
-                              AND t.title NOT LIKE '%Skip the Line%'
-                              AND t.title NOT LIKE '%Skip-the-Line%'");
+    // Group-aware: count groups as 1 tour unit (paid)
+    // Compare date+time against Rome timezone for same-day detection
+    $romeNowEsc = $conn->real_escape_string($romeNow);
+    $result = $conn->query("SELECT COUNT(*) as count FROM (
+                                SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
+                                FROM tours t
+                                INNER JOIN payments p ON p.tour_id = t.id
+                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
+                                  AND t.cancelled = 0
+                                  AND t.guide_id IS NOT NULL
+                                  AND t.title NOT LIKE '%Entry Ticket%'
+                                  AND t.title NOT LIKE '%Entrance Ticket%'
+                                  AND t.title NOT LIKE '%Priority Ticket%'
+                                  AND t.title NOT LIKE '%Skip the Line%'
+                                  AND t.title NOT LIKE '%Skip-the-Line%'
+                                GROUP BY tour_unit
+                            ) paid_units");
     if ($result && $row = $result->fetch_assoc()) {
         $tour_statuses[] = ['status' => 'paid', 'count' => intval($row['count'])];
     }
 
-    // Count tours without payments (unpaid) - past tours with guide but no payment record
-    $result = $conn->query("SELECT COUNT(*) as count
-                            FROM tours t
-                            WHERE t.date < CURDATE()
-                              AND t.cancelled = 0
-                              AND t.guide_id IS NOT NULL
-                              AND t.title NOT LIKE '%Entry Ticket%'
-                              AND t.title NOT LIKE '%Entrance Ticket%'
-                              AND t.title NOT LIKE '%Priority Ticket%'
-                              AND t.title NOT LIKE '%Skip the Line%'
-                              AND t.title NOT LIKE '%Skip-the-Line%'
-                              AND NOT EXISTS (
-                                  SELECT 1 FROM payments p WHERE p.tour_id = t.id
-                              )");
+    // Group-aware: count groups as 1 tour unit (unpaid)
+    $result = $conn->query("SELECT COUNT(*) as count FROM (
+                                SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
+                                FROM tours t
+                                LEFT JOIN payments p ON p.tour_id = t.id
+                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
+                                  AND t.cancelled = 0
+                                  AND t.guide_id IS NOT NULL
+                                  AND t.title NOT LIKE '%Entry Ticket%'
+                                  AND t.title NOT LIKE '%Entrance Ticket%'
+                                  AND t.title NOT LIKE '%Priority Ticket%'
+                                  AND t.title NOT LIKE '%Skip the Line%'
+                                  AND t.title NOT LIKE '%Skip-the-Line%'
+                                GROUP BY tour_unit
+                                HAVING MAX(p.id) IS NULL
+                            ) unpaid_units");
     if ($result && $row = $result->fetch_assoc()) {
         $tour_statuses[] = ['status' => 'unpaid', 'count' => intval($row['count'])];
     }
 
-    // Count upcoming tours (future)
-    $result = $conn->query("SELECT COUNT(*) as count
-                            FROM tours t
-                            WHERE t.date >= CURDATE()
-                              AND t.cancelled = 0
-                              AND t.title NOT LIKE '%Entry Ticket%'
-                              AND t.title NOT LIKE '%Entrance Ticket%'
-                              AND t.title NOT LIKE '%Priority Ticket%'
-                              AND t.title NOT LIKE '%Skip the Line%'
-                              AND t.title NOT LIKE '%Skip-the-Line%'");
+    // Group-aware: count groups as 1 tour unit (upcoming)
+    $result = $conn->query("SELECT COUNT(*) as count FROM (
+                                SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
+                                FROM tours t
+                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) >= '$romeNowEsc'
+                                  AND t.cancelled = 0
+                                  AND t.title NOT LIKE '%Entry Ticket%'
+                                  AND t.title NOT LIKE '%Entrance Ticket%'
+                                  AND t.title NOT LIKE '%Priority Ticket%'
+                                  AND t.title NOT LIKE '%Skip the Line%'
+                                  AND t.title NOT LIKE '%Skip-the-Line%'
+                                GROUP BY tour_unit
+                            ) upcoming_units");
     if ($result && $row = $result->fetch_assoc()) {
         $tour_statuses[] = ['status' => 'upcoming', 'count' => intval($row['count'])];
     }
@@ -459,6 +596,11 @@ function getPaymentOverview($conn) {
  * Returns past tours with assigned guides that have NO payment record in payments table
  */
 function getPendingTours($conn) {
+    global $romeNow;
+    // Get all individual pending tours (with group_id for grouping)
+    // Compare date+time against Rome timezone so tours show as pending
+    // immediately after their scheduled time passes
+    $romeNowEsc = $conn->real_escape_string($romeNow);
     $sql = "SELECT
                 t.id,
                 t.title,
@@ -471,10 +613,11 @@ function getPendingTours($conn) {
                 t.participants,
                 t.expected_amount,
                 t.payment_status,
-                t.bokun_booking_id
+                t.bokun_booking_id,
+                t.group_id
             FROM tours t
             JOIN guides g ON t.guide_id = g.id
-            WHERE t.date < CURDATE()
+            WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
               AND t.cancelled = 0
               AND t.title NOT LIKE '%Entry Ticket%'
               AND t.title NOT LIKE '%Entrance Ticket%'
@@ -490,13 +633,81 @@ function getPendingTours($conn) {
     $result = $conn->query($sql);
 
     if ($result) {
-        $tours = [];
+        $ungrouped = [];
+        $grouped = []; // group_id => [tours]
+
         while ($row = $result->fetch_assoc()) {
-            // Format amounts
             $row['expected_amount'] = $row['expected_amount'] ? floatval($row['expected_amount']) : null;
             $row['participants'] = intval($row['participants'] ?? 0);
-            $tours[] = $row;
+
+            if ($row['group_id']) {
+                $gid = intval($row['group_id']);
+                if (!isset($grouped[$gid])) {
+                    $grouped[$gid] = [];
+                }
+                $grouped[$gid][] = $row;
+            } else {
+                $row['is_group'] = false;
+                $ungrouped[] = $row;
+            }
         }
+
+        // Collapse grouped tours into single entries
+        $tours = $ungrouped;
+
+        foreach ($grouped as $gid => $groupTours) {
+            // Check if any tour in this group has a payment for the guide
+            // (another tour in the group might have been paid even though these weren't)
+            $guideId = intval($groupTours[0]['guide_id']);
+            $checkStmt = $conn->prepare("
+                SELECT COUNT(*) as cnt FROM payments p
+                INNER JOIN tours t ON p.tour_id = t.id
+                WHERE t.group_id = ? AND p.guide_id = ?
+            ");
+            $checkStmt->bind_param("ii", $gid, $guideId);
+            $checkStmt->execute();
+            $checkResult = $checkStmt->get_result()->fetch_assoc();
+
+            if (intval($checkResult['cnt']) > 0) {
+                // Group already has a payment via another tour — skip
+                continue;
+            }
+
+            // Get group info
+            $groupStmt = $conn->prepare("SELECT id, display_name, group_date, group_time, total_pax FROM tour_groups WHERE id = ?");
+            $groupStmt->bind_param("i", $gid);
+            $groupStmt->execute();
+            $groupInfo = $groupStmt->get_result()->fetch_assoc();
+
+            // Aggregate tour data into a single group entry
+            $totalPax = array_sum(array_map(function($t) { return $t['participants']; }, $groupTours));
+            $totalExpected = array_sum(array_map(function($t) { return floatval($t['expected_amount'] ?? 0); }, $groupTours));
+            $customers = array_filter(array_map(function($t) { return $t['customer_name']; }, $groupTours));
+
+            $tours[] = [
+                'id' => $groupTours[0]['id'],
+                'title' => $groupInfo ? $groupInfo['display_name'] : $groupTours[0]['title'],
+                'date' => $groupInfo ? $groupInfo['group_date'] : $groupTours[0]['date'],
+                'time' => $groupInfo ? $groupInfo['group_time'] : $groupTours[0]['time'],
+                'guide_id' => $groupTours[0]['guide_id'],
+                'guide_name' => $groupTours[0]['guide_name'],
+                'guide_email' => $groupTours[0]['guide_email'],
+                'customer_name' => implode(', ', $customers),
+                'participants' => $totalPax,
+                'expected_amount' => $totalExpected > 0 ? $totalExpected : null,
+                'payment_status' => 'unpaid',
+                'bokun_booking_id' => null,
+                'group_id' => $gid,
+                'is_group' => true,
+                'booking_count' => count($groupTours),
+                'tours' => $groupTours
+            ];
+        }
+
+        // Sort by date DESC
+        usort($tours, function($a, $b) {
+            return strcmp($b['date'], $a['date']);
+        });
 
         echo json_encode([
             'success' => true,
