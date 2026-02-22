@@ -1,5 +1,24 @@
 # Changelog - Recent Major Updates
 
+## ✅ CUSTOM DATE RANGE FILTERING & CACHE FIX (2026-02-23)
+
+### Custom Date Range Filter
+- **Backend**: Added `start_date` and `end_date` query parameters to `tours.php` GET handler
+  - Generates `WHERE t.date >= ? AND t.date <= ?` with prepared statements
+  - Both params validated with regex `/^\d{4}-\d{2}-\d{2}$/`
+  - Takes priority over `past`, `upcoming`, and `date` filters
+- **Service Layer**: Added `start_date`, `end_date`, and `past` filter passthrough in `mysqlDB.js`
+- **Frontend**: New "Date Range" button in Tours.jsx filter bar
+  - Dual date picker with start/end inputs and "to" separator
+  - `end_date` input has `min` constraint to prevent invalid ranges
+  - Skips fetching while range is incomplete (only one date selected)
+  - All existing filter buttons properly clear date range mode when clicked
+- **Cache Fix**: Added `past` and `start_date` to `hasFilters` check in `getTours()`
+  - Previously, switching to Past 40 Days or Date Range returned stale cached data from Upcoming
+- **Files Modified**: `tours.php`, `mysqlDB.js`, `Tours.jsx`
+
+---
+
 ## ✅ PDF REPORT GENERATION & PAYMENT SYSTEM FIXES (2026-01-29)
 
 ### PDF Report Generation

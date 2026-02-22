@@ -9,6 +9,7 @@
 - Language detection and display
 - Payment status tracking
 - Booking details modal
+- **Date filtering**: Today, Upcoming (60 days), Past 40 Days, custom date range (start_date/end_date)
 
 ### Guide Management ✅ LIVE
 - Multi-language support (up to 3 languages per guide)

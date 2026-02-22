@@ -1,6 +1,6 @@
 # API Documentation
 
-**Last Updated**: January 29, 2026
+**Last Updated**: February 23, 2026
 
 ## Production APIs ✅
 
@@ -36,10 +36,18 @@
 | page | int | 1 | - | Page number for pagination |
 | per_page | int | 50 | 500 | Records per page (max 500) |
 | date | string | - | - | Filter by specific date (YYYY-MM-DD) |
+| start_date | string | - | - | Start of date range (YYYY-MM-DD), requires end_date |
+| end_date | string | - | - | End of date range (YYYY-MM-DD), requires start_date |
 | guide_id | int | - | - | Filter by guide ID |
 | upcoming | bool | false | - | Show tours from today + 60 days only |
+| past | bool | false | - | Show tours from past 40 days (yesterday backwards) |
 
-**Example**: `/api/tours.php?upcoming=true&per_page=500`
+**Filter priority**: `start_date+end_date` > `past` > `upcoming` > `date` (first match wins).
+
+**Examples**:
+- `/api/tours.php?upcoming=true&per_page=500`
+- `/api/tours.php?start_date=2026-03-01&end_date=2026-03-15`
+- `/api/tours.php?past=true&guide_id=5`
 
 ## Bokun Integration APIs
 

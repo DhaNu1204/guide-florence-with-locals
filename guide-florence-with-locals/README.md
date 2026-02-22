@@ -17,7 +17,9 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 
 ### 🚀 **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** - FULLY OPERATIONAL ✅
 
-**Latest Update (2026-01-29)**: ✅ **PAYMENT SYSTEM & PDF REPORTS** - (1) **PDF Report Generation**: Added frontend PDF generation using jsPDF with Tuscan-themed reports for guide payments, pending payments, and monthly summaries. (2) **Payment System Bug Fixes**: Fixed critical VIEW table mismatch where `guide_payment_summary` was querying empty `payment_transactions` table instead of `payments` table. Added new `pending_tours` API endpoint for authoritative pending payment tracking. (3) **API Rate Limiting**: Database-backed rate limiting for all endpoints (login: 5/min, read: 100/min, write: 30/min). (4) **Automated Testing**: 52 tests passing with Vitest + React Testing Library.
+**Latest Update (2026-02-23)**: ✅ **CUSTOM DATE RANGE FILTERING** - Added custom date range filter to Tours page with `start_date`/`end_date` API parameters, dual date picker UI, and "Date Range" button alongside Today/Upcoming/Past 40 Days. Also fixed cache bypass bug where `past` and `start_date` filters weren't invalidating stale cached data.
+
+**Previous Update (2026-01-29)**: ✅ **PAYMENT SYSTEM & PDF REPORTS** - (1) **PDF Report Generation**: Added frontend PDF generation using jsPDF with Tuscan-themed reports for guide payments, pending payments, and monthly summaries. (2) **Payment System Bug Fixes**: Fixed critical VIEW table mismatch where `guide_payment_summary` was querying empty `payment_transactions` table instead of `payments` table. Added new `pending_tours` API endpoint for authoritative pending payment tracking. (3) **API Rate Limiting**: Database-backed rate limiting for all endpoints (login: 5/min, read: 100/min, write: 30/min). (4) **Automated Testing**: 52 tests passing with Vitest + React Testing Library.
 
 **Previous Update (2025-10-25)**: ✅ **DATABASE SCHEMA SYNCHRONIZED** - Fixed production database schema mismatches that were causing application failures. Added missing `bokun_experience_id` and `last_sync` columns, corrected `payment_status` enum to include 'overpaid', and fixed sessions table `token` column (login now works). Priority Tickets date filter changed to show all bookings by default. Production database now has 40 columns matching local development exactly.
 
@@ -72,6 +74,12 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 - **Booking Channel Display** - Clear identification of booking sources (Website, Viator, etc.)
 
 ## 🚀 What's New - Latest Updates
+
+### ✅ **CUSTOM DATE RANGE FILTERING** (2026-02-23)
+- **Custom Date Range**: New "Date Range" button in Tours filter bar with dual date picker (start/end)
+- **Backend API**: Added `start_date` and `end_date` query parameters to `/api/tours.php`
+- **Cache Fix**: Fixed stale data when switching between filter modes (past/upcoming/date range)
+- **Filter Priority**: `start_date+end_date` > `past` > `upcoming` > `date`
 
 ### ✅ **PAYMENT SYSTEM & PDF REPORTS** (2026-01-29)
 - **📄 PDF Report Generation**: Frontend-only PDF generation using jsPDF
@@ -684,9 +692,9 @@ This project is proprietary software developed for Florence with Locals tour ope
 
 ---
 
-**Project Status**: ✅ **FULLY OPERATIONAL** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. **Latest deployment (Jan 29, 2026)**: PDF Report Generation with jsPDF, Payment System bug fixes (VIEW table mismatch), API Rate Limiting, and Automated Testing (52 tests passing). **200+ bookings synced** from Viator and GetYourGuide with automatic multi-channel language detection and smart payment tracking.
+**Project Status**: ✅ **FULLY OPERATIONAL** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. **Latest deployment (Feb 23, 2026)**: Custom date range filtering with dual date picker, cache bypass fix for filter switching. **200+ bookings synced** from Viator and GetYourGuide with automatic multi-channel language detection and smart payment tracking.
 
-**Last Updated**: January 29, 2026 - **PDF REPORTS & PAYMENT FIXES**: Added frontend PDF report generation using jsPDF with Tuscan-themed branding. Fixed critical payment system bugs including VIEW table mismatch and inconsistent pending payment tracking. Added database-backed API rate limiting. Implemented comprehensive testing with Vitest (52 tests passing).
+**Last Updated**: February 23, 2026 - **CUSTOM DATE RANGE FILTERING**: Added `start_date`/`end_date` API parameters and "Date Range" button to Tours page for custom date range queries. Fixed cache bypass bug where past and date range filters returned stale cached data.
 
 **Live Production URL**: **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** ✅
 

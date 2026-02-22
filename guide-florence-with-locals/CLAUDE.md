@@ -17,7 +17,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 **Production**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Last Updated**: February 22, 2026
+**Last Updated**: February 23, 2026
 
 ## Tech Stack
 
@@ -33,7 +33,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 ## Key Features
 
-1. **Tour Management**: CRUD with 40+ fields, filters (date, guide, upcoming/past), pagination
+1. **Tour Management**: CRUD with 40+ fields, filters (date, guide, upcoming/past/date range), pagination
 2. **Guide Management**: Multi-language, pagination (20/page), RESTful PUT updates, DB indexes
 3. **Payment System**: Group-aware (1 group = 1 payment), dedup prevention, 4 PDF reports, Europe/Rome TZ
 4. **Bokun Integration**: Auto-sync every 15 min, SUPPLIER + SELLER roles, 200/page multi-page pagination
@@ -404,7 +404,7 @@ Custom skills in `../florence-skills/` directory:
 
 ---
 
-**Last Updated**: February 22, 2026
+**Last Updated**: February 23, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: Fully Operational
 **Tests**: 52 passing (Vitest + React Testing Library)
