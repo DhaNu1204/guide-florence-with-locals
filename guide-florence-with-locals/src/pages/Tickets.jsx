@@ -24,8 +24,7 @@ import Input from '../components/UI/Input';
 
 // Predefined locations
 const LOCATION_OPTIONS = [
-  'Accademia',
-  'Uffizi'
+  'Accademia'
 ];
 
 // Locations available in the add/edit form (Uffizi removed)
@@ -33,15 +32,15 @@ const FORM_LOCATION_OPTIONS = [
   'Accademia'
 ];
 
-// Generate time options in 5-minute intervals (00:00 to 23:55)
+// Generate time options in 15-minute intervals (08:15 to 17:30)
 const generateTimeOptions = () => {
   const options = [];
-  for (let hour = 0; hour < 24; hour++) {
-    for (let minute = 0; minute < 60; minute += 5) {
-      const formattedHour = hour.toString().padStart(2, '0');
-      const formattedMinute = minute.toString().padStart(2, '0');
-      options.push(`${formattedHour}:${formattedMinute}`);
-    }
+  const startMinutes = 8 * 60 + 15;  // 08:15
+  const endMinutes = 17 * 60 + 30;   // 17:30
+  for (let m = startMinutes; m <= endMinutes; m += 15) {
+    const hour = Math.floor(m / 60).toString().padStart(2, '0');
+    const minute = (m % 60).toString().padStart(2, '0');
+    options.push(`${hour}:${minute}`);
   }
   return options;
 };
@@ -108,7 +107,7 @@ const Tickets = () => {
   const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
 
   const [formData, setFormData] = useState({
-    location: '',
+    location: 'Accademia',
     code: '',
     date: '',
     time: '',
@@ -205,7 +204,7 @@ const Tickets = () => {
       
       // Reset form
       setFormData({
-        location: '',
+        location: 'Accademia',
         code: '',
         date: '',
         time: '',
@@ -469,7 +468,7 @@ const Tickets = () => {
                 }}
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="all">All Locations</option>
+                <option value="all" hidden>All Locations</option>
                 {LOCATION_OPTIONS.map(location => (
                   <option key={location} value={location.toLowerCase()}>
                     {location}
@@ -555,7 +554,6 @@ const Tickets = () => {
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   >
-                    <option value="">Select a location</option>
                     {FORM_LOCATION_OPTIONS.map((location, index) => (
                       <option key={index} value={location}>
                         {location}
@@ -564,7 +562,7 @@ const Tickets = () => {
                   </select>
                 </div>
               </div>
-              
+
               <div>
                 <Input
                   label="Ticket Code"
@@ -696,7 +694,6 @@ const Tickets = () => {
                       className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                       required
                     >
-                      <option value="">Select a location</option>
                       {FORM_LOCATION_OPTIONS.map((location, index) => (
                         <option key={index} value={location}>
                           {location}
