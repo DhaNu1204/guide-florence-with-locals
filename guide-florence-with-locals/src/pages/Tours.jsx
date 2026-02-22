@@ -856,6 +856,25 @@ const Tours = () => {
     lines.push('========================');
     lines.push('');
 
+    // Extract location from tour title by keyword matching
+    const getLocation = (title) => {
+      if (!title) return 'Florence';
+      const t = title.toLowerCase();
+      if (t.includes('uffizi') && t.includes('accademia')) return 'Uffizi + Accademia';
+      if (t.includes('uffizi')) return 'Uffizi';
+      if (t.includes('accademia')) return 'Accademia';
+      if (t.includes('duomo') || t.includes('cathedral')) return 'Duomo';
+      if (t.includes('pitti')) return 'Pitti';
+      if (t.includes('boboli')) return 'Boboli';
+      if (t.includes('palazzo vecchio')) return 'Palazzo Vecchio';
+      if (t.includes('san lorenzo') || t.includes('medici chapel')) return 'San Lorenzo';
+      if (t.includes('santa croce')) return 'Santa Croce';
+      if (t.includes('ponte vecchio')) return 'Ponte Vecchio';
+      if (t.includes('bargello')) return 'Bargello';
+      if (t.includes('vasari')) return 'Vasari Corridor';
+      return 'Florence';
+    };
+
     let totalUnassigned = 0;
 
     groupedTours.forEach(dateGroup => {
@@ -867,14 +886,16 @@ const Tours = () => {
             const g = item.group;
             if (!g.guide_id) {
               const time = g.group_time ? g.group_time.substring(0, 5) : '00:00';
-              unassignedItems.push({ time, name: g.display_name || 'Group' });
+              const location = getLocation(g.display_name);
+              unassignedItems.push({ time, location });
               totalUnassigned++;
             }
           } else {
             if (item.cancelled) return;
             if (!item.guide_id) {
               const time = getBookingTime(item).substring(0, 5);
-              unassignedItems.push({ time, name: item.title || 'Untitled Tour' });
+              const location = getLocation(item.title);
+              unassignedItems.push({ time, location });
               totalUnassigned++;
             }
           }
@@ -889,7 +910,7 @@ const Tours = () => {
         unassignedItems
           .sort((a, b) => a.time.localeCompare(b.time))
           .forEach(entry => {
-            lines.push(`  ${entry.time}  ${entry.name}`);
+            lines.push(`  ${entry.time}  ${entry.location}`);
           });
         lines.push('');
       }
