@@ -174,7 +174,7 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
 
   // Skip cache if filters are applied (always fetch fresh for filtered queries)
   // Include upcoming as a filter since it changes the query behavior
-  const hasFilters = filters.date || filters.guide_id || filters.upcoming;
+  const hasFilters = filters.date || filters.guide_id || filters.upcoming || filters.past || filters.start_date;
 
   console.log('[getTours] hasFilters:', hasFilters, 'filters:', filters);
 
