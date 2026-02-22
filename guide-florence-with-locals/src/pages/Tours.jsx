@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { FiPlus, FiRefreshCw, FiSave, FiX, FiLayers, FiCheckSquare, FiSquare, FiUsers as FiUsersIcon } from 'react-icons/fi';
+import { FiPlus, FiRefreshCw, FiSave, FiX, FiLayers, FiCheckSquare, FiSquare, FiUsers as FiUsersIcon, FiDownload } from 'react-icons/fi';
 import { format } from 'date-fns';
 import mysqlDB, { tourGroupsAPI } from '../services/mysqlDB';
 import Card from '../components/UI/Card';
@@ -832,6 +832,106 @@ const Tours = () => {
     setEditingNotes(prev => { const s = { ...prev }; delete s[tourId]; return s; });
   };
 
+  // Download unassigned tours report as .txt
+  const downloadUnassignedReport = () => {
+    // Determine current filter label
+    let filterLabel = '';
+    if (showDateRange && rangeStartDate && rangeEndDate) {
+      filterLabel = `${rangeStartDate} to ${rangeEndDate}`;
+    } else if (showPast) {
+      filterLabel = 'Past 40 Days';
+    } else if (showUpcoming) {
+      filterLabel = 'Upcoming';
+    } else {
+      filterLabel = filterDate ? format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd') ? 'Today' : format(filterDate, 'dd MMM yyyy') : 'Today';
+    }
+
+    const now = new Date();
+    const generated = format(now, 'dd MMM yyyy, HH:mm');
+
+    const lines = [];
+    lines.push('UNASSIGNED TOURS REPORT');
+    lines.push(`Generated: ${generated}`);
+    lines.push(`Filter: ${filterLabel}`);
+    lines.push('========================');
+    lines.push('');
+
+    let totalUnassigned = 0;
+    let totalPax = 0;
+
+    groupedTours.forEach(dateGroup => {
+      const unassignedItems = [];
+
+      dateGroup.periods.forEach(periodGroup => {
+        periodGroup.items.forEach(item => {
+          if (item._isGroup) {
+            const g = item.group;
+            if (!g.guide_id) {
+              const pax = g.total_pax || 0;
+              const time = g.group_time ? g.group_time.substring(0, 5) : '00:00';
+              const lang = g.tours && g.tours.length > 0 ? getTourLanguage(g.tours[0]) : null;
+              const channel = g.tours && g.tours.length > 0 ? (g.tours[0].booking_channel || 'Website') : 'Website';
+              const bookingCount = g.tours ? g.tours.length : 0;
+              unassignedItems.push({
+                time,
+                text: `[GROUP] ${g.display_name || 'Group'} (${pax} PAX, ${bookingCount} bookings${lang ? ', ' + lang : ''}) [${channel}]`
+              });
+              totalUnassigned++;
+              totalPax += pax;
+            }
+          } else {
+            // Individual tour — skip cancelled
+            if (item.cancelled) return;
+            if (!item.guide_id) {
+              const pax = getParticipantCount(item);
+              const time = getBookingTime(item).substring(0, 5);
+              const lang = getTourLanguage(item);
+              const channel = item.booking_channel || 'Website';
+              unassignedItems.push({
+                time,
+                text: `${item.title || 'Untitled Tour'} (${pax} PAX${lang ? ', ' + lang : ''}) [${channel}]`
+              });
+              totalUnassigned++;
+              totalPax += pax;
+            }
+          }
+        });
+      });
+
+      if (unassignedItems.length > 0) {
+        const dateObj = new Date(dateGroup.date + 'T00:00:00');
+        const dateLabel = format(dateObj, 'EEEE, dd MMMM yyyy');
+        lines.push(`--- ${dateLabel} ---`);
+        lines.push('');
+        unassignedItems
+          .sort((a, b) => a.time.localeCompare(b.time))
+          .forEach(entry => {
+            lines.push(`  ${entry.time}  ${entry.text}`);
+          });
+        lines.push('');
+      }
+    });
+
+    if (totalUnassigned === 0) {
+      lines.push('No unassigned tours found.');
+      lines.push('');
+    }
+
+    lines.push('========================');
+    lines.push(`Total: ${totalUnassigned} unassigned tours, ${totalPax} PAX`);
+
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `unassigned_tours_${format(now, 'yyyyMMdd_HHmm')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1511,10 +1611,21 @@ const Tours = () => {
           {groupedTours.length > 0 && (
             <Card>
               <div className="px-4 md:px-6 py-3 md:py-4">
-                <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-1 text-center md:text-left">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2 text-center md:text-left">
                   <h3 className="text-base md:text-lg font-semibold text-stone-900">Summary</h3>
-                  <div className="text-sm text-stone-600">
-                    Total: {totalData.totalTours} tours · {totalData.totalParticipants} PAX
+                  <div className="flex flex-col md:flex-row items-center gap-2">
+                    <div className="text-sm text-stone-600">
+                      Total: {totalData.totalTours} tours · {totalData.totalParticipants} PAX
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadUnassignedReport}
+                      icon={FiDownload}
+                    >
+                      <span className="hidden md:inline">Unassigned Report</span>
+                      <span className="md:hidden">Report</span>
+                    </Button>
                   </div>
                 </div>
               </div>
