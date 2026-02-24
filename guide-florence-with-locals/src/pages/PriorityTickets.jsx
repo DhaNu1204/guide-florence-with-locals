@@ -106,10 +106,11 @@ const PriorityTickets = () => {
     setError(null);
 
     try {
-      const toursResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
+      const toursResponse = await getTours(forceRefresh, 1, 500, { upcoming: true, product_type: 'ticket' });
       const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
 
       if (toursData) {
+        // Backend now filters by product_type='ticket'; client-side filter kept as safety net
         const tickets = filterTicketsOnly(toursData);
 
         // Sort by date and time (earliest first)

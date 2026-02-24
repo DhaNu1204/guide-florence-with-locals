@@ -248,6 +248,14 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                 // Transform booking to our tour format
                 $tourData = $bokunAPI->transformBookingToTour($booking);
 
+                // Auto-register product in products table if new
+                if ($tourData['product_id']) {
+                    $prodStmt = $conn->prepare("INSERT IGNORE INTO products (bokun_product_id, title) VALUES (?, ?)");
+                    $prodStmt->bind_param("is", $tourData['product_id'], $tourData['title']);
+                    $prodStmt->execute();
+                    $prodStmt->close();
+                }
+
                 // Check if tour already exists and get current date/time for rescheduling detection
                 $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE bokun_booking_id = ? OR external_id = ?");
                 $stmt->bind_param("ss", $tourData['bokun_booking_id'], $tourData['external_id']);
@@ -284,18 +292,19 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         expected_amount = ?, payment_status = ?, paid = ?,
                         cancelled = ?, bokun_data = ?, last_sync = ?,
                         rescheduled = ?, original_date = ?, original_time = ?,
+                        product_id = ?,
                         rescheduled_at = " . ($isRescheduled ? "NOW()" : "rescheduled_at") . ",
                         updated_at = NOW()
                         WHERE id = ?
                     ");
                     $rescheduledFlag = ($isRescheduled || $existing['rescheduled']) ? 1 : 0;
-                    $stmt->bind_param("ssssssssissddsiississi",
+                    $stmt->bind_param("ssssssssissddsiississiii",
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'], $tourData['total_amount_paid'],
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'],
-                        $rescheduledFlag, $originalDate, $originalTime, $existing['id']
+                        $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $existing['id']
                     );
                 } else {
                     // Insert new tour
@@ -305,17 +314,17 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                             customer_name, customer_email, customer_phone, participants, participant_names,
                             booking_channel, total_amount_paid, expected_amount, payment_status, paid,
                             external_source, needs_guide_assignment, guide_id, cancelled,
-                            bokun_data, last_sync, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                            bokun_data, last_sync, product_id, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                     ");
-                    $stmt->bind_param("sssssssssssissddsisiiiss",
+                    $stmt->bind_param("sssssssssssissddsisiiissi",
                         $tourData['external_id'], $tourData['bokun_booking_id'], $tourData['bokun_confirmation_code'],
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'], $tourData['total_amount_paid'],
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
                         $tourData['external_source'], $tourData['needs_guide_assignment'], $tourData['guide_id'],
-                        $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync']
+                        $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'], $tourData['product_id']
                     );
                 }
 

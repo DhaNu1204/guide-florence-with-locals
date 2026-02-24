@@ -552,6 +552,9 @@ class BokunAPI {
             }
         }
 
+        // Extract Bokun product ID for product classification
+        $bokunProductId = isset($productBooking['product']['id']) ? intval($productBooking['product']['id']) : null;
+
         // Store complete Bokun data as JSON for reference
         $bokunData = json_encode($booking);
 
@@ -559,6 +562,7 @@ class BokunAPI {
             'external_id' => $booking['confirmationCode'] ?? null,
             'bokun_booking_id' => (string)($booking['id'] ?? ''),
             'bokun_confirmation_code' => $booking['confirmationCode'] ?? null,
+            'product_id' => $bokunProductId,
             'title' => $productTitle,
             'date' => $date,
             'time' => $time,

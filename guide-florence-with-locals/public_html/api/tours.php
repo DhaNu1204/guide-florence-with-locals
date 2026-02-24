@@ -92,6 +92,57 @@ if ($checkParticipantNamesCol->num_rows === 0) {
     $conn->query("ALTER TABLE tours ADD COLUMN `participant_names` TEXT DEFAULT NULL AFTER `participants`");
 }
 
+// =====================================================
+// PRODUCT CLASSIFICATION SYSTEM
+// =====================================================
+
+// Ensure products table exists
+$checkProductsTable = $conn->query("SHOW TABLES LIKE 'products'");
+$productsTableIsNew = ($checkProductsTable->num_rows === 0);
+if ($productsTableIsNew) {
+    $conn->query("
+        CREATE TABLE `products` (
+            `bokun_product_id` int(11) NOT NULL,
+            `title` varchar(500) NOT NULL DEFAULT '',
+            `product_type` enum('tour','ticket') NOT NULL DEFAULT 'tour',
+            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`bokun_product_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
+// Ensure product_id column exists on tours
+$checkProductIdCol = $conn->query("SHOW COLUMNS FROM tours LIKE 'product_id'");
+if ($checkProductIdCol->num_rows === 0) {
+    $conn->query("ALTER TABLE tours ADD COLUMN `product_id` int(11) DEFAULT NULL AFTER `group_id`");
+    $conn->query("ALTER TABLE tours ADD KEY `idx_tours_product_id` (`product_id`)");
+
+    // One-time backfill: extract product_id from bokun_data JSON
+    $conn->query("
+        UPDATE tours
+        SET product_id = CAST(JSON_UNQUOTE(JSON_EXTRACT(bokun_data, '$.productBookings[0].product.id')) AS UNSIGNED)
+        WHERE bokun_data IS NOT NULL AND product_id IS NULL
+          AND JSON_EXTRACT(bokun_data, '$.productBookings[0].product.id') IS NOT NULL
+    ");
+
+    // Populate products table from backfilled data
+    $conn->query("
+        INSERT IGNORE INTO products (bokun_product_id, title)
+        SELECT DISTINCT product_id, title
+        FROM tours
+        WHERE product_id IS NOT NULL
+    ");
+
+    // Mark known ticket products
+    $conn->query("
+        UPDATE products SET product_type = 'ticket'
+        WHERE bokun_product_id IN (809838, 845665, 877713, 961802, 1115497, 1119143, 1162586)
+    ");
+
+    error_log("Product classification: backfilled product_id column, populated products table");
+}
+
 // Get the request method
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -121,6 +172,9 @@ switch ($method) {
         $past = isset($_GET['past']) && $_GET['past'] === 'true';
         $startDate = isset($_GET['start_date']) ? $_GET['start_date'] : null;
         $endDate = isset($_GET['end_date']) ? $_GET['end_date'] : null;
+
+        // Product type filter: 'tour' (default), 'ticket', or 'all'
+        $productType = isset($_GET['product_type']) ? $_GET['product_type'] : 'tour';
 
         // Build WHERE clause for filtering
         $whereConditions = [];
@@ -167,12 +221,22 @@ switch ($method) {
             $whereTypes .= "i";
         }
 
+        // Product type filter via products table
+        if ($productType === 'tour') {
+            // Exclude tickets; include tours and manual entries (NULL product_id)
+            $whereConditions[] = "(pr.product_type = 'tour' OR t.product_id IS NULL)";
+        } elseif ($productType === 'ticket') {
+            // Only tickets
+            $whereConditions[] = "pr.product_type = 'ticket'";
+        }
+        // 'all' = no filter
+
         $whereClause = count($whereConditions) > 0
             ? "WHERE " . implode(" AND ", $whereConditions)
             : "";
 
         // Get total count for pagination metadata (with filters)
-        $countSql = "SELECT COUNT(*) as total FROM tours t $whereClause";
+        $countSql = "SELECT COUNT(*) as total FROM tours t LEFT JOIN products pr ON t.product_id = pr.bokun_product_id $whereClause";
         if (count($whereParams) > 0) {
             $countStmt = $conn->prepare($countSql);
             $countStmt->bind_param($whereTypes, ...$whereParams);
@@ -195,10 +259,12 @@ switch ($method) {
                        tg.max_pax as group_max_pax,
                        tg.is_manual_merge as group_is_manual_merge,
                        tg.guide_id as group_guide_id,
-                       tg.guide_name as group_guide_name
+                       tg.guide_name as group_guide_name,
+                       pr.product_type as product_type
                 FROM tours t
                 LEFT JOIN guides g ON t.guide_id = g.id
                 LEFT JOIN tour_groups tg ON t.group_id = tg.id
+                LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
                 $whereClause
                 ORDER BY t.date ASC, t.time ASC
                 LIMIT ? OFFSET ?";

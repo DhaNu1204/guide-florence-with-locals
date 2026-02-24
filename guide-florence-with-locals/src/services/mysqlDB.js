@@ -229,6 +229,9 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
     if (filters.past) {
       url += `&past=true`;
     }
+    if (filters.product_type) {
+      url += `&product_type=${encodeURIComponent(filters.product_type)}`;
+    }
 
     const response = await axios.get(addCacheBuster(url));
 

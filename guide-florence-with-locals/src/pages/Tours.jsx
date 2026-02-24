@@ -380,9 +380,9 @@ const Tours = () => {
   // Memoized filtered and grouped tours by date
   // Note: Date and guide filtering is now done on the server side for efficiency
   const groupedTours = useMemo(() => {
-    // Filter out ticket products using smart keyword detection from tourFilters utility
-    // Tickets don't need guide assignment and belong in Priority Tickets page
-    let filtered = filterToursOnly(tours);
+    // Ticket products are now excluded by the backend (products table JOIN in tours.php).
+    // Frontend filterToursOnly() kept as import for other consumers but not needed here.
+    let filtered = tours;
 
     // Helper function to get time period
     const getTimePeriod = (time) => {

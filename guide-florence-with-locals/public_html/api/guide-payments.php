@@ -78,11 +78,7 @@ function getAllGuidePaymentSummaries($conn) {
                     WHERE t.guide_id = ?
                       AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                       AND t.cancelled = 0
-                      AND t.title NOT LIKE '%Entry Ticket%'
-                      AND t.title NOT LIKE '%Entrance Ticket%'
-                      AND t.title NOT LIKE '%Priority Ticket%'
-                      AND t.title NOT LIKE '%Skip the Line%'
-                      AND t.title NOT LIKE '%Skip-the-Line%'
+                      AND (NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket'))
                     GROUP BY tour_unit
                     HAVING MAX(p.id) IS NULL
                 ) unpaid_units
@@ -102,11 +98,7 @@ function getAllGuidePaymentSummaries($conn) {
                     WHERE t.guide_id = ?
                       AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                       AND t.cancelled = 0
-                      AND t.title NOT LIKE '%Entry Ticket%'
-                      AND t.title NOT LIKE '%Entrance Ticket%'
-                      AND t.title NOT LIKE '%Priority Ticket%'
-                      AND t.title NOT LIKE '%Skip the Line%'
-                      AND t.title NOT LIKE '%Skip-the-Line%'
+                      AND (NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket'))
                     GROUP BY tour_unit
                 ) paid_units
             ");
