@@ -10,6 +10,7 @@
 > - Troubleshooting: `docs/TROUBLESHOOTING.md`
 > - Architecture: `docs/ARCHITECTURE.md`
 > - Bokun integration: `docs/BOKUN_INTEGRATION.md`
+> - Technical report: `docs/TECHNICAL_REPORT.md`
 
 ## Project Overview
 
@@ -72,7 +73,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 ### Key File Locations
 - **Frontend Entry**: `src/main.jsx`
 - **Main Layout**: `src/components/Layout/ModernLayout.jsx` (354 lines)
-- **Largest Pages**: `src/pages/Payments.jsx` (2,125 lines), `src/pages/Tours.jsx` (1,531 lines)
+- **Largest Pages**: `src/pages/Payments.jsx` (2,125 lines), `src/pages/Tours.jsx` (1,698 lines)
 - **API Service**: `src/services/mysqlDB.js` (601 lines, 1-min localStorage cache)
 - **Database Config**: `public_html/api/config.php` (403 lines)
 - **Bokun Client**: `public_html/api/BokunAPI.php` (705 lines)
@@ -139,7 +140,7 @@ guide-florence-with-locals/
 │   └── HttpClient.php                   # Fallback HTTP client
 ├── database/migrations/                 # SQL migration files
 ├── scripts/                             # deploy.sh, deploy.ps1
-├── docs/                                # 14 documentation files
+├── docs/                                # 15 documentation files
 ├── .github/workflows/                   # main.yml (build), deploy.yml (deploy + health)
 └── dist/                                # Production build (.htaccess for SPA routing)
 ```
