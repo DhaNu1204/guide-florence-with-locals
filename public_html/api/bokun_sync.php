@@ -298,7 +298,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         WHERE id = ?
                     ");
                     $rescheduledFlag = ($isRescheduled || $existing['rescheduled']) ? 1 : 0;
-                    $stmt->bind_param("ssssssssissddsiississiii",
+                    $stmt->bind_param("ssssssssissddsiississii",
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'], $tourData['total_amount_paid'],
