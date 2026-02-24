@@ -44,6 +44,7 @@ firebase-debug.log
 
 # Security: Prevent test/debug/migration scripts from being committed
 **/test_*.php
+**/*_test.php
 **/debug_*.php
 **/check_*.php
 **/fix_*.php
@@ -52,6 +53,9 @@ firebase-debug.log
 **/create_*.php
 !**/create_users_table.sql
 **/temp_*.json
+**/compression_test.php
+**/sentry_test.php
+**/tests/run_tests.php
 
 # Security: Prevent config backups with credentials
 **/config_*_backup.php

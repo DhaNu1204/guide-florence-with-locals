@@ -249,12 +249,15 @@ header("X-Frame-Options: DENY");
 header("X-XSS-Protection: 1; mode=block");
 header("Referrer-Policy: strict-origin-when-cross-origin");
 
-// Production-only security headers
+// Environment-specific security headers
 if ($environment === 'production') {
     // HSTS - enforce HTTPS for 1 year
     header("Strict-Transport-Security: max-age=31536000; includeSubDomains");
-    // CSP - restrict resource loading (adjust as needed)
+    // CSP - restrict resource loading
     header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.bokun.is https://*.sentry.io;");
+} else {
+    // Development CSP - more permissive but still protective
+    header("Content-Security-Policy: default-src 'self' http://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:*; style-src 'self' 'unsafe-inline' http://localhost:*; img-src 'self' data: http://localhost:*; connect-src 'self' http://localhost:* https://api.bokun.is;");
 }
 
 // Handle preflight OPTIONS request
