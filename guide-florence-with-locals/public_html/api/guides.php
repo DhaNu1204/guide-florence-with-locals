@@ -1,12 +1,12 @@
 <?php
 require_once 'config.php';
+require_once 'Middleware.php';
+
+// Require authentication for all guide operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('guides');
-
-// Enable error reporting
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 // Log request for debugging
 $method = $_SERVER['REQUEST_METHOD'];

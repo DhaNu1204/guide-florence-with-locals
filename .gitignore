@@ -41,3 +41,28 @@ Thumbs.db
 # Firebase
 .firebase/
 firebase-debug.log
+
+# Security: Prevent test/debug/migration scripts from being committed
+**/test_*.php
+**/debug_*.php
+**/check_*.php
+**/fix_*.php
+**/migrate_*.php
+**/import_*.php
+**/create_*.php
+!**/create_users_table.sql
+**/temp_*.json
+
+# Security: Prevent config backups with credentials
+**/config_*_backup.php
+**/config_production.php
+**/config_local.php
+**/config_mysql_local.php
+**/config_remote_backup.php
+**/config_final_production.php
+**/config_current_backup.php
+
+# Security: Prevent old/alternate auth files
+**/auth_local.php
+**/auth_remote.php
+**/auth_mysql.php

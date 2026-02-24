@@ -1,38 +1,13 @@
 <?php
-// Enable error reporting and logging for debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-error_log("tours.php called: " . 
-    $_SERVER['REQUEST_METHOD'] . " " . $_SERVER['REQUEST_URI']);
-
-// Enable CORS
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: PUT, GET, POST, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header("Content-Type: application/json");
-
-// Handle preflight requests
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-// Include database configuration
+// Include database configuration (handles CORS, security headers, and DB connection)
 require_once 'config.php';
+require_once 'Middleware.php';
+
+// Require authentication for all tour operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('tours');
-
-// Create database connection using credentials from config.php
-$conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
-
-// Check connection
-if ($conn->connect_error) {
-    header("HTTP/1.1 500 Internal Server Error");
-    echo json_encode(["error" => "Connection failed: " . $conn->connect_error]);
-    exit();
-}
 
 // First, check if the cancelled column exists and add it if it doesn't
 $checkColumnQuery = "SHOW COLUMNS FROM tours LIKE 'cancelled'";

@@ -1,10 +1,10 @@
 <?php
-// Enable error reporting for debugging
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 // Include the config file for database credentials
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/Middleware.php';
+
+// Require authentication for all ticket operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('tickets');

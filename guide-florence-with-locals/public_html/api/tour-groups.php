@@ -16,17 +16,13 @@
  */
 
 require_once 'config.php';
+require_once 'Middleware.php';
+
+// Require authentication for all tour group operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting
 autoRateLimit('tour_groups');
-
-// Create database connection
-$conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
-if ($conn->connect_error) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Database connection failed']);
-    exit();
-}
 
 // Ensure tour_groups table exists
 ensureTourGroupsTable($conn);

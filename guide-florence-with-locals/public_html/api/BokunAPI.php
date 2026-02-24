@@ -84,8 +84,8 @@ class BokunAPI {
                 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
                 curl_setopt($ch, CURLOPT_TIMEOUT, 30);
                 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Disable for development
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
                 curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false); // Disable redirects to debug
                 curl_setopt($ch, CURLOPT_MAXREDIRS, 0);
                 curl_setopt($ch, CURLOPT_USERAGENT, 'Florence-Guides/1.0');

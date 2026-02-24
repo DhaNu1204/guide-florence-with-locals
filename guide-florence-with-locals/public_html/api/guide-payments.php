@@ -11,6 +11,10 @@
  */
 
 require_once 'config.php';
+require_once 'Middleware.php';
+
+// Require authentication for all guide payment operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting (read operations)
 applyRateLimit('read');

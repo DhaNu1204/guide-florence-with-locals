@@ -15,18 +15,11 @@ if (file_exists(__DIR__ . '/Encryption.php')) {
 // Apply rate limiting for Bokun sync operations (stricter: 10 per minute)
 applyRateLimit('bokun_sync');
 
-// Simple auth check function for API endpoints
+// Auth check function for API endpoints
 function checkAuth() {
-    $headers = getallheaders();
-    $token = isset($headers['Authorization']) ? str_replace('Bearer ', '', $headers['Authorization']) : null;
-    
-    if (!$token) {
-        // For development, skip auth check
-        return true;
-    }
-    
-    // In development, accept any token
-    return true;
+    global $conn;
+    require_once __DIR__ . '/Middleware.php';
+    return Middleware::verifyAuth($conn) !== false;
 }
 
 // Get Bokun configuration
@@ -928,6 +921,10 @@ function backfillParticipantNames() {
         'skipped' => $skipped
     ];
 }
+
+// Require authentication for all sync operations
+require_once __DIR__ . '/Middleware.php';
+Middleware::requireAuth($conn);
 
 // Handle requests
 $method = $_SERVER['REQUEST_METHOD'];
