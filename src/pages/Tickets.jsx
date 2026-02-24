@@ -24,19 +24,23 @@ import Input from '../components/UI/Input';
 
 // Predefined locations
 const LOCATION_OPTIONS = [
-  'Accademia',
-  'Uffizi'
+  'Accademia'
 ];
 
-// Generate time options in 5-minute intervals (00:00 to 23:55)
+// Locations available in the add/edit form (Uffizi removed)
+const FORM_LOCATION_OPTIONS = [
+  'Accademia'
+];
+
+// Generate time options in 15-minute intervals (08:15 to 17:30)
 const generateTimeOptions = () => {
   const options = [];
-  for (let hour = 0; hour < 24; hour++) {
-    for (let minute = 0; minute < 60; minute += 5) {
-      const formattedHour = hour.toString().padStart(2, '0');
-      const formattedMinute = minute.toString().padStart(2, '0');
-      options.push(`${formattedHour}:${formattedMinute}`);
-    }
+  const startMinutes = 8 * 60 + 15;  // 08:15
+  const endMinutes = 17 * 60 + 30;   // 17:30
+  for (let m = startMinutes; m <= endMinutes; m += 15) {
+    const hour = Math.floor(m / 60).toString().padStart(2, '0');
+    const minute = (m % 60).toString().padStart(2, '0');
+    options.push(`${hour}:${minute}`);
   }
   return options;
 };
@@ -103,7 +107,7 @@ const Tickets = () => {
   const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
 
   const [formData, setFormData] = useState({
-    location: '',
+    location: 'Accademia',
     code: '',
     date: '',
     time: '',
@@ -200,7 +204,7 @@ const Tickets = () => {
       
       // Reset form
       setFormData({
-        location: '',
+        location: 'Accademia',
         code: '',
         date: '',
         time: '',
@@ -427,12 +431,12 @@ const Tickets = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 overflow-x-hidden">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Ticket Management</h1>
-          <p className="text-gray-600 mt-1">Manage museum tickets and inventory</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Ticket Management</h1>
+          <p className="text-xs md:text-base text-gray-600 mt-1">Manage museum tickets and inventory</p>
         </div>
         {isAdmin() && (
           <Button 
@@ -464,7 +468,7 @@ const Tickets = () => {
                 }}
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="all">All Locations</option>
+                <option value="all" hidden>All Locations</option>
                 {LOCATION_OPTIONS.map(location => (
                   <option key={location} value={location.toLowerCase()}>
                     {location}
@@ -550,8 +554,7 @@ const Tickets = () => {
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   >
-                    <option value="">Select a location</option>
-                    {LOCATION_OPTIONS.map((location, index) => (
+                    {FORM_LOCATION_OPTIONS.map((location, index) => (
                       <option key={index} value={location}>
                         {location}
                       </option>
@@ -559,7 +562,7 @@ const Tickets = () => {
                   </select>
                 </div>
               </div>
-              
+
               <div>
                 <Input
                   label="Ticket Code"
@@ -691,8 +694,7 @@ const Tickets = () => {
                       className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                       required
                     >
-                      <option value="">Select a location</option>
-                      {LOCATION_OPTIONS.map((location, index) => (
+                      {FORM_LOCATION_OPTIONS.map((location, index) => (
                         <option key={index} value={location}>
                           {location}
                         </option>
@@ -846,22 +848,23 @@ const Tickets = () => {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmation && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-8 max-w-md mx-auto shadow-xl">
-            <h2 className="text-xl font-bold mb-4">Delete Ticket</h2>
-            <p className="mb-6">
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
+          <div className="bg-white rounded-t-2xl md:rounded-lg p-6 md:p-8 max-w-md w-full md:mx-auto shadow-xl">
+            <div className="w-10 h-1 bg-stone-300 rounded-full mx-auto mb-4 md:hidden" />
+            <h2 className="text-lg md:text-xl font-bold mb-3 md:mb-4">Delete Ticket</h2>
+            <p className="mb-5 md:mb-6 text-sm md:text-base">
               Are you sure you want to delete this ticket ({deleteConfirmation.code})? This action cannot be undone.
             </p>
-            <div className="flex justify-end space-x-4">
+            <div className="flex flex-col-reverse md:flex-row md:justify-end gap-3 md:space-x-4 md:gap-0">
               <button
                 onClick={cancelDelete}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+                className="w-full md:w-auto min-h-[44px] px-4 py-2.5 bg-gray-200 text-gray-800 rounded-tuscan hover:bg-gray-300 transition-colors touch-manipulation"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                className="w-full md:w-auto min-h-[44px] px-4 py-2.5 bg-red-600 text-white rounded-tuscan hover:bg-red-700 transition-colors touch-manipulation"
                 disabled={isLoading}
               >
                 {isLoading ? 'Deleting...' : 'Delete'}
@@ -1012,71 +1015,71 @@ const Tickets = () => {
                                 </span>
                               </h3>
                             </div>
-                            <div className="overflow-x-auto">
-                              {uffiziTickets.length === 0 ? (
+                            {uffiziTickets.length === 0 ? (
                                 <p className="text-gray-500 text-center py-4">No Uffizi tickets for this date</p>
                               ) : (
-                                <table className="min-w-full divide-y divide-gray-200">
-                                  <thead className="bg-gray-50">
-                                    <tr>
-                                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Time
-                                      </th>
-                                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <span className="hidden sm:inline">Code</span>
-                                        <span className="sm:hidden">#</span>
-                                      </th>
-                                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <span className="hidden sm:inline">Quantity</span>
-                                        <span className="sm:hidden">Qty</span>
-                                      </th>
-                                      <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="bg-white divide-y divide-gray-200">
+                                <>
+                                  {/* Desktop Table */}
+                                  <div className="hidden md:block overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                      <thead className="bg-gray-50">
+                                        <tr>
+                                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="bg-white divide-y divide-gray-200">
+                                        {uffiziTickets.map((ticket) => (
+                                          <tr key={ticket.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{ticket.time || 'No time'}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">{ticket.code}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Quantity: {ticket.quantity}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                              {isAdmin() && (
+                                                <>
+                                                  <button onClick={() => startEdit(ticket)} className="text-blue-600 hover:text-blue-900 mr-3" title="Edit ticket">
+                                                    <FiEdit2 className="w-4 h-4 inline" />
+                                                  </button>
+                                                  <button onClick={() => confirmDelete(ticket)} className="text-red-600 hover:text-red-900" title="Delete ticket">
+                                                    <FiTrash2 className="w-4 h-4 inline" />
+                                                  </button>
+                                                </>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                  {/* Mobile Cards */}
+                                  <div className="md:hidden divide-y divide-stone-100">
                                     {uffiziTickets.map((ticket) => (
-                                      <tr key={ticket.id} className="hover:bg-gray-50">
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                          {ticket.time || 'No time'}
-                                        </td>
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                                          {ticket.code}
-                                        </td>
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                          <span className="hidden sm:inline">Quantity: </span>{ticket.quantity}
-                                        </td>
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                          {isAdmin() && (
-                                            <>
-                                              <button
-                                                onClick={() => startEdit(ticket)}
-                                                className="text-blue-600 hover:text-blue-900 mr-3"
-                                                title="Edit ticket"
-                                              >
-                                                <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                </svg>
-                                              </button>
-                                              <button
-                                                onClick={() => confirmDelete(ticket)}
-                                                className="text-red-600 hover:text-red-900"
-                                                title="Delete ticket"
-                                              >
-                                                <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                              </button>
-                                            </>
-                                          )}
-                                        </td>
-                                      </tr>
+                                      <div key={ticket.id} className="p-3 active:bg-stone-50 touch-manipulation">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-sm font-bold text-stone-900">{ticket.time || 'No time'}</span>
+                                            <span className="text-stone-300">|</span>
+                                            <span className="font-mono text-sm text-stone-700 truncate max-w-[140px]">{ticket.code}</span>
+                                          </div>
+                                          <span className="text-sm font-semibold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-full">Qty: {ticket.quantity}</span>
+                                        </div>
+                                        {isAdmin() && (
+                                          <div className="flex justify-end gap-3 mt-2">
+                                            <button onClick={() => startEdit(ticket)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-blue-600 active:bg-blue-50 rounded-tuscan touch-manipulation">
+                                              <FiEdit2 className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => confirmDelete(ticket)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-red-600 active:bg-red-50 rounded-tuscan touch-manipulation">
+                                              <FiTrash2 className="w-4 h-4" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     ))}
-                                  </tbody>
-                                </table>
+                                  </div>
+                                </>
                               )}
-                            </div>
                           </div>
                         );
                       })()}
@@ -1106,71 +1109,71 @@ const Tickets = () => {
                                 </span>
                               </h3>
                             </div>
-                            <div className="overflow-x-auto">
-                              {accademiaTickets.length === 0 ? (
+                            {accademiaTickets.length === 0 ? (
                                 <p className="text-gray-500 text-center py-4">No Accademia tickets for this date</p>
                               ) : (
-                                <table className="min-w-full divide-y divide-gray-200">
-                                  <thead className="bg-gray-50">
-                                    <tr>
-                                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Time
-                                      </th>
-                                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <span className="hidden sm:inline">Code</span>
-                                        <span className="sm:hidden">#</span>
-                                      </th>
-                                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <span className="hidden sm:inline">Quantity</span>
-                                        <span className="sm:hidden">Qty</span>
-                                      </th>
-                                      <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="bg-white divide-y divide-gray-200">
+                                <>
+                                  {/* Desktop Table */}
+                                  <div className="hidden md:block overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                      <thead className="bg-gray-50">
+                                        <tr>
+                                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="bg-white divide-y divide-gray-200">
+                                        {accademiaTickets.map((ticket) => (
+                                          <tr key={ticket.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{ticket.time || 'No time'}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">{ticket.code}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Quantity: {ticket.quantity}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                              {isAdmin() && (
+                                                <>
+                                                  <button onClick={() => startEdit(ticket)} className="text-blue-600 hover:text-blue-900 mr-3" title="Edit ticket">
+                                                    <FiEdit2 className="w-4 h-4 inline" />
+                                                  </button>
+                                                  <button onClick={() => confirmDelete(ticket)} className="text-red-600 hover:text-red-900" title="Delete ticket">
+                                                    <FiTrash2 className="w-4 h-4 inline" />
+                                                  </button>
+                                                </>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                  {/* Mobile Cards */}
+                                  <div className="md:hidden divide-y divide-stone-100">
                                     {accademiaTickets.map((ticket) => (
-                                      <tr key={ticket.id} className="hover:bg-gray-50">
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                          {ticket.time || 'No time'}
-                                        </td>
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                                          {ticket.code}
-                                        </td>
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                          <span className="hidden sm:inline">Quantity: </span>{ticket.quantity}
-                                        </td>
-                                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                          {isAdmin() && (
-                                            <>
-                                              <button
-                                                onClick={() => startEdit(ticket)}
-                                                className="text-blue-600 hover:text-blue-900 mr-3"
-                                                title="Edit ticket"
-                                              >
-                                                <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                </svg>
-                                              </button>
-                                              <button
-                                                onClick={() => confirmDelete(ticket)}
-                                                className="text-red-600 hover:text-red-900"
-                                                title="Delete ticket"
-                                              >
-                                                <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                              </button>
-                                            </>
-                                          )}
-                                        </td>
-                                      </tr>
+                                      <div key={ticket.id} className="p-3 active:bg-stone-50 touch-manipulation">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-sm font-bold text-stone-900">{ticket.time || 'No time'}</span>
+                                            <span className="text-stone-300">|</span>
+                                            <span className="font-mono text-sm text-stone-700 truncate max-w-[140px]">{ticket.code}</span>
+                                          </div>
+                                          <span className="text-sm font-semibold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-full">Qty: {ticket.quantity}</span>
+                                        </div>
+                                        {isAdmin() && (
+                                          <div className="flex justify-end gap-3 mt-2">
+                                            <button onClick={() => startEdit(ticket)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-blue-600 active:bg-blue-50 rounded-tuscan touch-manipulation">
+                                              <FiEdit2 className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => confirmDelete(ticket)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-red-600 active:bg-red-50 rounded-tuscan touch-manipulation">
+                                              <FiTrash2 className="w-4 h-4" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     ))}
-                                  </tbody>
-                                </table>
+                                  </div>
+                                </>
                               )}
-                            </div>
                           </div>
                         );
                       })()}
@@ -1216,33 +1219,22 @@ const Tickets = () => {
                                 {getDateLabel(date)} - {format(new Date(date), "dd/MM/yyyy")}
                               </h3>
                             </div>
-                            <div className="overflow-x-auto">
+                            {/* Desktop Table */}
+                            <div className="hidden md:block overflow-x-auto">
                               <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                   <tr>
-                                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                      Location
-                                    </th>
-                                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                      Time
-                                    </th>
-                                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                      <span className="hidden sm:inline">Code</span>
-                                      <span className="sm:hidden">#</span>
-                                    </th>
-                                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                      <span className="hidden sm:inline">Quantity</span>
-                                      <span className="sm:hidden">Qty</span>
-                                    </th>
-                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                      Actions
-                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                   </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                   {dateTickets.map((ticket) => (
                                     <tr key={ticket.id} className="hover:bg-gray-50">
-                                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                                      <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                           ticket.location && ticket.location.toLowerCase() === 'uffizi'
                                             ? 'bg-blue-100 text-blue-800'
@@ -1251,35 +1243,17 @@ const Tickets = () => {
                                           {ticket.location || 'Unknown'}
                                         </span>
                                       </td>
-                                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {ticket.time || 'No time'}
-                                      </td>
-                                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                                        {ticket.code}
-                                      </td>
-                                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        <span className="hidden sm:inline">Quantity: </span>{ticket.quantity}
-                                      </td>
-                                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{ticket.time || 'No time'}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">{ticket.code}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Quantity: {ticket.quantity}</td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         {isAdmin() && (
                                           <>
-                                            <button
-                                              onClick={() => startEdit(ticket)}
-                                              className="text-blue-600 hover:text-blue-900 mr-3"
-                                              title="Edit ticket"
-                                            >
-                                              <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                              </svg>
+                                            <button onClick={() => startEdit(ticket)} className="text-blue-600 hover:text-blue-900 mr-3" title="Edit ticket">
+                                              <FiEdit2 className="w-4 h-4 inline" />
                                             </button>
-                                            <button
-                                              onClick={() => confirmDelete(ticket)}
-                                              className="text-red-600 hover:text-red-900"
-                                              title="Delete ticket"
-                                            >
-                                              <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                              </svg>
+                                            <button onClick={() => confirmDelete(ticket)} className="text-red-600 hover:text-red-900" title="Delete ticket">
+                                              <FiTrash2 className="w-4 h-4 inline" />
                                             </button>
                                           </>
                                         )}
@@ -1288,6 +1262,39 @@ const Tickets = () => {
                                   ))}
                                 </tbody>
                               </table>
+                            </div>
+                            {/* Mobile Cards */}
+                            <div className="md:hidden divide-y divide-stone-100">
+                              {dateTickets.map((ticket) => (
+                                <div key={ticket.id} className="p-3 active:bg-stone-50 touch-manipulation">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="text-sm font-bold text-stone-900 flex-shrink-0">{ticket.time || 'No time'}</span>
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+                                        ticket.location && ticket.location.toLowerCase() === 'uffizi'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : 'bg-green-100 text-green-800'
+                                      }`}>
+                                        {ticket.location || 'Unknown'}
+                                      </span>
+                                    </div>
+                                    <span className="text-sm font-semibold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-full flex-shrink-0">Qty: {ticket.quantity}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between mt-1.5">
+                                    <span className="font-mono text-sm text-stone-600 truncate">{ticket.code}</span>
+                                    {isAdmin() && (
+                                      <div className="flex gap-2 flex-shrink-0">
+                                        <button onClick={() => startEdit(ticket)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-blue-600 active:bg-blue-50 rounded-tuscan touch-manipulation">
+                                          <FiEdit2 className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => confirmDelete(ticket)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-red-600 active:bg-red-50 rounded-tuscan touch-manipulation">
+                                          <FiTrash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         ))}
@@ -1320,7 +1327,7 @@ const Tickets = () => {
                         <button
                           onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
                           disabled={currentPage === 1}
-                          className={`relative inline-flex items-center px-2 py-2 rounded-l-md border text-sm font-medium ${
+                          className={`relative inline-flex items-center px-2 py-2 min-h-[44px] min-w-[44px] justify-center rounded-l-md border text-sm font-medium touch-manipulation ${
                             currentPage === 1
                               ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
                               : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
@@ -1348,7 +1355,7 @@ const Tickets = () => {
                             <button
                               key={idx}
                               onClick={() => handlePageChange(page)}
-                              className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                              className={`relative inline-flex items-center px-4 py-2 min-h-[44px] border text-sm font-medium touch-manipulation ${
                                 currentPage === page
                                   ? 'z-10 bg-purple-50 border-purple-500 text-purple-600'
                                   : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
@@ -1363,7 +1370,7 @@ const Tickets = () => {
                         <button
                           onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
                           disabled={currentPage === totalPages}
-                          className={`relative inline-flex items-center px-2 py-2 rounded-r-md border text-sm font-medium ${
+                          className={`relative inline-flex items-center px-2 py-2 min-h-[44px] min-w-[44px] justify-center rounded-r-md border text-sm font-medium touch-manipulation ${
                             currentPage === totalPages
                               ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
                               : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'

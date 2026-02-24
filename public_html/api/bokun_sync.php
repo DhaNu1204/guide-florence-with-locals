@@ -15,18 +15,11 @@ if (file_exists(__DIR__ . '/Encryption.php')) {
 // Apply rate limiting for Bokun sync operations (stricter: 10 per minute)
 applyRateLimit('bokun_sync');
 
-// Simple auth check function for API endpoints
+// Auth check function for API endpoints
 function checkAuth() {
-    $headers = getallheaders();
-    $token = isset($headers['Authorization']) ? str_replace('Bearer ', '', $headers['Authorization']) : null;
-    
-    if (!$token) {
-        // For development, skip auth check
-        return true;
-    }
-    
-    // In development, accept any token
-    return true;
+    global $conn;
+    require_once __DIR__ . '/Middleware.php';
+    return Middleware::verifyAuth($conn) !== false;
 }
 
 // Get Bokun configuration
@@ -255,6 +248,14 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                 // Transform booking to our tour format
                 $tourData = $bokunAPI->transformBookingToTour($booking);
 
+                // Auto-register product in products table if new
+                if ($tourData['product_id']) {
+                    $prodStmt = $conn->prepare("INSERT IGNORE INTO products (bokun_product_id, title) VALUES (?, ?)");
+                    $prodStmt->bind_param("is", $tourData['product_id'], $tourData['title']);
+                    $prodStmt->execute();
+                    $prodStmt->close();
+                }
+
                 // Check if tour already exists and get current date/time for rescheduling detection
                 $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE bokun_booking_id = ? OR external_id = ?");
                 $stmt->bind_param("ss", $tourData['bokun_booking_id'], $tourData['external_id']);
@@ -287,46 +288,43 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         UPDATE tours SET
                         title = ?, date = ?, time = ?, duration = ?, language = ?,
                         customer_name = ?, customer_email = ?, customer_phone = ?,
-                        participants = ?, booking_channel = ?, total_amount_paid = ?,
+                        participants = ?, participant_names = ?, booking_channel = ?, total_amount_paid = ?,
                         expected_amount = ?, payment_status = ?, paid = ?,
                         cancelled = ?, bokun_data = ?, last_sync = ?,
                         rescheduled = ?, original_date = ?, original_time = ?,
+                        product_id = ?,
                         rescheduled_at = " . ($isRescheduled ? "NOW()" : "rescheduled_at") . ",
                         updated_at = NOW()
                         WHERE id = ?
                     ");
                     $rescheduledFlag = ($isRescheduled || $existing['rescheduled']) ? 1 : 0;
-                    $stmt->bind_param("ssssssssisddsiississi",
+                    $stmt->bind_param("ssssssssissddsiississiii",
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
-                        $tourData['participants'], $tourData['booking_channel'], $tourData['total_amount_paid'],
+                        $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'], $tourData['total_amount_paid'],
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'],
-                        $rescheduledFlag, $originalDate, $originalTime, $existing['id']
+                        $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $existing['id']
                     );
                 } else {
                     // Insert new tour
                     $stmt = $conn->prepare("
                         INSERT INTO tours (
                             external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration, language,
-                            customer_name, customer_email, customer_phone, participants,
+                            customer_name, customer_email, customer_phone, participants, participant_names,
                             booking_channel, total_amount_paid, expected_amount, payment_status, paid,
                             external_source, needs_guide_assignment, guide_id, cancelled,
-                            bokun_data, last_sync, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                            bokun_data, last_sync, product_id, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                     ");
-                    // Count: 23 parameters (external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration, language,
-                    //        customer_name, customer_email, customer_phone, participants, booking_channel, total_amount_paid,
-                    //        expected_amount, payment_status, paid, external_source, needs_guide_assignment, guide_id,
-                    //        cancelled, bokun_data, last_sync)
-                    $stmt->bind_param("sssssssssssisddsisiiiss",
+                    $stmt->bind_param("sssssssssssissddsisiiissi",
                         $tourData['external_id'], $tourData['bokun_booking_id'], $tourData['bokun_confirmation_code'],
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
-                        $tourData['participants'], $tourData['booking_channel'], $tourData['total_amount_paid'],
+                        $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'], $tourData['total_amount_paid'],
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
                         $tourData['external_source'], $tourData['needs_guide_assignment'], $tourData['guide_id'],
-                        $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync']
+                        $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'], $tourData['product_id']
                     );
                 }
 
@@ -361,6 +359,15 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         // Update last sync timestamp
         $conn->query("UPDATE bokun_config SET last_sync = NOW()");
 
+        // Auto-group tours after sync (only if we synced any bookings)
+        $groupingResult = null;
+        if ($createdCount > 0 || $updatedCount > 0) {
+            $groupingResult = autoGroupAfterSync($conn, $startDate, $endDate);
+            if ($groupingResult) {
+                error_log("Bokun Sync: Auto-grouped " . ($groupingResult['tours_grouped'] ?? 0) . " tours into " . ($groupingResult['groups_created'] ?? 0) . " groups");
+            }
+        }
+
         // Calculate duration and update sync log
         $duration = round(microtime(true) - $startTime, 2);
         $syncedCount = $createdCount + $updatedCount;
@@ -386,7 +393,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
             'end_date' => $endDate,
             'sync_type' => $syncType,
             'duration_seconds' => $duration,
-            'errors' => $errors
+            'errors' => $errors,
+            'grouping' => $groupingResult
         ];
 
     } catch (Exception $e) {
@@ -412,7 +420,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         }
 
         return [
-            'error' => 'Bokun API Error: ' . $e->getMessage(),
+            'error' => 'Bokun sync failed',
             'start_date' => $startDate,
             'end_date' => $endDate,
             'sync_type' => $syncType
@@ -544,7 +552,7 @@ function testBokunConnection() {
         } catch (Exception $e) {
             return [
                 'success' => false,
-                'error' => 'Network connectivity test failed: ' . $e->getMessage(),
+                'error' => 'Network connectivity test failed',
                 'solution' => 'Please check your internet connection and firewall settings'
             ];
         }
@@ -592,15 +600,8 @@ function testBokunConnection() {
         
         return [
             'success' => false,
-            'error' => 'Connection test failed: ' . $errorMsg,
-            'solution' => $solution,
-            'debug' => [
-                'php_version' => PHP_VERSION,
-                'curl_enabled' => function_exists('curl_init'),
-                'openssl_enabled' => extension_loaded('openssl'),
-                'allow_url_fopen' => ini_get('allow_url_fopen'),
-                'https_wrapper' => in_array('https', stream_get_wrappers())
-            ]
+            'error' => 'Connection test failed',
+            'solution' => $solution
         ];
     }
 }
@@ -650,6 +651,283 @@ function getSyncInfo() {
     ];
 }
 
+/**
+ * Auto-group tours after a Bokun sync.
+ * Groups ungrouped, non-cancelled tours by normalized title + date + time.
+ * Respects manually merged groups (is_manual_merge=1) — never touches them.
+ * Splits groups that exceed 9 PAX (Uffizi rule).
+ */
+function autoGroupAfterSync($conn, $startDate, $endDate) {
+    // Check if tour_groups table exists
+    $tableCheck = $conn->query("SHOW TABLES LIKE 'tour_groups'");
+    if ($tableCheck->num_rows === 0) {
+        error_log("autoGroupAfterSync: tour_groups table does not exist, skipping");
+        return null;
+    }
+
+    // Check if group_id column exists in tours
+    $colCheck = $conn->query("SHOW COLUMNS FROM tours LIKE 'group_id'");
+    if ($colCheck->num_rows === 0) {
+        error_log("autoGroupAfterSync: group_id column does not exist in tours, skipping");
+        return null;
+    }
+
+    // Acquire advisory lock to prevent concurrent auto-grouping
+    $lockResult = $conn->query("SELECT GET_LOCK('auto_group', 10) as locked");
+    $lockRow = $lockResult->fetch_assoc();
+    if (!$lockRow || !$lockRow['locked']) {
+        error_log("autoGroupAfterSync: Could not acquire lock, grouping already in progress");
+        return ['groups_created' => 0, 'tours_grouped' => 0, 'skipped' => 'lock_unavailable'];
+    }
+
+    // Find ungrouped, non-cancelled tours in the sync date range
+    // Exclude tours that are already in manually merged groups
+    $stmt = $conn->prepare("
+        SELECT t.id, t.title, t.date, t.time, t.participants, t.group_id
+        FROM tours t
+        LEFT JOIN tour_groups tg ON t.group_id = tg.id
+        WHERE t.date >= ? AND t.date <= ?
+          AND t.cancelled = 0
+          AND (t.group_id IS NULL OR tg.is_manual_merge = 0)
+        ORDER BY t.title, t.date, t.time
+    ");
+    $stmt->bind_param('ss', $startDate, $endDate);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    $tours = [];
+    while ($row = $result->fetch_assoc()) {
+        $tours[] = $row;
+    }
+    $stmt->close();
+
+    if (count($tours) === 0) {
+        $conn->query("SELECT RELEASE_LOCK('auto_group')");
+        return ['groups_created' => 0, 'tours_grouped' => 0];
+    }
+
+    // Group tours by normalized title + date + time
+    $buckets = [];
+    foreach ($tours as $tour) {
+        $normTitle = strtolower(trim(preg_replace('/\s+/', ' ', $tour['title'])));
+        $timeParts = explode(':', $tour['time']);
+        $normTime = sprintf('%02d:%02d', intval($timeParts[0]), intval($timeParts[1] ?? 0));
+        $key = $normTitle . '|' . $tour['date'] . '|' . $normTime;
+
+        if (!isset($buckets[$key])) {
+            $buckets[$key] = [];
+        }
+        $buckets[$key][] = $tour;
+    }
+
+    $groupsCreated = 0;
+    $toursGrouped = 0;
+
+    $conn->begin_transaction();
+    try {
+
+    foreach ($buckets as $key => $bucketTours) {
+        // Only create groups for 2+ bookings with the same departure
+        if (count($bucketTours) < 2) {
+            continue;
+        }
+
+        // Split into sub-groups by max PAX (9)
+        $subGroups = [];
+        $current = [];
+        $currentPax = 0;
+        foreach ($bucketTours as $tour) {
+            $pax = intval($tour['participants']);
+            if ($currentPax + $pax > 9 && count($current) > 0) {
+                $subGroups[] = $current;
+                $current = [];
+                $currentPax = 0;
+            }
+            $current[] = $tour;
+            $currentPax += $pax;
+        }
+        if (count($current) > 0) {
+            $subGroups[] = $current;
+        }
+
+        foreach ($subGroups as $subGroup) {
+            if (count($subGroup) < 2) {
+                continue;
+            }
+
+            $totalPax = array_sum(array_column($subGroup, 'participants'));
+            $firstTour = $subGroup[0];
+
+            // Check if any tour in this sub-group already belongs to an auto-group
+            $existingGroupId = null;
+            foreach ($subGroup as $t) {
+                if ($t['group_id']) {
+                    $existingGroupId = intval($t['group_id']);
+                    break;
+                }
+            }
+
+            if ($existingGroupId) {
+                // Update existing group's PAX and reassign tours
+                $updateStmt = $conn->prepare("
+                    UPDATE tour_groups SET total_pax = ?, updated_at = NOW()
+                    WHERE id = ? AND is_manual_merge = 0
+                ");
+                $updateStmt->bind_param('ii', $totalPax, $existingGroupId);
+                $updateStmt->execute();
+                $updateStmt->close();
+
+                // Assign all tours in this sub-group to the existing group
+                $tourIds = array_column($subGroup, 'id');
+                $placeholders = implode(',', array_fill(0, count($tourIds), '?'));
+                $types = 'i' . str_repeat('i', count($tourIds));
+                $params = array_merge([$existingGroupId], $tourIds);
+
+                $assignStmt = $conn->prepare("UPDATE tours SET group_id = ? WHERE id IN ($placeholders)");
+                $assignStmt->bind_param($types, ...$params);
+                $assignStmt->execute();
+                $assignStmt->close();
+
+                $toursGrouped += count($subGroup);
+            } else {
+                // Create new group
+                $insertStmt = $conn->prepare("
+                    INSERT INTO tour_groups (group_date, group_time, display_name, total_pax, is_manual_merge)
+                    VALUES (?, ?, ?, ?, 0)
+                ");
+                $insertStmt->bind_param('sssi',
+                    $firstTour['date'],
+                    $firstTour['time'],
+                    $firstTour['title'],
+                    $totalPax
+                );
+
+                if ($insertStmt->execute()) {
+                    $newGroupId = $conn->insert_id;
+                    $insertStmt->close();
+
+                    // Assign tours to the new group
+                    $tourIds = array_column($subGroup, 'id');
+                    $placeholders = implode(',', array_fill(0, count($tourIds), '?'));
+                    $types = 'i' . str_repeat('i', count($tourIds));
+                    $params = array_merge([$newGroupId], $tourIds);
+
+                    $assignStmt = $conn->prepare("UPDATE tours SET group_id = ? WHERE id IN ($placeholders)");
+                    $assignStmt->bind_param($types, ...$params);
+                    $assignStmt->execute();
+                    $assignStmt->close();
+
+                    // Copy guide assignment from first tour that has one
+                    $guideStmt = $conn->prepare("
+                        SELECT t.guide_id, g.name as guide_name
+                        FROM tours t
+                        LEFT JOIN guides g ON t.guide_id = g.id
+                        WHERE t.group_id = ? AND t.guide_id IS NOT NULL
+                        LIMIT 1
+                    ");
+                    $guideStmt->bind_param('i', $newGroupId);
+                    $guideStmt->execute();
+                    $guideRow = $guideStmt->get_result()->fetch_assoc();
+                    $guideStmt->close();
+
+                    if ($guideRow) {
+                        $updateGuideStmt = $conn->prepare("
+                            UPDATE tour_groups SET guide_id = ?, guide_name = ?, updated_at = NOW() WHERE id = ?
+                        ");
+                        $updateGuideStmt->bind_param('isi', $guideRow['guide_id'], $guideRow['guide_name'], $newGroupId);
+                        $updateGuideStmt->execute();
+                        $updateGuideStmt->close();
+                    }
+
+                    $groupsCreated++;
+                    $toursGrouped += count($subGroup);
+                } else {
+                    error_log("autoGroupAfterSync: Failed to create group: " . $conn->error);
+                    $insertStmt->close();
+                }
+            }
+        }
+    }
+
+    // Clean up orphaned groups (no tours reference them)
+    $conn->query("DELETE FROM tour_groups WHERE id NOT IN (SELECT DISTINCT group_id FROM tours WHERE group_id IS NOT NULL)");
+
+    $conn->commit();
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        $conn->query("SELECT RELEASE_LOCK('auto_group')");
+        error_log("autoGroupAfterSync: Transaction failed: " . $e->getMessage());
+        return ['groups_created' => 0, 'tours_grouped' => 0, 'error' => 'Auto-grouping failed'];
+    }
+
+    $conn->query("SELECT RELEASE_LOCK('auto_group')");
+
+    return [
+        'groups_created' => $groupsCreated,
+        'tours_grouped' => $toursGrouped,
+        'date_range' => ['start' => $startDate, 'end' => $endDate]
+    ];
+}
+
+/**
+ * Backfill participant_names from existing bokun_data.
+ * Parses specialRequests for GYG bookings.
+ */
+function backfillParticipantNames() {
+    global $conn;
+
+    // Ensure column exists
+    $colCheck = $conn->query("SHOW COLUMNS FROM tours LIKE 'participant_names'");
+    if ($colCheck->num_rows === 0) {
+        $conn->query("ALTER TABLE tours ADD COLUMN `participant_names` TEXT DEFAULT NULL AFTER `participants`");
+    }
+
+    $bokunAPI = new BokunAPI(getBokunConfig() ?: []);
+
+    $result = $conn->query("
+        SELECT id, bokun_data FROM tours
+        WHERE participant_names IS NULL
+          AND bokun_data IS NOT NULL
+          AND bokun_data != ''
+        ORDER BY id ASC
+    ");
+
+    $updated = 0;
+    $skipped = 0;
+    $total = $result->num_rows;
+
+    while ($row = $result->fetch_assoc()) {
+        $booking = json_decode($row['bokun_data'], true);
+        if (!is_array($booking)) {
+            $skipped++;
+            continue;
+        }
+
+        $names = $bokunAPI->parseParticipantNames($booking);
+        if ($names) {
+            $stmt = $conn->prepare("UPDATE tours SET participant_names = ? WHERE id = ?");
+            $stmt->bind_param("si", $names, $row['id']);
+            $stmt->execute();
+            $stmt->close();
+            $updated++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    return [
+        'success' => true,
+        'total_checked' => $total,
+        'updated' => $updated,
+        'skipped' => $skipped
+    ];
+}
+
+// Require authentication for all sync operations
+require_once __DIR__ . '/Middleware.php';
+Middleware::requireAuth($conn);
+
 // Handle requests
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
@@ -685,6 +963,10 @@ switch ($method) {
 
             case 'sync-info':
                 echo json_encode(getSyncInfo());
+                break;
+
+            case 'backfill-names':
+                echo json_encode(backfillParticipantNames());
                 break;
 
             default:

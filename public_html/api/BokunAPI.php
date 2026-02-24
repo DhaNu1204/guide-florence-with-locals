@@ -84,8 +84,8 @@ class BokunAPI {
                 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
                 curl_setopt($ch, CURLOPT_TIMEOUT, 30);
                 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Disable for development
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
                 curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false); // Disable redirects to debug
                 curl_setopt($ch, CURLOPT_MAXREDIRS, 0);
                 curl_setopt($ch, CURLOPT_USERAGENT, 'Florence-Guides/1.0');
@@ -552,6 +552,9 @@ class BokunAPI {
             }
         }
 
+        // Extract Bokun product ID for product classification
+        $bokunProductId = isset($productBooking['product']['id']) ? intval($productBooking['product']['id']) : null;
+
         // Store complete Bokun data as JSON for reference
         $bokunData = json_encode($booking);
 
@@ -559,6 +562,7 @@ class BokunAPI {
             'external_id' => $booking['confirmationCode'] ?? null,
             'bokun_booking_id' => (string)($booking['id'] ?? ''),
             'bokun_confirmation_code' => $booking['confirmationCode'] ?? null,
+            'product_id' => $bokunProductId,
             'title' => $productTitle,
             'date' => $date,
             'time' => $time,
@@ -569,6 +573,7 @@ class BokunAPI {
             'customer_email' => $customer['email'] ?? null,
             'customer_phone' => $customer['phoneNumber'] ?? null,
             'participants' => $participants,
+            'participant_names' => $this->parseParticipantNames($booking),
             'booking_channel' => $bookingChannel,
             'total_amount_paid' => $totalAmount,
             'expected_amount' => $totalAmount,
@@ -593,7 +598,58 @@ class BokunAPI {
         }
         return null;
     }
-    
+
+    /**
+     * Parse participant names from booking data.
+     * GYG: names in productBookings[0].specialRequests ("Traveler N: First Name: X\nLast Name: Y")
+     * Viator: no individual names available in search results
+     * Returns JSON string or null.
+     */
+    public function parseParticipantNames($booking) {
+        $productBooking = isset($booking['productBookings']) && !empty($booking['productBookings'])
+            ? $booking['productBookings'][0]
+            : [];
+
+        $names = [];
+
+        // Method 1: GYG special requests format
+        $specialRequests = $productBooking['specialRequests'] ?? null;
+        if ($specialRequests && is_string($specialRequests) && strlen(trim($specialRequests)) > 1) {
+            if (preg_match_all(
+                '/Traveler\s+(\d+):\s*\n?First Name:\s*(.+?)\s*\n?Last Name:\s*(.+?)(?:\n|$)/i',
+                $specialRequests,
+                $matches,
+                PREG_SET_ORDER
+            )) {
+                foreach ($matches as $m) {
+                    $first = trim($m[2]);
+                    $last = trim($m[3]);
+                    if ($first || $last) {
+                        $names[] = [
+                            'first' => $this->titleCase($first),
+                            'last' => $this->titleCase($last)
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Return null if no names found (don't store empty arrays)
+        if (empty($names)) {
+            return null;
+        }
+
+        return json_encode($names);
+    }
+
+    /**
+     * Title-case a name: "ETSUKO" → "Etsuko", "mARIA" → "Maria"
+     */
+    private function titleCase($name) {
+        if (!$name) return '';
+        return mb_convert_case(mb_strtolower(trim($name)), MB_CASE_TITLE, 'UTF-8');
+    }
+
     private function mapBookingStatus($bokunStatus) {
         $statusMap = [
             'CONFIRMED' => 'confirmed',

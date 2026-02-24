@@ -183,28 +183,28 @@ const BokunSync = () => {
   };
 
   return (
-    <div className="bg-white rounded-tuscan-xl shadow-tuscan p-6 mb-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-stone-800">Bokun Integration</h2>
-        <div className="flex gap-2">
+    <div className="bg-white rounded-tuscan-xl shadow-tuscan p-4 md:p-6 mb-4 md:mb-6">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-4">
+        <h2 className="text-lg md:text-xl font-semibold text-stone-800">Bokun Integration</h2>
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setShowConfig(!showConfig)}
-            className="px-4 py-2 bg-stone-600 text-white rounded-tuscan hover:bg-stone-700"
+            className="flex-1 md:flex-initial min-h-[44px] px-3 md:px-4 py-2 bg-stone-600 text-white text-sm rounded-tuscan hover:bg-stone-700 touch-manipulation"
           >
             {showConfig ? 'Hide' : 'Configure'}
           </button>
           {config.access_key && (
             <button
               onClick={testConnection}
-              className="px-4 py-2 bg-gold-600 text-white rounded-tuscan hover:bg-gold-700"
+              className="flex-1 md:flex-initial min-h-[44px] px-3 md:px-4 py-2 bg-gold-600 text-white text-sm rounded-tuscan hover:bg-gold-700 touch-manipulation"
             >
-              Test Connection
+              Test
             </button>
           )}
           <button
             onClick={syncBookings}
             disabled={syncing || !config.sync_enabled}
-            className={`px-4 py-2 rounded-tuscan text-white ${
+            className={`flex-1 md:flex-initial min-h-[44px] px-3 md:px-4 py-2 text-sm rounded-tuscan text-white touch-manipulation ${
               syncing || !config.sync_enabled
                 ? 'bg-stone-400 cursor-not-allowed'
                 : 'bg-terracotta-600 hover:bg-terracotta-700'
@@ -292,7 +292,8 @@ const BokunSync = () => {
           <h3 className="font-semibold mb-3 text-stone-800">
             Unassigned Bokun Tours ({unassignedTours.length})
           </h3>
-          <div className="overflow-x-auto">
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="min-w-full divide-y divide-stone-200">
               <thead className="bg-stone-50">
                 <tr>
@@ -331,6 +332,32 @@ const BokunSync = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+          {/* Mobile Cards */}
+          <div className="md:hidden divide-y divide-stone-100">
+            {unassignedTours.map((tour) => (
+              <div key={tour.id} className="py-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-bold text-stone-900">{format(new Date(tour.date), 'd MMM')}</span>
+                    <span className="text-stone-300">|</span>
+                    <span className="text-stone-700">{tour.time}</span>
+                    <span className="text-stone-300">|</span>
+                    <span className="text-stone-600">{tour.participants || '-'} PAX</span>
+                  </div>
+                </div>
+                <p className="text-sm text-stone-900 line-clamp-1">{tour.title}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-stone-600">{tour.customer_name}</span>
+                  <button
+                    onClick={() => autoAssignGuide(tour.id)}
+                    className="min-h-[44px] px-3 py-1.5 text-sm text-terracotta-600 active:bg-terracotta-50 rounded-tuscan touch-manipulation font-medium"
+                  >
+                    Auto-Assign
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

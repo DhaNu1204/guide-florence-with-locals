@@ -1,38 +1,13 @@
 <?php
-// Enable error reporting and logging for debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-error_log("tours.php called: " . 
-    $_SERVER['REQUEST_METHOD'] . " " . $_SERVER['REQUEST_URI']);
-
-// Enable CORS
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: PUT, GET, POST, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header("Content-Type: application/json");
-
-// Handle preflight requests
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-// Include database configuration
+// Include database configuration (handles CORS, security headers, and DB connection)
 require_once 'config.php';
+require_once 'Middleware.php';
+
+// Require authentication for all tour operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('tours');
-
-// Create database connection using credentials from config.php
-$conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
-
-// Check connection
-if ($conn->connect_error) {
-    header("HTTP/1.1 500 Internal Server Error");
-    echo json_encode(["error" => "Connection failed: " . $conn->connect_error]);
-    exit();
-}
 
 // First, check if the cancelled column exists and add it if it doesn't
 $checkColumnQuery = "SHOW COLUMNS FROM tours LIKE 'cancelled'";
@@ -43,7 +18,8 @@ if ($columnResult->num_rows === 0) {
     $addColumnQuery = "ALTER TABLE tours ADD COLUMN cancelled TINYINT(1) DEFAULT 0";
     if (!$conn->query($addColumnQuery)) {
         header("HTTP/1.1 500 Internal Server Error");
-        echo json_encode(["error" => "Failed to add cancelled column: " . $conn->error]);
+        error_log("Failed to add cancelled column: " . $conn->error);
+        echo json_encode(["error" => "Database migration error"]);
         exit();
     }
 }
@@ -57,7 +33,8 @@ if ($bookingChannelResult->num_rows === 0) {
     $addBookingChannelQuery = "ALTER TABLE tours ADD COLUMN booking_channel VARCHAR(255) DEFAULT NULL";
     if (!$conn->query($addBookingChannelQuery)) {
         header("HTTP/1.1 500 Internal Server Error");
-        echo json_encode(["error" => "Failed to add booking_channel column: " . $conn->error]);
+        error_log("Failed to add booking_channel column: " . $conn->error);
+        echo json_encode(["error" => "Database migration error"]);
         exit();
     }
 }
@@ -71,9 +48,99 @@ if ($notesResult->num_rows === 0) {
     $addNotesQuery = "ALTER TABLE tours ADD COLUMN notes TEXT DEFAULT NULL";
     if (!$conn->query($addNotesQuery)) {
         header("HTTP/1.1 500 Internal Server Error");
-        echo json_encode(["error" => "Failed to add notes column: " . $conn->error]);
+        error_log("Failed to add notes column: " . $conn->error);
+        echo json_encode(["error" => "Database migration error"]);
         exit();
     }
+}
+
+// Check if tour_groups table exists, create if not (for LEFT JOIN in GET)
+$checkTourGroupsTable = $conn->query("SHOW TABLES LIKE 'tour_groups'");
+if ($checkTourGroupsTable->num_rows === 0) {
+    $conn->query("
+        CREATE TABLE `tour_groups` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `group_date` date NOT NULL,
+            `group_time` time NOT NULL,
+            `display_name` varchar(200) NOT NULL,
+            `guide_id` int(11) DEFAULT NULL,
+            `guide_name` varchar(100) DEFAULT NULL,
+            `notes` text DEFAULT NULL,
+            `max_pax` int(11) NOT NULL DEFAULT 9,
+            `total_pax` int(11) NOT NULL DEFAULT 0,
+            `is_manual_merge` tinyint(1) NOT NULL DEFAULT 0,
+            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_tour_groups_date` (`group_date`),
+            KEY `idx_tour_groups_date_time` (`group_date`, `group_time`),
+            KEY `idx_tour_groups_guide` (`guide_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
+// Check if group_id column exists in tours, add if not
+$checkGroupIdCol = $conn->query("SHOW COLUMNS FROM tours LIKE 'group_id'");
+if ($checkGroupIdCol->num_rows === 0) {
+    $conn->query("ALTER TABLE tours ADD COLUMN `group_id` int(11) DEFAULT NULL AFTER `notes`");
+    $conn->query("ALTER TABLE tours ADD KEY `idx_tours_group_id` (`group_id`)");
+}
+
+// Check if participant_names column exists, add if not
+$checkParticipantNamesCol = $conn->query("SHOW COLUMNS FROM tours LIKE 'participant_names'");
+if ($checkParticipantNamesCol->num_rows === 0) {
+    $conn->query("ALTER TABLE tours ADD COLUMN `participant_names` TEXT DEFAULT NULL AFTER `participants`");
+}
+
+// =====================================================
+// PRODUCT CLASSIFICATION SYSTEM
+// =====================================================
+
+// Ensure products table exists
+$checkProductsTable = $conn->query("SHOW TABLES LIKE 'products'");
+$productsTableIsNew = ($checkProductsTable->num_rows === 0);
+if ($productsTableIsNew) {
+    $conn->query("
+        CREATE TABLE `products` (
+            `bokun_product_id` int(11) NOT NULL,
+            `title` varchar(500) NOT NULL DEFAULT '',
+            `product_type` enum('tour','ticket') NOT NULL DEFAULT 'tour',
+            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`bokun_product_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+}
+
+// Ensure product_id column exists on tours
+$checkProductIdCol = $conn->query("SHOW COLUMNS FROM tours LIKE 'product_id'");
+if ($checkProductIdCol->num_rows === 0) {
+    $conn->query("ALTER TABLE tours ADD COLUMN `product_id` int(11) DEFAULT NULL AFTER `group_id`");
+    $conn->query("ALTER TABLE tours ADD KEY `idx_tours_product_id` (`product_id`)");
+
+    // One-time backfill: extract product_id from bokun_data JSON
+    $conn->query("
+        UPDATE tours
+        SET product_id = CAST(JSON_UNQUOTE(JSON_EXTRACT(bokun_data, '$.productBookings[0].product.id')) AS UNSIGNED)
+        WHERE bokun_data IS NOT NULL AND product_id IS NULL
+          AND JSON_EXTRACT(bokun_data, '$.productBookings[0].product.id') IS NOT NULL
+    ");
+
+    // Populate products table from backfilled data
+    $conn->query("
+        INSERT IGNORE INTO products (bokun_product_id, title)
+        SELECT DISTINCT product_id, title
+        FROM tours
+        WHERE product_id IS NOT NULL
+    ");
+
+    // Mark known ticket products
+    $conn->query("
+        UPDATE products SET product_type = 'ticket'
+        WHERE bokun_product_id IN (809838, 845665, 877713, 961802, 1115497, 1119143, 1162586)
+    ");
+
+    error_log("Product classification: backfilled product_id column, populated products table");
 }
 
 // Get the request method
@@ -103,13 +170,25 @@ switch ($method) {
         $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
         $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
         $past = isset($_GET['past']) && $_GET['past'] === 'true';
+        $startDate = isset($_GET['start_date']) ? $_GET['start_date'] : null;
+        $endDate = isset($_GET['end_date']) ? $_GET['end_date'] : null;
+
+        // Product type filter: 'tour' (default), 'ticket', or 'all'
+        $productType = isset($_GET['product_type']) ? $_GET['product_type'] : 'tour';
 
         // Build WHERE clause for filtering
         $whereConditions = [];
         $whereParams = [];
         $whereTypes = "";
 
-        if ($past) {
+        if ($startDate && $endDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+            // Custom date range filter
+            $whereConditions[] = "t.date >= ?";
+            $whereConditions[] = "t.date <= ?";
+            $whereParams[] = $startDate;
+            $whereParams[] = $endDate;
+            $whereTypes .= "ss";
+        } elseif ($past) {
             // Show tours from past 40 days (for payment verification)
             $startDate = date('Y-m-d', strtotime('-40 days'));
             $yesterday = date('Y-m-d', strtotime('-1 day'));
@@ -142,12 +221,22 @@ switch ($method) {
             $whereTypes .= "i";
         }
 
+        // Product type filter via products table
+        if ($productType === 'tour') {
+            // Exclude tickets; include tours and manual entries (NULL product_id)
+            $whereConditions[] = "(pr.product_type = 'tour' OR t.product_id IS NULL)";
+        } elseif ($productType === 'ticket') {
+            // Only tickets
+            $whereConditions[] = "pr.product_type = 'ticket'";
+        }
+        // 'all' = no filter
+
         $whereClause = count($whereConditions) > 0
             ? "WHERE " . implode(" AND ", $whereConditions)
             : "";
 
         // Get total count for pagination metadata (with filters)
-        $countSql = "SELECT COUNT(*) as total FROM tours t $whereClause";
+        $countSql = "SELECT COUNT(*) as total FROM tours t LEFT JOIN products pr ON t.product_id = pr.bokun_product_id $whereClause";
         if (count($whereParams) > 0) {
             $countStmt = $conn->prepare($countSql);
             $countStmt->bind_param($whereTypes, ...$whereParams);
@@ -163,10 +252,19 @@ switch ($method) {
             $totalRecords = intval($countRow['total']);
         }
 
-        // Get all tours with guide names and payment information (with pagination and filters)
-        $sql = "SELECT t.*, g.name as guide_name
+        // Get all tours with guide names, payment information, and group info (with pagination and filters)
+        $sql = "SELECT t.*, g.name as guide_name,
+                       tg.display_name as group_display_name,
+                       tg.total_pax as group_total_pax,
+                       tg.max_pax as group_max_pax,
+                       tg.is_manual_merge as group_is_manual_merge,
+                       tg.guide_id as group_guide_id,
+                       tg.guide_name as group_guide_name,
+                       pr.product_type as product_type
                 FROM tours t
                 LEFT JOIN guides g ON t.guide_id = g.id
+                LEFT JOIN tour_groups tg ON t.group_id = tg.id
+                LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
                 $whereClause
                 ORDER BY t.date ASC, t.time ASC
                 LIMIT ? OFFSET ?";
@@ -208,6 +306,26 @@ switch ($method) {
                     $row['payment_status'] = 'unpaid';
                 }
 
+                // Format group info
+                if (isset($row['group_id']) && $row['group_id']) {
+                    $row['group_id'] = intval($row['group_id']);
+                    $row['group_info'] = [
+                        'id' => $row['group_id'],
+                        'display_name' => $row['group_display_name'],
+                        'total_pax' => intval($row['group_total_pax'] ?? 0),
+                        'max_pax' => intval($row['group_max_pax'] ?? 9),
+                        'is_manual_merge' => (bool)($row['group_is_manual_merge'] ?? false),
+                        'guide_id' => $row['group_guide_id'] ? intval($row['group_guide_id']) : null,
+                        'guide_name' => $row['group_guide_name'] ?? null
+                    ];
+                } else {
+                    $row['group_id'] = null;
+                    $row['group_info'] = null;
+                }
+                // Remove redundant group columns from top-level row
+                unset($row['group_display_name'], $row['group_total_pax'], $row['group_max_pax'],
+                      $row['group_is_manual_merge'], $row['group_guide_id'], $row['group_guide_name']);
+
                 $tours[] = $row;
             }
 
@@ -228,7 +346,8 @@ switch ($method) {
             ]);
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to get tours: " . $conn->error]);
+            error_log("Failed to get tours: " . $conn->error);
+            echo json_encode(["error" => "Failed to get tours"]);
         }
         break;
         
@@ -318,7 +437,8 @@ switch ($method) {
             echo json_encode($newTour);
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to create tour: " . $stmt->error]);
+            error_log("Failed to create tour: " . $stmt->error);
+            echo json_encode(["error" => "Failed to create tour"]);
         }
         break;
         
@@ -504,7 +624,8 @@ switch ($method) {
             }
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to update tour: " . $stmt->error]);
+            error_log("Failed to update tour: " . $stmt->error);
+            echo json_encode(["error" => "Failed to update tour"]);
         }
         break;
         
@@ -529,7 +650,8 @@ switch ($method) {
             }
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to delete tour: " . $stmt->error]);
+            error_log("Failed to delete tour: " . $stmt->error);
+            echo json_encode(["error" => "Failed to delete tour"]);
         }
         break;
         

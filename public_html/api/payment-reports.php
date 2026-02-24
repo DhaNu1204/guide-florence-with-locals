@@ -11,6 +11,10 @@
  */
 
 require_once 'config.php';
+require_once 'Middleware.php';
+
+// Require authentication for all payment report operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting (read operations)
 applyRateLimit('read');
@@ -49,7 +53,8 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+    error_log("Payment reports error: " . $e->getMessage());
+    echo json_encode(['error' => 'An internal error occurred']);
 }
 
 /**
@@ -76,15 +81,17 @@ function generateSummaryReport($conn, $start_date, $end_date, $format) {
     ];
 
     // Overall statistics for the period
+    // Group-aware: count groups as 1 tour unit
     $stmt = $conn->prepare("SELECT
                                 COUNT(DISTINCT pt.id) as total_transactions,
-                                COUNT(DISTINCT pt.tour_id) as tours_with_payments,
+                                COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) as tours_with_payments,
                                 COUNT(DISTINCT pt.guide_id) as guides_with_payments,
                                 SUM(pt.amount) as total_amount,
                                 AVG(pt.amount) as avg_payment,
                                 MIN(pt.amount) as min_payment,
                                 MAX(pt.amount) as max_payment
                             FROM payments pt
+                            JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.payment_date BETWEEN ? AND ?");
 
     $stmt->bind_param("ss", $start_date, $end_date);
@@ -123,16 +130,18 @@ function generateSummaryReport($conn, $start_date, $end_date, $format) {
     $report['payment_methods'] = $payment_methods;
 
     // Guide performance for the period
+    // Group-aware: count groups as 1 tour unit
     $stmt = $conn->prepare("SELECT
                                 g.id,
                                 g.name,
                                 g.email,
                                 COUNT(DISTINCT pt.id) as payment_count,
-                                COUNT(DISTINCT pt.tour_id) as tours_paid,
+                                COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) as tours_paid,
                                 SUM(pt.amount) as total_earned,
                                 AVG(pt.amount) as avg_payment
                             FROM guides g
                             JOIN payments pt ON g.id = pt.guide_id
+                            JOIN tours t ON pt.tour_id = t.id
                             WHERE pt.payment_date BETWEEN ? AND ?
                             GROUP BY g.id, g.name, g.email
                             ORDER BY total_earned DESC");

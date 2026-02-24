@@ -59,6 +59,21 @@ const Dashboard = () => {
       const allToursResponse = await getTours(forceRefresh, 1, 500, {});
       const guidesData = await getGuides();
 
+      // Fetch pending payments count from API (authoritative source)
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+      let pendingPaymentsCount = 0;
+      try {
+        const pendingResponse = await fetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
+        if (pendingResponse.ok) {
+          const pendingData = await pendingResponse.json();
+          if (pendingData.success) {
+            pendingPaymentsCount = pendingData.count || (pendingData.data ? pendingData.data.length : 0);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch pending payments count:', e);
+      }
+
       const upcomingData = upcomingResponse && upcomingResponse.data ? upcomingResponse.data : upcomingResponse;
       const allToursData = allToursResponse && allToursResponse.data ? allToursResponse.data : allToursResponse;
 
@@ -67,7 +82,7 @@ const Dashboard = () => {
         const allGuidedTours = filterToursOnly(allToursData);
         const upcomingGuidedTours = filterToursOnly(upcomingData);
 
-        calculateStats(allGuidedTours, upcomingGuidedTours, guidesData);
+        calculateStats(allGuidedTours, upcomingGuidedTours, guidesData, pendingPaymentsCount);
 
         const now = new Date();
 
@@ -115,7 +130,7 @@ const Dashboard = () => {
     }
   };
 
-  const calculateStats = (allTours, upcomingTours, guides) => {
+  const calculateStats = (allTours, upcomingTours, guides, pendingPaymentsCount = 0) => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
@@ -129,21 +144,13 @@ const Dashboard = () => {
       return !hasGuide;
     }).length;
 
-    // Count unpaid PAST tours (completed tours awaiting guide payment)
-    // Only count non-cancelled, past guided tours
+    // Count paid PAST tours (for display purposes)
     const pastTours = allTours.filter(tour => {
       if (tour.cancelled) return false;
       const tourDate = new Date(tour.date);
       tourDate.setHours(0, 0, 0, 0);
       return tourDate < now; // Past tours only
     });
-
-    const unpaidTours = pastTours.filter(tour => {
-      if (tour.payment_status) {
-        return tour.payment_status === 'unpaid' || tour.payment_status === 'partial';
-      }
-      return !tour.paid;
-    }).length;
 
     const paidTours = pastTours.filter(tour => {
       if (tour.payment_status) {
@@ -152,9 +159,10 @@ const Dashboard = () => {
       return tour.paid === 1 || tour.paid === true || tour.paid === '1';
     }).length;
 
+    // Use API count for unpaid tours (authoritative source - checks payments table)
     setStats({
       unassignedTours,
-      unpaidTours,
+      unpaidTours: pendingPaymentsCount,
       paidTours,
       totalGuidedTours: allTours.filter(t => !t.cancelled).length
     });
@@ -170,14 +178,14 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header with Tuscan styling */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-stone-900">Dashboard</h1>
-          <p className="text-stone-500 text-sm mt-1">Welcome to Florence with Locals</p>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-3xl font-bold text-stone-900">Dashboard</h1>
+          <p className="text-stone-500 text-xs md:text-sm mt-1">Welcome to Florence with Locals</p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-shrink-0">
           <span className="hidden sm:inline text-sm text-stone-500">
             Last sync: {formatTimeAgo(lastSync)}
           </span>
@@ -220,7 +228,7 @@ const Dashboard = () => {
       )}
 
       {/* Stats Grid with Tuscan styling - 2 columns on desktop */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         {/* Unassigned Tours Card */}
         <div className="group bg-gradient-to-br from-gold-50 to-gold-100/50 rounded-tuscan-xl border border-gold-200/50 p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300">
           <div className="flex items-start justify-between">
@@ -242,7 +250,7 @@ const Dashboard = () => {
             <div className="mt-4 pt-4 border-t border-gold-200/50">
               <Link
                 to="/tours"
-                className="text-sm font-medium text-gold-700 hover:text-gold-800 flex items-center group-hover:translate-x-1 transition-transform"
+                className="text-sm font-medium text-gold-700 hover:text-gold-800 active:text-gold-900 flex items-center min-h-[44px] group-hover:translate-x-1 transition-transform touch-manipulation"
               >
                 Assign guides now
                 <span className="ml-1">→</span>
@@ -289,7 +297,7 @@ const Dashboard = () => {
             <div className="mt-4 pt-4 border-t border-terracotta-200/50">
               <Link
                 to="/payments"
-                className="text-sm font-medium text-terracotta-700 hover:text-terracotta-800 flex items-center group-hover:translate-x-1 transition-transform"
+                className="text-sm font-medium text-terracotta-700 hover:text-terracotta-800 active:text-terracotta-900 flex items-center min-h-[44px] group-hover:translate-x-1 transition-transform touch-manipulation"
               >
                 Process payments
                 <span className="ml-1">→</span>
@@ -300,23 +308,23 @@ const Dashboard = () => {
       </div>
 
       {/* Tours Lists */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6">
         {/* Upcoming Tours */}
         <div className="bg-white rounded-tuscan-xl shadow-tuscan border border-stone-200/50 overflow-hidden">
-          <div className="px-5 py-4 bg-gradient-to-r from-olive-500 to-olive-600 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white flex items-center">
+          <div className="px-4 md:px-5 py-3 md:py-4 bg-gradient-to-r from-olive-500 to-olive-600 flex items-center justify-between">
+            <h2 className="text-base md:text-lg font-semibold text-white flex items-center">
               <FiCalendar className="mr-2" />
               Upcoming Tours
             </h2>
-            <Link to="/tours">
-              <button className="text-olive-100 hover:text-white text-sm font-medium flex items-center transition-colors">
+            <Link to="/tours" className="min-h-[44px] flex items-center touch-manipulation">
+              <span className="text-olive-100 hover:text-white text-sm font-medium flex items-center transition-colors">
                 View All
                 <FiEye className="ml-1" />
-              </button>
+              </span>
             </Link>
           </div>
 
-          <div className="p-4">
+          <div className="p-3 md:p-4">
             {upcomingTours.length === 0 ? (
               <div className="text-center py-8 text-stone-400">
                 <FiCalendar className="text-4xl mx-auto mb-3 opacity-50" />
@@ -328,38 +336,38 @@ const Dashboard = () => {
                 {upcomingTours.map((tour) => (
                   <div
                     key={tour.id}
-                    className="group flex items-center justify-between p-3 rounded-tuscan-lg border border-stone-100 hover:border-olive-200 hover:bg-olive-50/30 transition-all duration-200 cursor-pointer"
+                    className="group p-3 rounded-tuscan-lg border border-stone-100 hover:border-olive-200 hover:bg-olive-50/30 active:bg-olive-50/50 transition-all duration-200 cursor-pointer touch-manipulation min-h-[44px]"
                   >
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-stone-800 truncate group-hover:text-olive-700 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-medium text-stone-800 text-sm md:text-base line-clamp-1 md:truncate group-hover:text-olive-700 transition-colors flex-1 min-w-0">
                         {tour.title}
                       </h3>
-                      <div className="flex flex-wrap items-center gap-2 md:gap-3 text-sm text-stone-500 mt-1">
-                        <span className="flex items-center">
-                          <FiCalendar className="mr-1 text-stone-400" />
-                          {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                        </span>
-                        <span className="flex items-center">
-                          <FiClock className="mr-1 text-stone-400" />
-                          {tour.time}
-                        </span>
-                        <span className={`flex items-center ${tour.guide_name ? 'text-olive-600' : 'text-gold-600'}`}>
-                          <FiUsers className="mr-1" />
-                          {tour.guide_name || 'Unassigned'}
-                        </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {tour.language && (
+                          <span className="hidden sm:inline-flex items-center px-2 py-0.5 bg-renaissance-50 text-renaissance-700 text-xs font-medium rounded-full">
+                            {tour.language}
+                          </span>
+                        )}
+                        {tour.booking_channel && (
+                          <span className="inline-flex px-2 py-0.5 bg-stone-100 text-stone-600 text-xs font-medium rounded-full">
+                            {tour.booking_channel}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-2">
-                      {tour.language && (
-                        <span className="hidden sm:inline-flex items-center px-2 py-1 bg-renaissance-50 text-renaissance-700 text-xs font-medium rounded-full">
-                          {tour.language}
-                        </span>
-                      )}
-                      {tour.booking_channel && (
-                        <span className="inline-flex px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium rounded-full">
-                          {tour.booking_channel}
-                        </span>
-                      )}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 md:gap-3 text-xs md:text-sm text-stone-500 mt-1">
+                      <span className="flex items-center">
+                        <FiCalendar className="mr-1 text-stone-400 w-3 h-3 md:w-4 md:h-4" />
+                        {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <span className="flex items-center">
+                        <FiClock className="mr-1 text-stone-400 w-3 h-3 md:w-4 md:h-4" />
+                        {tour.time}
+                      </span>
+                      <span className={`flex items-center ${tour.guide_name ? 'text-olive-600' : 'text-gold-600'}`}>
+                        <FiUsers className="mr-1 w-3 h-3 md:w-4 md:h-4" />
+                        {tour.guide_name || 'Unassigned'}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -370,20 +378,20 @@ const Dashboard = () => {
 
         {/* Unassigned Tours */}
         <div className="bg-white rounded-tuscan-xl shadow-tuscan border border-stone-200/50 overflow-hidden">
-          <div className="px-5 py-4 bg-gradient-to-r from-gold-500 to-gold-600 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white flex items-center">
+          <div className="px-4 md:px-5 py-3 md:py-4 bg-gradient-to-r from-gold-500 to-gold-600 flex items-center justify-between">
+            <h2 className="text-base md:text-lg font-semibold text-white flex items-center">
               <FiAlertCircle className="mr-2" />
               Needs Attention
             </h2>
-            <Link to="/tours">
-              <button className="text-gold-100 hover:text-white text-sm font-medium flex items-center transition-colors">
+            <Link to="/tours" className="min-h-[44px] flex items-center touch-manipulation">
+              <span className="text-gold-100 hover:text-white text-sm font-medium flex items-center transition-colors">
                 View All
                 <FiEye className="ml-1" />
-              </button>
+              </span>
             </Link>
           </div>
 
-          <div className="p-4">
+          <div className="p-3 md:p-4">
             {recentTours.length === 0 ? (
               <div className="text-center py-8 text-stone-400">
                 <FiClock className="text-4xl mx-auto mb-3 opacity-50" />
@@ -395,28 +403,13 @@ const Dashboard = () => {
                 {recentTours.map((tour) => (
                   <div
                     key={tour.id}
-                    className="group flex items-center justify-between p-3 rounded-tuscan-lg border border-stone-100 hover:border-gold-200 hover:bg-gold-50/30 transition-all duration-200 cursor-pointer"
+                    className="group p-3 rounded-tuscan-lg border border-stone-100 hover:border-gold-200 hover:bg-gold-50/30 active:bg-gold-50/50 transition-all duration-200 cursor-pointer touch-manipulation min-h-[44px]"
                   >
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-stone-800 truncate group-hover:text-gold-700 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-medium text-stone-800 text-sm md:text-base line-clamp-1 md:truncate group-hover:text-gold-700 transition-colors flex-1 min-w-0">
                         {tour.title}
                       </h3>
-                      <div className="flex flex-wrap items-center gap-2 md:gap-3 text-sm text-stone-500 mt-1">
-                        <span className="flex items-center">
-                          <FiCalendar className="mr-1 text-stone-400" />
-                          {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                        </span>
-                        <span className="flex items-center">
-                          <FiClock className="mr-1 text-stone-400" />
-                          {tour.time}
-                        </span>
-                        <span className="text-gold-600 font-medium">
-                          Needs Guide
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 ml-2">
-                      <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-full ${
+                      <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0 ${
                         tour.payment_status === 'paid' || tour.paid
                           ? 'bg-olive-100 text-olive-700'
                           : tour.payment_status === 'partial'
@@ -428,6 +421,19 @@ const Dashboard = () => {
                           : tour.payment_status === 'partial'
                           ? 'Partial'
                           : 'Unpaid'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 md:gap-3 text-xs md:text-sm text-stone-500 mt-1">
+                      <span className="flex items-center">
+                        <FiCalendar className="mr-1 text-stone-400 w-3 h-3 md:w-4 md:h-4" />
+                        {new Date(tour.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <span className="flex items-center">
+                        <FiClock className="mr-1 text-stone-400 w-3 h-3 md:w-4 md:h-4" />
+                        {tour.time}
+                      </span>
+                      <span className="text-gold-600 font-medium">
+                        Needs Guide
                       </span>
                     </div>
                   </div>

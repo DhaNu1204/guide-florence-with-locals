@@ -12,7 +12,7 @@ const addCacheBuster = (url) => {
 // Setup axios interceptor to add auth token to all requests
 axios.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -174,7 +174,7 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
 
   // Skip cache if filters are applied (always fetch fresh for filtered queries)
   // Include upcoming as a filter since it changes the query behavior
-  const hasFilters = filters.date || filters.guide_id || filters.upcoming;
+  const hasFilters = filters.date || filters.guide_id || filters.upcoming || filters.past || filters.start_date;
 
   console.log('[getTours] hasFilters:', hasFilters, 'filters:', filters);
 
@@ -215,7 +215,9 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
     let url = `${API_BASE_URL}/tours.php?page=${page}&per_page=${perPage}`;
 
     // Add optional filters
-    if (filters.date) {
+    if (filters.start_date && filters.end_date) {
+      url += `&start_date=${encodeURIComponent(filters.start_date)}&end_date=${encodeURIComponent(filters.end_date)}`;
+    } else if (filters.date) {
       url += `&date=${encodeURIComponent(filters.date)}`;
     }
     if (filters.guide_id) {
@@ -223,6 +225,12 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
     }
     if (filters.upcoming) {
       url += `&upcoming=true`;
+    }
+    if (filters.past) {
+      url += `&past=true`;
+    }
+    if (filters.product_type) {
+      url += `&product_type=${encodeURIComponent(filters.product_type)}`;
     }
 
     const response = await axios.get(addCacheBuster(url));
@@ -520,6 +528,58 @@ export const getSyncInfo = async () => {
   } catch (error) {
     console.error('Error fetching sync info:', error);
     throw error;
+  }
+};
+
+// TOUR GROUPS OPERATIONS
+export const tourGroupsAPI = {
+  async list(filters = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        params.append(key, value);
+      }
+    });
+    const queryString = params.toString();
+    const url = `${API_BASE_URL}/tour-groups.php${queryString ? `?${queryString}` : ''}`;
+    const response = await axios.get(addCacheBuster(url));
+    return response.data;
+  },
+
+  async autoGroup(data = {}) {
+    const response = await axios.post(`${API_BASE_URL}/tour-groups.php?action=auto-group`, data);
+    clearTourCache();
+    return response.data;
+  },
+
+  async manualMerge(tourIds, displayName = null, notes = null) {
+    const response = await axios.post(`${API_BASE_URL}/tour-groups.php?action=manual-merge`, {
+      tour_ids: tourIds,
+      display_name: displayName,
+      notes
+    });
+    clearTourCache();
+    return response.data;
+  },
+
+  async unmerge(tourId) {
+    const response = await axios.post(`${API_BASE_URL}/tour-groups.php?action=unmerge`, {
+      tour_id: tourId
+    });
+    clearTourCache();
+    return response.data;
+  },
+
+  async update(groupId, data) {
+    const response = await axios.put(`${API_BASE_URL}/tour-groups.php/${groupId}`, data);
+    clearTourCache();
+    return response.data;
+  },
+
+  async dissolve(groupId) {
+    const response = await axios.delete(`${API_BASE_URL}/tour-groups.php/${groupId}`);
+    clearTourCache();
+    return response.data;
   }
 };
 

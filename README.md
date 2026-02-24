@@ -17,7 +17,9 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 
 ### 🚀 **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** - FULLY OPERATIONAL ✅
 
-**Latest Update (2025-10-26)**: ✅ **THREE CRITICAL PRODUCTION FIXES COMPLETE** - (1) **Payments Page Fix**: Resolved production error by creating missing database views (`guide_payment_summary`, `monthly_payment_summary`) and correcting table name references from `payment_transactions` to `payments` in API files - payments page now fully operational. (2) **Tour Date Bug**: Tours were displaying under booking creation date instead of actual tour date - removed incorrect `creationDate` fallback in BokunAPI.php, updated 65 tours to correct dates. (3) **Bokun Sync Optimization**: Sync was only fetching TODAY forward - changed to fetch past 7 days + next 30 days (37-day rolling window), imported 6 missing October 24 bookings. Production now fully synchronized with Bokun API data and all payment features working.
+**Latest Update (2026-02-23)**: ✅ **UNASSIGNED TOURS REPORT** - New "Report" button in Tours summary card downloads a `.txt` file listing all unassigned tours with date, time, and location (extracted from tour titles: Uffizi, Accademia, Duomo, etc.). Simple format designed for sharing with guides. Also includes custom date range filtering with dual date picker and cache bypass fix.
+
+**Previous Update (2026-01-29)**: ✅ **PAYMENT SYSTEM & PDF REPORTS** - (1) **PDF Report Generation**: Added frontend PDF generation using jsPDF with Tuscan-themed reports for guide payments, pending payments, and monthly summaries. (2) **Payment System Bug Fixes**: Fixed critical VIEW table mismatch where `guide_payment_summary` was querying empty `payment_transactions` table instead of `payments` table. Added new `pending_tours` API endpoint for authoritative pending payment tracking. (3) **API Rate Limiting**: Database-backed rate limiting for all endpoints (login: 5/min, read: 100/min, write: 30/min). (4) **Automated Testing**: 52 tests passing with Vitest + React Testing Library.
 
 **Previous Update (2025-10-25)**: ✅ **DATABASE SCHEMA SYNCHRONIZED** - Fixed production database schema mismatches that were causing application failures. Added missing `bokun_experience_id` and `last_sync` columns, corrected `payment_status` enum to include 'overpaid', and fixed sessions table `token` column (login now works). Priority Tickets date filter changed to show all bookings by default. Production database now has 40 columns matching local development exactly.
 
@@ -72,6 +74,41 @@ Florence with Locals is a comprehensive tour guide management system designed sp
 - **Booking Channel Display** - Clear identification of booking sources (Website, Viator, etc.)
 
 ## 🚀 What's New - Latest Updates
+
+### ✅ **UNASSIGNED TOURS REPORT** (2026-02-23)
+- **Report Download**: New "Unassigned Report" button in Tours summary card
+- **Output**: Clean `.txt` file with date, time, and location for each unassigned tour
+- **Location Extraction**: Automatically derived from tour titles (Uffizi, Accademia, Duomo, Pitti, Boboli, Palazzo Vecchio, San Lorenzo, Santa Croce, Ponte Vecchio, Bargello, Vasari Corridor; defaults to "Florence")
+- **Filter-Aware**: Respects current filter (Today/Upcoming/Past 40 Days/Date Range)
+- **Responsive**: Shows "Unassigned Report" on desktop, "Report" on mobile
+
+### ✅ **CUSTOM DATE RANGE FILTERING** (2026-02-23)
+- **Custom Date Range**: New "Date Range" button in Tours filter bar with dual date picker (start/end)
+- **Backend API**: Added `start_date` and `end_date` query parameters to `/api/tours.php`
+- **Cache Fix**: Fixed stale data when switching between filter modes (past/upcoming/date range)
+- **Filter Priority**: `start_date+end_date` > `past` > `upcoming` > `date`
+
+### ✅ **PAYMENT SYSTEM & PDF REPORTS** (2026-01-29)
+- **📄 PDF Report Generation**: Frontend-only PDF generation using jsPDF
+  - Guide Payment Summary reports with Tuscan-themed branding
+  - Pending Payments reports for unpaid tour tracking
+  - Monthly Payment Summary with cash/bank breakdown
+  - Professional A4 landscape format with auto-generated filenames
+
+- **🔧 Payment System Bug Fixes**:
+  - Fixed `guide_payment_summary` VIEW to query correct `payments` table
+  - Added `pending_tours` API endpoint for authoritative pending tracking
+  - Fixed Dashboard and Payments page to use API instead of local filtering
+
+- **🛡️ API Rate Limiting**:
+  - Database-backed rate limiting (Hostinger compatible, no Redis)
+  - Login: 5/min, Read: 100/min, Write: 30/min, Delete: 10/min
+  - Automatic IP detection with proxy/Cloudflare support
+
+- **🧪 Automated Testing**:
+  - 52 tests passing with Vitest + React Testing Library
+  - Test coverage for Button, Login, and mysqlDB components
+  - PHP API test runner (no PHPUnit required)
 
 ### ✅ **CRITICAL PRODUCTION DATABASE FIXES** (2025-10-25)
 - **🗄️ Database Schema Synchronization**: Fixed critical mismatches between local and production databases
@@ -662,9 +699,9 @@ This project is proprietary software developed for Florence with Locals tour ope
 
 ---
 
-**Project Status**: ✅ **FULLY OPERATIONAL WITH DATABASE SCHEMA SYNCHRONIZED** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. **Critical deployment (Oct 25, 2025)**: Fixed production database schema mismatches - added missing `bokun_experience_id` and `last_sync` columns, corrected `payment_status` enum to include 'overpaid', fixed sessions table `token` column (login working), and changed Priority Tickets date filter to show all bookings by default. Production database now has 40 columns matching local development exactly. All CRUD operations, authentication, and Bokun sync fully operational. **Previous deployment (Oct 24, 2025)**: Comprehensive Booking Details Modal with 6 detailed sections, Priority Tickets enhancements, Tours page modal integration, GitHub repository: https://github.com/DhaNu1204/guide-florence-with-locals.git. **132+ bookings with automatic multi-channel language detection** (Viator, GetYourGuide), smart payment tracking, and complete database parity.
+**Project Status**: ✅ **FULLY OPERATIONAL** - Complete modern tour management system live at https://withlocals.deetech.cc with all features working perfectly. **Latest deployment (Feb 23, 2026)**: Unassigned tours report (date/time/location .txt download), custom date range filtering with dual date picker, cache bypass fix for filter switching. **200+ bookings synced** from Viator and GetYourGuide with automatic multi-channel language detection and smart payment tracking.
 
-**Last Updated**: October 25, 2025 - **CRITICAL DATABASE FIXES**: Synchronized production database with local development by adding missing `bokun_experience_id` and `last_sync` columns, correcting `payment_status` enum to include 'overpaid', and fixing sessions table `token` column. Fixed Priority Tickets date filter to show all bookings by default (was empty due to today's date filter). All application failures resolved - CRUD operations, authentication, Bokun sync, and data display now fully functional on production. Database now has complete parity with local environment (40 columns).
+**Last Updated**: February 23, 2026 - **UNASSIGNED TOURS REPORT**: Downloadable .txt report of unassigned tours showing date, time, and location (extracted from tour titles). Plus custom date range filtering and cache bypass fix.
 
 **Live Production URL**: **[https://withlocals.deetech.cc](https://withlocals.deetech.cc)** ✅
 

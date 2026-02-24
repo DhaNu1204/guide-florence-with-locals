@@ -6,27 +6,37 @@ import { BokunSyncProvider, useBokunSync } from '../hooks/useBokunAutoSync';
  * Shows a small indicator in the corner when syncing
  */
 const SyncStatusIndicator = () => {
-  const { lastSync, isSyncing, error } = useBokunSync();
+  const { lastSync, isSyncing, error, lastSyncEvent } = useBokunSync();
   const [showStatus, setShowStatus] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [isManualSync, setIsManualSync] = useState(false);
+
+  // Track whether current sync is manual
+  useEffect(() => {
+    if (lastSyncEvent?.type === 'sync_started') {
+      setIsManualSync(lastSyncEvent.trigger === 'manual');
+    }
+  }, [lastSyncEvent]);
 
   useEffect(() => {
-    if (isSyncing) {
+    // Only show status indicator for manual syncs
+    if (isSyncing && isManualSync) {
       setShowStatus(true);
       setStatusMessage('Syncing bookings...');
-    } else if (error) {
+    } else if (!isSyncing && isManualSync && error) {
       setShowStatus(true);
       setStatusMessage('Sync failed');
-      // Hide error after 5 seconds
       const timer = setTimeout(() => setShowStatus(false), 5000);
       return () => clearTimeout(timer);
-    } else if (showStatus) {
-      // Show success briefly then hide
+    } else if (!isSyncing && isManualSync && showStatus) {
       setStatusMessage('Sync complete');
-      const timer = setTimeout(() => setShowStatus(false), 2000);
+      const timer = setTimeout(() => {
+        setShowStatus(false);
+        setIsManualSync(false);
+      }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [isSyncing, error]);
+  }, [isSyncing, error, isManualSync]);
 
   // Format last sync time
   const formatLastSync = () => {
