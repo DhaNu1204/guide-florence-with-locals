@@ -1,5 +1,236 @@
 # Changelog - Recent Major Updates
 
+## ✅ PRODUCT CLASSIFICATION SYSTEM (2026-02-24)
+
+### DB-Driven Product Type Filtering
+✅ COMPLETED - Replaced fragile keyword-based ticket filtering with reliable product ID classification
+
+- **Problem**: Ticket products (museum entry tickets, audio guides) were filtered from the Tours page using 5 `NOT LIKE` keyword patterns matched against tour titles. This was brittle — new ticket products with different titles would slip through, and the same 45 lines of keyword matching were duplicated across 9 locations in `guide-payments.php`.
+- **Solution**: New `products` table classifies each Bokun product by ID as `tour` or `ticket`. Filtering now happens server-side via a single `LEFT JOIN` + `WHERE` clause.
+
+### Database Changes
+- **New table**: `products` (`bokun_product_id` PK, `title`, `product_type` ENUM('tour','ticket'), timestamps)
+- **New column**: `tours.product_id` INT — extracted from `bokun_data` JSON via `JSON_EXTRACT`
+- **Auto-migration**: `tours.php` creates table/column on first request (guarded by `SHOW TABLES`/`SHOW COLUMNS`)
+- **Backfill**: One-time population of `product_id` from existing `bokun_data` + seeding `products` table
+- **Known tickets**: 7 product IDs marked as `ticket`: 809838, 845665, 877713, 961802, 1115497, 1119143, 1162586
+
+### Backend Changes
+- **tours.php**: Added `?product_type=tour|ticket|all` query parameter; `LEFT JOIN products` for filtering; default `tour` excludes tickets
+- **bokun_sync.php**: Auto-registers new products via `INSERT IGNORE INTO products`; includes `product_id` in both INSERT and UPDATE
+- **BokunAPI.php**: Extracts `product_id` from `productBookings[0].product.id` in `transformBookingToTour()`
+- **guide-payments.php**: Replaced 9 blocks of 5-line `NOT LIKE` matching (45 lines total) with single `NOT EXISTS` subquery each
+
+### Frontend Changes
+- **Tours.jsx**: Removed client-side `filterToursOnly()` call — backend now handles filtering
+- **PriorityTickets.jsx**: Passes `product_type: 'ticket'` filter to API
+- **mysqlDB.js**: Added `product_type` parameter passthrough in `getTours()`
+
+### Files Modified
+- **Backend** (4 files): tours.php, bokun_sync.php, BokunAPI.php, guide-payments.php
+- **Frontend** (3 files): Tours.jsx, PriorityTickets.jsx, mysqlDB.js
+- **New**: `database/migrations/create_products_table.sql` (migration documentation)
+
+### Production Verification
+| Test | Result |
+|------|--------|
+| Tours API (default, no tickets) | 116 upcoming tours |
+| Tickets API (`product_type=ticket`) | 238 upcoming tickets |
+| Product type field in response | `tour` / `ticket` correctly set |
+| Auto-migration on first request | Products table + backfill completed |
+
+---
+
+## ✅ SECURITY HARDENING (2026-02-24)
+
+### Comprehensive Security Audit & Fixes
+✅ COMPLETED - Full security review and remediation across 4 severity levels
+
+- **Scope**: 18 vulnerabilities identified (3 Critical, 9 High, 6 Medium, 3 Low), all fixed
+- **Commits**: 4 commits (`b7beeba`, `5c91244`, `b5edc8b`, `a906629`)
+- **Deployed**: All changes live on production, verified via smoke tests
+
+### Critical & High Priority Fixes
+- **Deleted 57 test/debug files** from repository — contained hardcoded credentials, database info, and debug endpoints (e.g., `test_password.php`, `debug_headers.php`, `check_db.php`)
+- **Added `Middleware::requireAuth($conn)`** to all API endpoints (tours, guides, payments, tickets, tour-groups, guide-payments, payment-reports, bokun_sync, bokun_webhook)
+- **Fixed auth bypass** in `bokun_sync.php` — `action=sync` path skipped authentication
+- **Removed wildcard CORS** `Access-Control-Allow-Origin: *` from `tours.php`
+- **Enabled SSL verification** in `BokunAPI.php` — was using `CURLOPT_SSL_VERIFYPEER => false`
+
+### Medium Priority Fixes
+- **Fixed token key mismatch** — `mysqlDB.js` axios interceptor read `authToken` but `AuthContext.jsx` stored `token` in localStorage (was breaking all authenticated API calls after auth enforcement)
+- **Converted SQL interpolation to prepared statements** in `guide-payments.php` — 3 queries using `real_escape_string` + string interpolation replaced with `bind_param()`
+- **Suppressed error message leaks** across 10 PHP files — `$conn->error`, `$stmt->error`, `$e->getMessage()` no longer exposed to clients; moved to `error_log()` only
+- **Added session cleanup** — probabilistic (5% on login) deletion of expired sessions
+- **Removed info leaks** — auth default response no longer exposes database name; config error responses no longer expose environment name
+
+### Low Priority Fixes
+- **Deleted 8 remaining debug files from production server** (not in git) — including `check_getyourguide.php` which had a hardcoded password
+- **Added development CSP header** — was missing entirely for dev environment
+- **Fixed `.htaccess` wildcard CORS** — Apache `Header always set Access-Control-Allow-Origin "*"` was overriding PHP's environment-aware origin checking; removed CORS from `.htaccess` entirely
+- **Updated `.gitignore`** — added patterns for `*_test.php`, explicit entries for `compression_test.php`, `sentry_test.php`, `tests/run_tests.php`
+- **Fixed dead routes** in `index.php` — removed references to deleted files (`update_paid_status.php`, `update_cancelled_status.php`), consolidated to `tours.php`
+- **Fixed `404.php`** — removed `$_SERVER['REQUEST_URI']` from JSON response
+
+### Smoke Test Results (Production)
+All 7 tests passing:
+| Test | Status |
+|------|--------|
+| Frontend loads (200) | PASS |
+| Protected endpoints return 401 | PASS |
+| Login returns valid token | PASS |
+| Tours API with token | PASS |
+| Tickets API with token | PASS |
+| Bokun sync responds correctly | PASS |
+| CORS not wildcard | PASS |
+
+### Files Modified
+- **Backend** (12 files): tours.php, guides.php, payments.php, tickets.php, tour-groups.php, guide-payments.php, payment-reports.php, bokun_sync.php, bokun_webhook.php, auth.php, config.php, BokunAPI.php
+- **Frontend** (1 file): mysqlDB.js (token key fix)
+- **Config** (3 files): .htaccess, index.php, 404.php, .gitignore
+- **Deleted**: 57 test/debug/migration files from repository + 8 from production server
+
+---
+
+## ✅ UNASSIGNED TOURS REPORT (2026-02-23)
+
+### Downloadable Unassigned Tours Report
+- **Purpose**: Generate a plain-text report of unassigned tours (date, time, location) for sharing with guides
+- **Frontend**: New "Unassigned Report" button in the Summary card at bottom of Tours page
+  - Iterates existing `groupedTours` memo (respects all active filters: date, guide, upcoming/past/date range)
+  - Excludes cancelled tours and ticket products (already filtered by groupedTours)
+  - Output shows only **date, time, and location** — clean format for guides
+  - Location extracted from tour title via keyword matching: Uffizi, Accademia, Duomo, Pitti, Boboli, Palazzo Vecchio, San Lorenzo, Santa Croce, Ponte Vecchio, Bargello, Vasari Corridor (defaults to "Florence")
+  - Downloads as `unassigned_tours_YYYYMMDD_HHmm.txt` via Blob
+  - Responsive: shows "Unassigned Report" on desktop, "Report" on mobile
+- **No backend changes**: Entirely client-side using existing filtered data
+- **File Modified**: `src/pages/Tours.jsx`
+
+---
+
+## ✅ CUSTOM DATE RANGE FILTERING & CACHE FIX (2026-02-23)
+
+### Custom Date Range Filter
+- **Backend**: Added `start_date` and `end_date` query parameters to `tours.php` GET handler
+  - Generates `WHERE t.date >= ? AND t.date <= ?` with prepared statements
+  - Both params validated with regex `/^\d{4}-\d{2}-\d{2}$/`
+  - Takes priority over `past`, `upcoming`, and `date` filters
+- **Service Layer**: Added `start_date`, `end_date`, and `past` filter passthrough in `mysqlDB.js`
+- **Frontend**: New "Date Range" button in Tours.jsx filter bar
+  - Dual date picker with start/end inputs and "to" separator
+  - `end_date` input has `min` constraint to prevent invalid ranges
+  - Skips fetching while range is incomplete (only one date selected)
+  - All existing filter buttons properly clear date range mode when clicked
+- **Cache Fix**: Added `past` and `start_date` to `hasFilters` check in `getTours()`
+  - Previously, switching to Past 40 Days or Date Range returned stale cached data from Upcoming
+- **Files Modified**: `tours.php`, `mysqlDB.js`, `Tours.jsx`
+
+---
+
+## ✅ PDF REPORT GENERATION & PAYMENT SYSTEM FIXES (2026-01-29)
+
+### PDF Report Generation
+✅ COMPLETED - Frontend-only PDF generation using jsPDF (no PHP dependencies)
+
+- **Purpose**: Generate professional PDF reports for guide payments directly in browser
+- **Tech Stack**: jsPDF 2.5.2 + jsPDF-AutoTable 3.8.4
+- **Design**: Tuscan-themed branding with terracotta accent color (#C75D3A)
+
+- **Report Types Available**:
+  | Report | Description | Columns |
+  |--------|-------------|---------|
+  | Guide Payment Summary | Overview of all guides with payment totals | Guide, Tours, Paid, Unpaid, Total |
+  | Pending Payments | Tours awaiting guide payment | Guide, Tour, Date, Participants |
+  | Payment Transactions | Detailed payment history | Guide, Tour, Amount, Method, Date |
+  | Monthly Summary | Monthly payment breakdown | Month, Total Paid, Cash, Bank Transfer |
+
+- **Files Created**:
+  - `src/utils/pdfGenerator.js` - Complete PDF generation utility with 4 report templates
+
+- **Files Modified**:
+  - `src/pages/Payments.jsx` - Added PDF download buttons for Guide Payments and Pending tabs
+
+- **Usage**:
+  ```javascript
+  import { generateGuidePaymentSummaryPDF, generatePendingPaymentsPDF } from '../utils/pdfGenerator';
+
+  // Generate and download PDF
+  generateGuidePaymentSummaryPDF(guidesData);
+  generatePendingPaymentsPDF(pendingToursData);
+  ```
+
+- **Deployment Status**: ✅ DEPLOYED TO PRODUCTION
+
+---
+
+### Payment System Critical Bug Fixes
+✅ COMPLETED - Fixed three critical bugs causing inconsistent payment tracking
+
+- **Bug 1: Table Mismatch in VIEW**
+  - **Issue**: `guide_payment_summary` VIEW queried `payment_transactions` table (empty/non-existent)
+  - **Impact**: All guide payment totals showed €0.00
+  - **Fix**: Updated VIEW to reference `payments` table
+  - **File**: `database/migrations/fix_guide_payment_summary_view.sql`
+
+- **Bug 2: Inconsistent "Unpaid Tour" Logic**
+  - **Issue**: Three different definitions of "unpaid tour" across codebase
+  - **Frontend**: Used legacy `tour.paid` field
+  - **Backend**: Queried `tours.payment_status` field
+  - **Correct**: Check actual `payments` table for records
+  - **Fix**: Added `pending_tours` API endpoint with authoritative logic
+
+- **Bug 3: Pending Tab False Positives**
+  - **Issue**: Pending tab used legacy `paid` field instead of checking `payments` table
+  - **Impact**: Showed incorrect pending counts, sometimes 0 when tours existed
+  - **Fix**: Changed Payments.jsx to fetch from new API endpoint
+
+- **Files Created**:
+  - `database/migrations/fix_guide_payment_summary_view.sql` - VIEW fix SQL
+
+- **Files Modified**:
+  - `public_html/api/guide-payments.php` - Added `pending_tours` action endpoint
+  - `src/pages/Payments.jsx` - Changed to use API for pending tours
+  - `src/components/Dashboard.jsx` - Added API call for pending payments count
+
+- **New API Endpoint**:
+  ```
+  GET /api/guide-payments.php?action=pending_tours
+
+  Response:
+  {
+    "success": true,
+    "count": 5,
+    "data": [
+      {
+        "id": 123,
+        "title": "Tour Name",
+        "date": "2026-01-15",
+        "time": "09:00",
+        "guide_id": 1,
+        "guide_name": "Guide Name",
+        "participants": 4
+      }
+    ]
+  }
+  ```
+
+- **Verification Queries**:
+  ```sql
+  -- Verify VIEW uses correct table
+  SHOW CREATE VIEW guide_payment_summary;
+  -- Should show: LEFT JOIN payments p ON t.id = p.tour_id
+
+  -- Test pending tours
+  SELECT COUNT(*) FROM tours t
+  WHERE t.date < CURDATE()
+    AND t.cancelled = 0
+    AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.tour_id = t.id);
+  ```
+
+- **Deployment Status**: ✅ DEPLOYED TO PRODUCTION (January 29, 2026)
+
+---
+
 ## ✅ AUTOMATED TESTING IMPLEMENTATION (2026-01-29)
 
 ### React Testing with Vitest

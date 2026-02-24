@@ -1,567 +1,489 @@
 # Florence with Locals Tour Guide Management System
 
-> **📋 CLAUDE CODE INSTRUCTIONS**: This is the main project documentation file. Read this file every time you start working on this project to understand the complete context, architecture, and recent changes.
+> **CLAUDE CODE INSTRUCTIONS**: Read this file at the start of every session to understand the project context, architecture, and conventions.
 >
-> **When you need detailed information**, read the specific documentation files in the `docs/` folder:
-> - For environment/setup questions → Read `docs/ENVIRONMENT_SETUP.md`
-> - For recent changes/history → Read `docs/CHANGELOG.md`
-> - For API information → Read `docs/API_DOCUMENTATION.md`
-> - For development commands → Read `docs/DEVELOPMENT_GUIDE.md`
-> - For troubleshooting → Read `docs/TROUBLESHOOTING.md`
-> - For architecture details → Read `docs/ARCHITECTURE.md`
-> - For Bokun integration → Read `docs/BOKUN_INTEGRATION.md`
+> **Detailed docs** in `docs/` folder:
+> - Environment/setup: `docs/ENVIRONMENT_SETUP.md`
+> - Recent changes: `docs/CHANGELOG.md`
+> - API reference: `docs/API_DOCUMENTATION.md`
+> - Development commands: `docs/DEVELOPMENT_GUIDE.md`
+> - Troubleshooting: `docs/TROUBLESHOOTING.md`
+> - Architecture: `docs/ARCHITECTURE.md`
+> - Bokun integration: `docs/BOKUN_INTEGRATION.md`
 
 ## Project Overview
 
-A comprehensive tour guide management system for Florence, Italy that integrates with Bokun API for automatic booking synchronization and guide assignment. Features a modern, responsive UI with complete CRUD operations and role-based access control.
+A tour guide management system for Florence, Italy. Integrates with Bokun API for automatic booking synchronization from OTA channels (Viator, GetYourGuide) and direct sales. Features tour grouping, group-aware payments, mobile responsive UI, and PDF reporting.
 
-**Production Status**: ✅ FULLY OPERATIONAL at https://withlocals.deetech.cc
-**Last Critical Update**: January 25, 2026 - GetYourGuide booking sync fixed, timezone correction, 200+ bookings now syncing
+**Production**: https://withlocals.deetech.cc
+**Status**: Fully Operational
+**Last Updated**: February 24, 2026
 
 ## Tech Stack
 
-- **Frontend**: React 18 + Vite + TailwindCSS
-- **Backend**: PHP 8.2
-- **Database**: MySQL
-- **API Integration**: Bokun REST API with HMAC-SHA1 authentication
-- **Development**: Local environment on Windows
-- **UI Components**: Custom modern component system with responsive design
+- **Frontend**: React 18.2 + Vite 5.1 + TailwindCSS 3.4 (custom Tuscan theme)
+- **Backend**: PHP 8.2 REST API
+- **Database**: MySQL (40+ column tours table)
+- **Integration**: Bokun REST API (HMAC-SHA1 auth)
+- **PDF**: jsPDF + jsPDF-AutoTable
+- **Monitoring**: Sentry.io (frontend + backend)
+- **CI/CD**: GitHub Actions (build + deploy + health checks)
+- **Testing**: Vitest + React Testing Library (52 tests)
+- **Hosting**: Hostinger shared hosting (HTTPS)
 
 ## Key Features
 
-1. **Tour Management**: Create, edit, and manage tours with comprehensive details
-2. **Guide Management**: Manage tour guides with multi-language support and email contacts
-3. **Payment System**: Complete payment tracking with guide-wise analytics, date range reports, and Italian timezone support
-4. **Bokun Integration**: Dedicated page for automatic sync of bookings from Bokun (separated from tours)
-5. **Authentication**: Role-based access control (admin/viewer)
-6. **Ticket Management**: Museum entrance ticket inventory system for Uffizi and Accademia
-7. **Priority Tickets**: Dedicated page for museum ticket bookings with booking details modal
-8. **Modern UI/UX**: 100% mobile responsive with sidebar navigation and compact card layouts
-9. **Real-time Updates**: Live data synchronization with fallback localStorage support
-10. **✅ Cancelled Booking Sync**: Automatic synchronization of cancelled bookings with red visual indicators
-11. **✅ Rescheduling Support**: Complete detection and tracking of rescheduled tours with audit trail
-12. **✅ Cache Management**: Force refresh functionality to ensure latest data display
-13. **✅ Multi-Channel Language Detection**: Automatic tour language extraction from Bokun API (Viator, GetYourGuide, and other booking channels)
-14. **✅ Smart Payment Status**: Intelligent payment tracking distinguishing between customer platform payments and guide payments
-15. **✅ Ticket Product Filtering**: Automatic exclusion of museum entrance tickets from tour management views
-16. **✅ Booking Details Modal**: Comprehensive modal showing all booking information with 6 detailed sections (Oct 24, 2025)
-17. **✅ Participant Breakdown**: Adults/children display extracted from Bokun API (INFANT excluded)
-18. **✅ Priority Tickets Enhancements**: Upcoming filter (today + 60 days), morning bookings first, click-to-view details
-19. **✅ Automatic Bokun Sync**: Background sync every 15 minutes, on startup, and on app focus (Jan 25, 2026)
-20. **✅ Enhanced Ticket Detection**: Added "Entrance Ticket" keyword for better Uffizi ticket detection
-21. **✅ GetYourGuide Booking Sync**: Full support for GetYourGuide OTA bookings via SUPPLIER role (Jan 25, 2026)
-22. **✅ Timezone Fix**: Using startTimeStr for accurate local tour times instead of UTC conversion
-23. **✅ Pagination Enhancement**: Increased Bokun API pageSize to 200 with multi-page support (200+ bookings)
-24. **✅ Guides Page Improvements**: Pagination, PUT for updates, per-operation loading states, database indexes (Jan 28, 2026)
+1. **Tour Management**: CRUD with 40+ fields, filters (date, guide, upcoming/past/date range), pagination
+2. **Guide Management**: Multi-language, pagination (20/page), RESTful PUT updates, DB indexes
+3. **Payment System**: Group-aware (1 group = 1 payment), dedup prevention, 4 PDF reports, Europe/Rome TZ
+4. **Bokun Integration**: Auto-sync every 15 min, SUPPLIER + SELLER roles, 200/page multi-page pagination
+5. **Authentication**: bcrypt, 24h tokens, role-based (admin/viewer), Middleware-enforced on all endpoints
+6. **Ticket Management**: Accademia museum tickets, 15-min intervals (08:15-17:30)
+7. **Priority Tickets**: Museum ticket bookings with details modal, participant breakdown
+8. **Mobile Responsive**: Dedicated mobile components, 44px touch targets, hamburger + card layout
+9. **Tour Grouping**: Auto-group by product+date+time, max 9 PAX, DnD merge, advisory locks
+10. **GYG Participant Names**: Regex extraction from special requests, expandable display, copy-all
+11. **Cancelled/Rescheduled**: Auto-detection with visual indicators and audit trail
+12. **Multi-Channel Language Detection**: Extracted from Bokun notes, rate titles, product titles
+13. **Product Classification**: DB-driven product_type filtering (tour/ticket) via `products` table, replaces keyword matching
+14. **Rate Limiting**: DB-backed, per-endpoint (login: 5/min, read: 100/min, write: 30/min)
+15. **Error Tracking**: Sentry.io (100% trace, 10% replay) + file logging with rotation
+16. **CI/CD Pipeline**: GitHub Actions: build verification + deploy to Hostinger + health checks
+17. **Unassigned Tours Report**: Downloadable .txt report (date/time/location) of guideless tours, location extracted from title
+
+## CRITICAL INFORMATION
+
+### Development Rules
+1. **PORTS**: Frontend: 5173 (always). Backend: 8080. Never change these.
+   - Kill existing: `netstat -ano | findstr :5173` then `taskkill //PID [PID] //F`
+2. **Database**: 40+ columns in `tours` table. Sessions table uses `token` column (not `session_token`).
+3. **Config pattern**: All API files use `require_once 'config.php'` which provides `$conn`, DB vars.
+4. **Authentication**: All API endpoints require `Middleware::requireAuth($conn)` (except auth.php login/logout).
+
+### Environment Details
+| Property | Development | Production |
+|----------|-------------|------------|
+| Frontend | http://localhost:5173 | https://withlocals.deetech.cc |
+| Backend | http://localhost:8080 | https://withlocals.deetech.cc/api |
+| Database | florence_guides | u803853690_withlocals |
+| SSH | N/A | `ssh -p 65002 u803853690@82.25.82.111` |
+| Admin Login | dhanu / Kandy@123 | dhanu / Kandy@123 |
+
+### Key File Locations
+- **Frontend Entry**: `src/main.jsx`
+- **Main Layout**: `src/components/Layout/ModernLayout.jsx` (354 lines)
+- **Largest Pages**: `src/pages/Payments.jsx` (2,125 lines), `src/pages/Tours.jsx` (1,531 lines)
+- **API Service**: `src/services/mysqlDB.js` (601 lines, 1-min localStorage cache)
+- **Database Config**: `public_html/api/config.php` (403 lines)
+- **Bokun Client**: `public_html/api/BokunAPI.php` (705 lines)
+- **Tour Groups**: `public_html/api/tour-groups.php` (1,006 lines)
+- **Bokun Sync**: `public_html/api/bokun_sync.php` (1,015 lines)
 
 ## Project Structure
 
 ```
 guide-florence-with-locals/
-├── src/                           # React frontend source
-│   ├── components/               # React components
-│   │   ├── Layout/              # Modern responsive layout components
-│   │   │   └── ModernLayout.jsx # Main layout with sidebar navigation
-│   │   ├── UI/                  # Reusable UI components
-│   │   │   ├── Card.jsx         # Modern card component
-│   │   │   ├── Button.jsx       # Styled button component
-│   │   │   └── Input.jsx        # Form input components
-│   │   ├── BookingDetailsModal.jsx # Comprehensive booking details modal (NEW - Oct 24, 2025)
-│   │   ├── TourCards.jsx        # Tour display component (compact horizontal layout)
-│   │   ├── CardView.jsx         # Tour card container
-│   │   ├── PaymentRecordForm.jsx # Payment recording form with Italian timezone
-│   │   └── Dashboard.jsx        # Statistics dashboard
-│   ├── pages/                   # Page components
-│   │   ├── Tours.jsx           # Tour management with booking details modal
-│   │   ├── Guides.jsx          # Guide management with multi-language support
-│   │   ├── Payments.jsx        # Payment tracking with calendar date filtering
-│   │   ├── Tickets.jsx         # Museum ticket inventory management
-│   │   ├── PriorityTickets.jsx # Museum ticket bookings with modal and participant breakdown
-│   │   ├── EditTour.jsx        # Tour editing interface
-│   │   ├── BokunIntegration.jsx # Dedicated Bokun integration page
-│   │   └── Login.jsx           # Authentication
-│   ├── contexts/               # React contexts
-│   │   ├── AuthContext.jsx     # Authentication management
-│   │   └── PageTitleContext.jsx # Dynamic page titles
-│   └── services/               # API services
-│       └── mysqlDB.js          # Database service layer with caching
-├── public_html/                # PHP backend
-│   └── api/                    # API endpoints
-│       ├── config.php          # Database configuration with CORS
-│       ├── tours.php           # Tours CRUD API
-│       ├── guides.php          # Guides CRUD API
-│       ├── payments.php        # Payment transactions CRUD API
-│       ├── guide-payments.php  # Guide payment summaries and analytics
-│       ├── payment-reports.php # Payment reports with date filtering
-│       ├── tickets.php         # Tickets CRUD API
-│       ├── BokunAPI.php        # Bokun API service class
-│       ├── bokun_sync.php      # Bokun sync endpoints
-│       ├── auth.php            # Authentication API
-│       └── database_check.php  # Database verification utility
-├── database/                   # Database schemas and setup
-└── docs/                       # Documentation (organized by topic)
-    ├── ENVIRONMENT_SETUP.md    # Environment, database, servers
-    ├── CHANGELOG.md            # All recent updates and changes
-    ├── API_DOCUMENTATION.md    # API endpoints and authentication
-    ├── DEVELOPMENT_GUIDE.md    # Development commands and testing
-    ├── BOKUN_INTEGRATION.md    # Bokun API integration details
-    ├── ARCHITECTURE.md         # System design and data flow
-    ├── FEATURES.md             # Feature status and roadmap
-    ├── PERFORMANCE.md          # Optimization and security
-    ├── TESTING.md              # QA and test coverage
-    ├── TROUBLESHOOTING.md      # Common issues and solutions
-    └── PROJECT_STATUS.md       # Completion phases and status
+├── src/
+│   ├── main.jsx                         # Sentry init, root mount
+│   ├── App.jsx                          # Router, providers, protected routes
+│   ├── components/
+│   │   ├── Layout/ModernLayout.jsx      # Collapsible sidebar + mobile header
+│   │   ├── UI/                          # Button (10 variants), Card, Input, StatusBadge
+│   │   ├── BookingDetailsModal.jsx      # 6-section booking details (556 lines)
+│   │   ├── TourGroup.jsx               # Expandable group, DnD, guide edit
+│   │   ├── TourCardMobile.jsx          # Mobile tour card (4-row layout)
+│   │   ├── TourGroupCardMobile.jsx     # Mobile group card (expand/collapse)
+│   │   ├── BokunAutoSyncProvider.jsx   # 15-min auto-sync + status indicator
+│   │   └── Dashboard.jsx               # Stats: unassigned, unpaid, upcoming
+│   ├── pages/
+│   │   ├── Tours.jsx                    # Grouping, DnD merge, filters, mobile (1,531 lines)
+│   │   ├── Payments.jsx                 # 4 tabs, batch pay, PDF reports (2,125 lines)
+│   │   ├── Guides.jsx                   # CRUD, pagination, multi-language (718 lines)
+│   │   ├── Tickets.jsx                  # Accademia inventory, 15-min time slots
+│   │   ├── PriorityTickets.jsx          # Ticket bookings with details modal
+│   │   ├── BokunIntegration.jsx         # Sync triggers (admin-only)
+│   │   └── Login.jsx                    # Username/password form
+│   ├── contexts/
+│   │   ├── AuthContext.jsx              # Token, role, login/logout
+│   │   └── PageTitleContext.jsx         # Dynamic page titles
+│   ├── services/
+│   │   ├── mysqlDB.js                   # API layer, caching, axios interceptor (601 lines)
+│   │   ├── bokunAutoSync.js             # Background sync service
+│   │   └── ticketsService.js            # Tickets CRUD
+│   ├── hooks/
+│   │   └── useBokunAutoSync.jsx         # 15-min sync hook (199 lines)
+│   └── utils/
+│       ├── tourFilters.js               # Ticket vs tour keyword detection
+│       └── pdfGenerator.js              # 4 PDF report types (Tuscan theme)
+├── public_html/api/                     # PHP REST API
+│   ├── config.php                       # DB, CORS, gzip, env detection, Sentry
+│   ├── Middleware.php                   # Auth verification, CORS, logging
+│   ├── auth.php                         # Login/logout/verify (bcrypt, 24h tokens)
+│   ├── tours.php                        # Tour CRUD + filters + pagination
+│   ├── guides.php                       # Guide CRUD + pagination + indexes
+│   ├── tour-groups.php                  # Auto-group, merge, unmerge, dissolve (1,006 lines)
+│   ├── payments.php                     # Payment transactions (group-aware dedup)
+│   ├── guide-payments.php               # Per-guide summaries (group-aware counting)
+│   ├── payment-reports.php              # Date-range reports (summary/detailed/monthly/export)
+│   ├── tickets.php                      # Ticket inventory CRUD
+│   ├── BokunAPI.php                     # Bokun client: HMAC-SHA1, multi-role, name parsing
+│   ├── bokun_sync.php                   # Sync orchestrator: fetch, dedup, insert/update, auto-group
+│   ├── bokun_webhook.php                # Webhook receiver
+│   ├── RateLimiter.php                  # DB-backed rate limiting (IP + endpoint)
+│   ├── Validator.php                    # Input validation (email, date, phone, etc.)
+│   ├── Encryption.php                   # AES-256-CBC for API credentials
+│   ├── EnvLoader.php                    # .env file parser
+│   ├── BaseAPI.php                      # Standardized request/response
+│   ├── Logger.php                       # File logging with rotation (5MB, 5 versions)
+│   ├── SentryLogger.php                 # Sentry.io integration
+│   └── HttpClient.php                   # Fallback HTTP client
+├── database/migrations/                 # SQL migration files
+├── scripts/                             # deploy.sh, deploy.ps1
+├── docs/                                # 14 documentation files
+├── .github/workflows/                   # main.yml (build), deploy.yml (deploy + health)
+└── dist/                                # Production build (.htaccess for SPA routing)
 ```
 
-## Documentation Index
+## Architecture
 
-All detailed documentation has been organized into topic-specific files in the `docs/` directory:
+### Provider Hierarchy
+```
+Sentry.ErrorBoundary
+  └── Router (React Router v7.5)
+        └── AuthProvider (token, role, login/logout)
+              └── PageTitleProvider
+                    └── BokunAutoSyncProvider (15-min background sync)
+                          └── ModernLayout (sidebar/header)
+                                └── Page Component
+```
 
-### Quick Reference
-- 🚀 **[Getting Started](docs/ENVIRONMENT_SETUP.md)** - Environment setup, database configuration, access credentials
-- 💻 **[Development](docs/DEVELOPMENT_GUIDE.md)** - Development commands, port management, testing
-- 📝 **[Changelog](docs/CHANGELOG.md)** - Recent updates and changes (Oct 2025 - Aug 2025)
-- 🔌 **[API Documentation](docs/API_DOCUMENTATION.md)** - API endpoints and authentication
+### Routes
+| Path | Component | Access |
+|------|-----------|--------|
+| `/login` | Login | Public |
+| `/` | Dashboard | Protected |
+| `/tours` | Tours | Protected |
+| `/guides` | Guides | Protected |
+| `/tickets` | Tickets | Protected |
+| `/payments` | Payments | Protected |
+| `/priority-tickets` | PriorityTickets | Protected |
+| `/bokun-integration` | BokunIntegration | Admin only |
 
-### Technical Documentation
-- 🏗️ **[Architecture](docs/ARCHITECTURE.md)** - System design, component structure, data flow
-- ⚡ **[Performance & Security](docs/PERFORMANCE.md)** - Optimization strategies and security features
-- 🧪 **[Testing](docs/TESTING.md)** - QA processes and test coverage
+### Request Flow
+1. Browser sends HTTPS + `Authorization: Bearer <token>`
+2. `config.php` inits DB, CORS, gzip, Sentry, security headers
+3. `Middleware::requireAuth($conn)` verifies Bearer token (all endpoints except auth login/logout)
+4. `autoRateLimit()` enforces per-endpoint limits
+5. Endpoint validates input, executes prepared statements, returns JSON (generic error messages only)
+6. Frontend caches GET responses in localStorage (1-min TTL)
 
-### Feature Documentation
-- ✨ **[Features](docs/FEATURES.md)** - Complete feature list and status
-- 🔗 **[Bokun Integration](docs/BOKUN_INTEGRATION.md)** - Bokun API integration details and status
+### Data Service Pattern (mysqlDB.js)
+```javascript
+// Exported functions
+export const getTours = async (forceRefresh, page, perPage, filters) => { ... }
+export const tourGroupsAPI = { list(), autoGroup(), manualMerge(), unmerge(), update(), dissolve() }
 
-### Operations
-- 📊 **[Project Status](docs/PROJECT_STATUS.md)** - Current status and completion phases
-- 🛠️ **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+// Axios interceptor adds Bearer token from localStorage
+// Cache: localStorage 'tours_v1' with 60-second TTL
+// Anti-browser-cache: _={timestamp} query param
+```
 
-## Quick Start
+## Tour Grouping System (Feb 2026)
 
-### Prerequisites
-- PHP 8.2+ with curl, openssl, mysqli extensions
-- MySQL database
-- Node.js 16+ and npm
+### Business Rules
+- Groups bookings that are same product + date + time
+- Max 9 PAX per group (Uffizi museum rule)
+- Auto-grouping runs after every Bokun sync
+- Manual merges are never touched by auto-grouping (`is_manual_merge=1`)
+- Assigning guide to group propagates to all tours in group
+- 1 group = 1 payment unit (not per-booking)
 
-### Installation
+### Database
+- **`tour_groups`** table: id, group_date, group_time, display_name, guide_id, max_pax (9), is_manual_merge
+- **`tours.group_id`** FK to tour_groups
+- SQL pattern: `IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit`
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/DhaNu1204/guide-florence-with-locals.git
-   cd guide-florence-with-locals
-   ```
+### Integrity
+- All group operations use database transactions (begin/commit/rollback)
+- Advisory lock: `GET_LOCK('auto_group', 10)` prevents concurrent auto-grouping
+- Orphan cleanup: deletes groups with no member tours
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+### Frontend
+- `TourGroup.jsx`: Expandable row, guide edit, unmerge/dissolve, DnD target
+- `TourGroupCardMobile.jsx`: Mobile expand/collapse, PAX fraction (X/9)
+- Tours.jsx: HTML5 drag-and-drop, selection mode for mobile merge
+- `groupedTours` memo: `periodGroup.items` array (tours + `{_isGroup, group}` objects)
 
-3. **Configure database**
-   - Update `public_html/api/config.php` with your database credentials
-   - Import database schema from `database/` directory
+### API
+| Method | Endpoint | Action |
+|--------|----------|--------|
+| GET | `/api/tour-groups.php` | List groups |
+| POST | `?action=auto-group` | Auto-group by product+date+time |
+| POST | `?action=manual-merge` | Merge specific tour IDs |
+| POST | `?action=unmerge` | Remove tour from group |
+| PUT | `/{id}` | Update group (guide propagates) |
+| DELETE | `/{id}` | Dissolve group |
 
-4. **Start development servers**
-   ```bash
-   # Terminal 1 - Frontend (port 5173)
-   npm run dev
+## Group-Aware Payment System (Feb 2026)
 
-   # Terminal 2 - Backend (port 8080)
-   cd public_html
-   php -S localhost:8080
-   ```
+### SQL Pattern
+```sql
+-- Tour unit: group or individual
+IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit
 
-5. **Access the application**
-   - Frontend: http://localhost:5173
-   - Login: dhanu / Kandy@123
+-- Unpaid: GROUP BY tour_unit HAVING MAX(p.id) IS NULL
+-- Paid: GROUP BY tour_unit with INNER JOIN payments
+```
 
-For detailed setup instructions, see [ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)
+### Duplicate Prevention
+- `payments.php` checks if any tour in same group already has a payment → HTTP 409
+- `force_group_payment: true` bypasses group duplicate check
+- `force_payment: true` bypasses per-tour duplicate check
 
-## 🔴 CRITICAL INFORMATION - READ FIRST
+### Ticket Filtering in Payments
+Uses `NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')` — replaced 45 lines of `NOT LIKE` keyword matching across 9 locations.
 
-### Development Rules
-1. **PORT MANAGEMENT**: ALWAYS use port 5173 for frontend - NEVER allow different ports
-   - Kill existing processes before starting: `netstat -ano | findstr :5173` then `taskkill //PID [PID] //F`
-   - Backend uses port 8080
+## Product Classification System (Feb 2026)
 
-2. **Database**: Production database has 40 columns in `tours` table - synchronized Oct 25, 2025
-   - Important columns: `language`, `rescheduled`, `original_date`, `original_time`, `notes`, `bokun_data`
-   - Sessions table has `token` column (fixed Oct 25, 2025)
+### Overview
+Classifies Bokun products as `tour` or `ticket` via a dedicated `products` table, replacing fragile keyword-based filtering (`NOT LIKE '%Entry Ticket%'` etc.) with reliable product ID lookups.
 
-3. **Recent Critical Fixes** (Read `docs/CHANGELOG.md` for full details):
-   - ✅ **Guides page improvements** - Pagination, PUT for updates, per-operation loading, database indexes (Jan 28, 2026)
-   - ✅ **GetYourGuide sync fixed** - Changed Bokun API to use both SUPPLIER and SELLER roles (Jan 25, 2026)
-   - ✅ **Timezone fix** - Using startTimeStr for accurate local times (was showing +1 hour offset)
-   - ✅ **Pagination fix** - Increased pageSize from 50 to 200, added multi-page support (200+ bookings)
-   - ✅ **Tours page fix** - Default to upcoming filter, increased toursPerPage to 100
-   - ✅ Priority Tickets API fix (per_page max increased to 500, upcoming filter added)
-   - ✅ Dashboard fix - Added upcoming filter to show 2026 data
-   - ✅ Enhanced ticket detection ("Entrance Ticket" keyword added)
+### Database
+- **`products`** table: `bokun_product_id` (PK), `title`, `product_type` ENUM('tour','ticket'), timestamps
+- **`tours.product_id`** column: FK to products, extracted from `bokun_data` JSON
+- **Auto-migration**: `tours.php` auto-creates table/column on first request via `SHOW TABLES`/`SHOW COLUMNS` guards
+- **Backfill**: One-time `JSON_EXTRACT` from `bokun_data` populates `product_id` for existing tours
 
-### Key File Locations
-- **Frontend Entry**: `src/main.jsx`
-- **Main Layout**: `src/components/Layout/ModernLayout.jsx`
-- **Database Config**: `public_html/api/config.php`
-- **API Endpoints**: `public_html/api/*.php`
-- **Service Layer**: `src/services/mysqlDB.js` (handles caching)
+### Known Ticket Product IDs
+`809838`, `845665`, `877713`, `961802`, `1115497`, `1119143`, `1162586`
 
-### Environment Details
-- **Development**: http://localhost:5173 (frontend) + http://localhost:8080 (backend)
-- **Production**: https://withlocals.deetech.cc
-- **Database**: florence_guides (dev) / u803853690_florence_guides (prod)
-- **SSH Access**: ssh -p 65002 u803853690@82.25.82.111
-- **Admin Login**: dhanu / Kandy@123
+### Query Parameter
+- `?product_type=tour` (default) — excludes tickets: `WHERE (pr.product_type = 'tour' OR t.product_id IS NULL)`
+- `?product_type=ticket` — tickets only: `WHERE pr.product_type = 'ticket'`
+- `?product_type=all` — no filter
 
-### Active Features
-- ✅ Bokun API Integration (200+ bookings synced from Viator AND GetYourGuide)
-- ✅ Automatic Bokun sync every 15 minutes
-- ✅ Multi-channel OTA support (Viator, GetYourGuide, direct bookings)
-- ✅ Multi-language guide management
-- ✅ Payment tracking with Italian timezone
-- ✅ Museum ticket inventory (Uffizi/Accademia)
-- ✅ Priority Tickets with upcoming filter
-- ✅ Booking details modal (6 sections)
-- ✅ Cancelled booking sync with visual indicators
-- ✅ Rescheduling detection with audit trail
+### Sync Integration
+- `BokunAPI.php` extracts `product_id` from `productBookings[0].product.id`
+- `bokun_sync.php` auto-registers new products via `INSERT IGNORE INTO products`
+- New products default to `product_type='tour'`
 
-## Current Status
+### Files Modified
+- **Backend**: `tours.php` (auto-migration + query param), `bokun_sync.php` (product registration + product_id in INSERT/UPDATE), `BokunAPI.php` (product_id extraction), `guide-payments.php` (9x NOT LIKE → NOT EXISTS)
+- **Frontend**: `Tours.jsx` (removed `filterToursOnly()`), `PriorityTickets.jsx` (added `product_type: 'ticket'`), `mysqlDB.js` (product_type param passthrough)
+- **Migration**: `database/migrations/create_products_table.sql`
 
-✅ **FULLY OPERATIONAL** - Production site live at https://withlocals.deetech.cc
+### Classify a New Product as Ticket
+```sql
+UPDATE products SET product_type = 'ticket' WHERE bokun_product_id = <id>;
+```
 
-- All core functionality working perfectly
-- Database schema synchronized (Oct 25, 2025)
-- Bokun integration operational with 200+ bookings (Viator + GetYourGuide)
-- Complete payment tracking system
-- Modern responsive UI across all devices
-- Correct timezone handling for tour times
+## GYG Participant Names (Feb 2026)
 
-For detailed status information, see [PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
+- **Source**: `productBookings[0].specialRequests` in GYG bookings
+- **Format**: `"Traveler 1:\nFirst Name: X\nLast Name: Y\n..."`
+- **Regex**: `/Traveler\s+(\d+):\s*\n?First Name:\s*(.+?)\s*\n?Last Name:\s*(.+?)(?:\n|$)/i`
+- **Normalization**: `mb_convert_case(mb_strtolower(...), MB_CASE_TITLE)`
+- **Storage**: `tours.participant_names` TEXT column (JSON array)
+- **Frontend**: `ParticipantNamesCompact` — "First Last +N more" expandable
+- **Backfill**: `bokun_sync.php?action=backfill-names`
 
-## 💡 Working on This Project
+## Bokun API Integration
 
-When the user asks you to work on this project:
+### Authentication
+- HMAC-SHA1 signature: `base64(hmac_sha1(Date + AccessKey + Method + Path, SecretKey))`
+- Credentials encrypted with AES-256-CBC in `bokun_config` table
 
-1. **First Time / Starting Session**:
-   - Read this CLAUDE.md file to understand the project
-   - Read `docs/CHANGELOG.md` to see recent changes
-   - Read relevant docs based on the task (e.g., `docs/API_DOCUMENTATION.md` for API work)
+### Sync Mechanics
+- Both SUPPLIER (OTA) and SELLER (direct) roles queried
+- 200 bookings/page, up to 10 pages (2,000 max)
+- Deduplicates by booking ID across roles
+- Auto-groups after every sync
+- Rate limited: 10/min
 
-2. **Before Making Changes**:
-   - Check `docs/ARCHITECTURE.md` to understand system design
-   - Check `docs/TROUBLESHOOTING.md` for known issues
-   - Verify database schema matches documentation (40 columns in tours table)
+### Data Extraction
+- **Time**: `startTimeStr` (local time, not UTC conversion)
+- **Language**: From booking notes, rate title, or product title
+- **Names**: Parsed from GYG special requests
+- **Channel**: From `channel.title` or `seller.title`
 
-3. **Development Workflow**:
-   - Frontend changes: Edit files in `src/`
-   - Backend changes: Edit files in `public_html/api/`
-   - Test locally before suggesting production deployment
-   - Always use port 5173 for frontend, 8080 for backend
+### Auto-Sync Triggers
+- On app startup (if stale > 15 min)
+- Every 15 minutes (periodic)
+- On app focus/visibility change
+- Manual trigger (admin only)
 
-4. **When Stuck**:
-   - Read `docs/TROUBLESHOOTING.md` for common issues
-   - Check `docs/DEVELOPMENT_GUIDE.md` for commands
-   - Read `docs/PROJECT_STATUS.md` for overall status
+## API Rate Limiting
 
-## 🚀 Deployment Process
+| Type | Limit | Window |
+|------|-------|--------|
+| login | 5 | 1 min |
+| read (GET) | 100 | 1 min |
+| write/create (POST) | 30 | 1 min |
+| update (PUT) | 30 | 1 min |
+| delete (DELETE) | 10 | 1 min |
+| bokun_sync | 10 | 1 min |
 
-### Quick Deploy Command
-Ask Claude Code to: *"Create a special agent to do the deployment process step by step"*
+```php
+autoRateLimit('endpoint-name');       // Auto by HTTP method
+applyRateLimit('login');              // Explicit type
+applyRateLimit('custom', 50, 60);    // Custom: 50 per 60s
+```
 
-### Manual Deployment Steps
+Response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`
 
-1. **Build Frontend**
-   ```bash
-   cd guide-florence-with-locals
-   npm run build
-   ```
+## PDF Reports
 
-2. **Deploy Backend (PHP files)**
-   ```bash
-   scp -P 65002 public_html/api/*.php u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/api/
-   ```
+Located in `src/utils/pdfGenerator.js`. Tuscan theme with terracotta accent (#C75D3A).
 
-3. **Deploy Frontend**
-   ```bash
-   scp -P 65002 -r dist/* u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/
-   ```
+| Function | Output |
+|----------|--------|
+| `generateGuidePaymentSummaryPDF()` | guide_payments_summary_YYYYMMDD.pdf |
+| `generatePendingPaymentsPDF()` | pending_payments_YYYYMMDD.pdf |
+| `generatePaymentTransactionsPDF()` | payment_transactions_YYYYMMDD.pdf |
+| `generateMonthlySummaryPDF()` | monthly_payment_summary_YYYYMMDD.pdf |
 
-4. **Verify Deployment**
-   ```bash
-   curl -s "https://withlocals.deetech.cc/api/tours.php?upcoming=true&per_page=10"
-   ```
+## Mobile Responsive Design (Feb 2026)
 
-### Production Server Details
+- **Breakpoint**: 768px (`md`)
+- **Pattern**: `hidden md:block` for desktop, `md:hidden` for mobile
+- **Touch targets**: min 44x44px (WCAG)
+- **Desktop**: Collapsible sidebar (64/256px) + data tables
+- **Mobile**: Hamburger menu + card layouts
+- **Components**: `TourCardMobile.jsx`, `TourGroupCardMobile.jsx`
+- **Mobile merge**: Selection mode → floating bottom bar → "Merge Selected" + "Assign Guide"
+
+## Security Hardening (Feb 2026)
+
+### Authentication Enforcement
+- All API endpoints require `Middleware::requireAuth($conn)` except auth.php login/logout
+- Token verified via `sessions` table with expiry check
+- Frontend axios interceptor reads `localStorage.getItem('token')` for Bearer header
+
+### CORS
+- Handled exclusively by PHP in `config.php` (environment-aware origin checking)
+- `.htaccess` does NOT set CORS headers (was removed — it overrode PHP logic)
+- Production origins: `https://withlocals.deetech.cc`, `http://withlocals.deetech.cc`
+
+### Error Information Policy
+- Client responses use generic messages ("Failed to fetch tours", "An internal error occurred")
+- Detailed errors go to `error_log()` only — never expose `$conn->error`, `$stmt->error`, or `$e->getMessage()`
+- 404 responses do not leak request URI or endpoint names
+
+### SQL Injection Prevention
+- All queries use prepared statements with `bind_param()` — no string interpolation
+- `guide-payments.php` was the last file converted from `real_escape_string` to prepared statements
+
+### Security Headers
+- Production: HSTS, CSP, X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- Development: Permissive CSP allowing localhost:* but still protective
+
+### Session Management
+- 24-hour token expiry
+- Probabilistic expired session cleanup (5% chance on login)
+- Tokens stored in `sessions` table with `expires_at` column
+
+### .gitignore Protection
+- Patterns block test/debug/migration/config files: `test_*.php`, `*_test.php`, `debug_*.php`, `check_*.php`, `fix_*.php`, `migrate_*.php`, `import_*.php`, `create_*.php`, `config_*_backup.php`
+
+## Deployment
+
+### CI/CD (GitHub Actions)
+Push to `main` triggers:
+1. Build: npm ci + vite build + PHP syntax check
+2. Deploy: SCP backend + rsync frontend to Hostinger
+3. Health check: curl tours API, guides API, frontend → HTTP 200
+
+### Manual Deploy
+```bash
+npm run build
+scp -P 65002 public_html/api/*.php u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/api/
+scp -P 65002 -r dist/* u803853690@82.25.82.111:/home/u803853690/domains/deetech.cc/public_html/withlocals/
+```
+
+### Production Server
 | Property | Value |
 |----------|-------|
-| SSH Host | 82.25.82.111 |
-| SSH Port | 65002 |
-| SSH User | u803853690 |
+| SSH | `ssh -p 65002 u803853690@82.25.82.111` |
 | Web Root | /home/u803853690/domains/deetech.cc/public_html/withlocals |
 | URL | https://withlocals.deetech.cc |
+| Database | u803853690_withlocals |
 
-## 🏗️ Architecture Overview
+## Common Development Patterns
 
-### Auto-Sync System
-```
-src/
-├── components/BokunAutoSyncProvider.jsx  # Provider wrapper + status indicator
-├── hooks/useBokunAutoSync.jsx            # React hook for sync state
-└── services/bokunAutoSync.js             # Sync service class
-```
-
-**Sync Triggers:**
-- On app startup (if last sync > 15 minutes ago)
-- Every 15 minutes (periodic interval)
-- On app focus/visibility change
-
-### API Utilities (NEW - Jan 2026)
-```
-public_html/api/
-├── BaseAPI.php      # Base class for consistent API responses
-├── EnvLoader.php    # Environment variable loader
-├── Logger.php       # Centralized error logging
-└── Validator.php    # Input validation helper
-```
-
-### Ticket Detection Keywords
-Located in `src/utils/tourFilters.js`:
-- "Entry Ticket"
-- "Entrance Ticket" (added Jan 2026)
-- "Priority Ticket"
-- "Skip the Line"
-- "Skip-the-Line"
-
-### API Pagination
-- **Default**: 50 records per page (20 for guides)
-- **Maximum**: 500 records per page (increased Jan 2026)
-- **Upcoming Filter**: `?upcoming=true` returns today + 60 days
-
-### Guides API (Updated Jan 28, 2026)
-Located in `public_html/api/guides.php`:
-
-**Endpoints:**
-- `GET /guides.php?page=1&per_page=20` - List guides with pagination
-- `POST /guides.php` - Create new guide
-- `PUT /guides.php/{id}` - Update existing guide
-- `DELETE /guides.php/{id}` - Delete guide
-
-**Response Format (GET):**
-```json
-{
-  "data": [...],
-  "pagination": {
-    "current_page": 1,
-    "per_page": 20,
-    "total": 45,
-    "total_pages": 3,
-    "has_next": true,
-    "has_prev": false
-  }
-}
-```
-
-**Database Indexes:**
-- `idx_email` - Index on email column
-- `idx_name` - Index on name column
-
-### Bokun API Integration Details
-Located in `public_html/api/BokunAPI.php`:
-
-**Booking Roles** (CRITICAL for OTA sync):
-- `SUPPLIER` - Fetches OTA bookings (Viator, GetYourGuide) where you supply the tour
-- `SELLER` - Fetches direct bookings where you sell directly
-- **Both roles are queried** to get all bookings
-
-**Time Extraction** (CRITICAL for correct times):
-- Uses `startTimeStr` field (local time) instead of UTC timestamp conversion
-- This ensures tour times match what's shown in Bokun/OTA dashboards
-
-**Pagination**:
-- Default pageSize: 200 (increased from 50)
-- Multi-page support: Fetches up to 10 pages (2000 bookings max)
-- Deduplicates bookings by ID across roles
-
-### API Rate Limiting (NEW - Jan 29, 2026)
-Located in `public_html/api/RateLimiter.php`:
-
-**Rate Limits by Endpoint Type:**
-| Type | Limit | Window | Used By |
-|------|-------|--------|---------|
-| login | 5 | 1 min | auth.php |
-| read | 100 | 1 min | GET requests |
-| write/create | 30 | 1 min | POST requests |
-| update | 30 | 1 min | PUT requests |
-| delete | 10 | 1 min | DELETE requests |
-| bokun_sync | 10 | 1 min | bokun_sync.php |
-| webhook | 30 | 1 min | bokun_webhook.php |
-
-**Usage in Endpoints:**
+### API Endpoint Pattern
 ```php
-// Automatic rate limiting by HTTP method
-autoRateLimit('endpoint-name');
-
-// Explicit rate limit type
-applyRateLimit('login');           // 5 per minute
-applyRateLimit('read');            // 100 per minute
-applyRateLimit('bokun_sync');      // 10 per minute
-
-// Custom limits
-applyRateLimit('custom', 50, 60);  // 50 per 60 seconds
+require_once 'config.php';
+require_once 'Middleware.php';
+Middleware::requireAuth($conn);
+autoRateLimit('endpoint_name');
+// GET/POST/PUT/DELETE switch
+// Prepared statements with bind_param()
+// JSON response: { success: true, data: [...] }
+// Error responses: generic messages only (details to error_log)
 ```
 
-**HTTP Response Headers:**
-- `X-RateLimit-Limit` - Max requests allowed
-- `X-RateLimit-Remaining` - Requests remaining
-- `X-RateLimit-Reset` - Unix timestamp when limit resets
-- `Retry-After` - Seconds until retry (on 429 response)
-
-**Database Table:** `rate_limits` (auto-created if missing)
-
-## 🔮 Future Development Roadmap
-
-### Planned Features
-| Feature | Priority | Status |
-|---------|----------|--------|
-| Push notifications for new bookings | High | Planned |
-| Guide availability calendar | High | Planned |
-| Advanced reporting & analytics | Medium | Planned |
-| Customer communication portal | Medium | Planned |
-| Mobile app (React Native) | Low | Future |
-| Multi-location support | Low | Future |
-
-### Technical Improvements
-| Improvement | Priority | Description |
-|-------------|----------|-------------|
-| ~~Database indexing~~ | ~~High~~ | ✅ Done - Added indexes for guides table (Jan 28, 2026) |
-| ~~API rate limiting~~ | ~~Medium~~ | ✅ Done - Database-backed rate limiting (Jan 29, 2026) |
-| ~~Unit tests~~ | ~~Medium~~ | ✅ Done - Vitest + PHP tests, 52 tests passing (Jan 29, 2026) |
-| Caching layer (Redis) | Medium | Reduce database load |
-| CI/CD pipeline | Low | GitHub Actions for automated deployment |
-| TypeScript migration | Low | Type safety for frontend |
-
-### Known Issues to Address
-1. **Large dataset pagination** - Consider infinite scroll for 500+ records
-2. **Offline support** - Service worker for offline viewing
-3. **Real-time updates** - WebSocket for live booking notifications
-4. **Multi-tenant support** - Support for multiple tour companies
-
-### Resolved Issues (Jan 2026)
-1. **GetYourGuide bookings not syncing** - Fixed by adding SUPPLIER role to Bokun API (Jan 25)
-2. **Tour times off by 1 hour** - Fixed by using startTimeStr instead of UTC timestamp (Jan 25)
-3. **Only 50 bookings syncing** - Fixed by increasing pageSize to 200 with pagination (Jan 25)
-4. **Tours page showing old data** - Fixed by defaulting to upcoming filter (Jan 25)
-5. **Guides page missing pagination** - Added pagination with 20 per page (Jan 28)
-6. **Guides API using POST for updates** - Changed to RESTful PUT `/guides.php/{id}` (Jan 28)
-7. **Guides page global loading state** - Added per-operation loading for Save/Delete buttons (Jan 28)
-8. **Guides table missing indexes** - Added `idx_email` and `idx_name` indexes (Jan 28)
-
-## 📁 New Files Added (Jan 2026)
-
-### Backend Utilities
-| File | Purpose |
-|------|---------|
-| `BaseAPI.php` | Standardized JSON responses, error handling |
-| `EnvLoader.php` | Load environment variables from .env files |
-| `Logger.php` | File-based error logging with rotation |
-| `Validator.php` | Input sanitization and validation |
-| `RateLimiter.php` | Database-backed API rate limiting - Jan 29, 2026 |
-
-### Database Migrations
-| File | Purpose |
-|------|---------|
-| `database/add_missing_indexes.sql` | Performance optimization |
-| `database/migrations/create_sync_logs_table.sql` | Sync history tracking |
-| `database/add_guides_indexes.sql` | Guides table indexes (email, name) - Jan 28, 2026 |
-| `database/migrations/create_rate_limits_table.sql` | API rate limiting storage - Jan 29, 2026 |
-
-### Configuration
-| File | Purpose |
-|------|---------|
-| `.env.example` | Template for environment configuration |
-
-## 🔧 Common Development Tasks
-
-### Add New Ticket Detection Keyword
-Edit `src/utils/tourFilters.js`:
-```javascript
-const TICKET_KEYWORDS = [
-  'Entry Ticket',
-  'Entrance Ticket',
-  'Priority Ticket',
-  'Skip the Line',
-  'Skip-the-Line',
-  'YOUR_NEW_KEYWORD'  // Add here
-];
+### URL ID Extraction
+```php
+$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$lastSegment = end(explode('/', $path));
+if (is_numeric($lastSegment)) { $id = intval($lastSegment); }
 ```
+
+### Pagination Pattern
+```php
+$page = max(1, intval($_GET['page'] ?? 1));
+$perPage = max(1, min(500, intval($_GET['per_page'] ?? 50)));
+// Returns: { data: [...], pagination: { current_page, per_page, total, total_pages, has_next, has_prev } }
+```
+
+### Classify a New Bokun Product as Ticket
+```sql
+UPDATE products SET product_type = 'ticket' WHERE bokun_product_id = <id>;
+```
+New products auto-register as `tour` during Bokun sync. No code changes needed — just update the DB row.
 
 ### Extend Auto-Sync Interval
-Edit `src/hooks/useBokunAutoSync.jsx`:
-```javascript
-const SYNC_INTERVAL_MS = 15 * 60 * 1000; // Change 15 to desired minutes
-```
+Edit `src/hooks/useBokunAutoSync.jsx` → `SYNC_INTERVAL_MS`.
 
 ### Add New API Endpoint
-1. Create `public_html/api/your-endpoint.php`
-2. Use BaseAPI pattern:
 ```php
 <?php
 require_once 'config.php';
-require_once 'BaseAPI.php';
-
-$api = new BaseAPI();
-// Your logic here
-$api->sendSuccess($data);
+require_once 'Middleware.php';
+Middleware::requireAuth($conn);
+autoRateLimit('your_endpoint');
+// Prepared statements + JSON response
+// Never expose $conn->error or $e->getMessage() to client
 ```
 
-### Database Schema Changes
-1. Update local database first
-2. Test thoroughly
-3. Create migration SQL in `database/migrations/`
-4. Apply to production via SSH
+## Working on This Project
 
-## 🛠️ Florence Skills Toolkit
+1. **Starting**: Read this file, then `docs/CHANGELOG.md` for recent changes
+2. **Before changes**: Check `docs/ARCHITECTURE.md`, verify DB schema
+3. **Development**: Frontend in `src/`, backend in `public_html/api/`
+4. **Testing**: `npm run test` (52 tests), test locally before deploying
+5. **Ports**: Always 5173 (frontend) + 8080 (backend)
+6. **When stuck**: Check `docs/TROUBLESHOOTING.md`
 
-Custom development skills are available in `../florence-skills/` directory. These provide specialized guidance for this project:
+## Florence Skills Toolkit
 
-### Available Skills
-| Skill | Path | Use For |
-|-------|------|---------|
-| **UI Designer** | `skills/ui-designer/SKILL.md` | Tuscan-inspired components, colors, styling |
-| **Mobile Optimizer** | `skills/mobile-optimizer/SKILL.md` | Responsive design, touch interactions |
-| **Security Hardener** | `skills/security-hardener/SKILL.md` | Input validation, XSS/SQL injection prevention |
-| **Reliability Engineer** | `skills/reliability-engineer/SKILL.md` | Error handling, monitoring, deployment |
-| **PHP Backend** | `skills/php-backend/SKILL.md` | API endpoints, database patterns |
-| **React Patterns** | `skills/react-patterns/SKILL.md` | Component structure, hooks, contexts |
+Custom skills in `../florence-skills/` directory:
 
-### Available Agents
-| Agent | Path | Use For |
-|-------|------|---------|
-| **Code Reviewer** | `agents/code-reviewer/AGENT.md` | Security/performance code review |
-| **Deployment Checker** | `agents/deployment-checker/AGENT.md` | Pre-deployment validation |
-
-### How to Use
-Ask Claude Code to use a skill:
-```
-Using the UI Designer skill, create a new card component for tour details.
-Using the PHP Backend skill, create an API endpoint for guide schedules.
-Using the Code Reviewer agent, review my changes for security issues.
-```
-
-Claude will read the relevant SKILL.md file and apply its patterns to your request.
-
-## Support
-
-For troubleshooting and common issues, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-
-## Repository
-
-**GitHub**: https://github.com/DhaNu1204/guide-florence-with-locals.git
+| Skill | Use For |
+|-------|---------|
+| UI Designer | Tuscan components, colors, styling |
+| Mobile Optimizer | Responsive design, touch interactions |
+| Security Hardener | Input validation, XSS/SQL injection prevention |
+| Reliability Engineer | Error handling, monitoring, deployment |
+| PHP Backend | API endpoints, database patterns |
+| React Patterns | Component structure, hooks, contexts |
+| Code Reviewer (Agent) | Security/performance review |
+| Deployment Checker (Agent) | Pre-deployment validation |
 
 ---
 
-**Last Updated**: January 28, 2026
+**Last Updated**: February 24, 2026
 **Production URL**: https://withlocals.deetech.cc
-**Status**: ✅ Fully Operational
-**Last Deployment**: January 25, 2026 02:00 UTC
-**Bookings Synced**: 200+ (Viator + GetYourGuide)
-
-**📌 Remember**: When working on this project, always read the relevant documentation files in `docs/` folder to understand the complete context before making changes.
+**Status**: Fully Operational
+**Tests**: 52 passing (Vitest + React Testing Library)
+**Repository**: https://github.com/DhaNu1204/guide-florence-with-locals.git
