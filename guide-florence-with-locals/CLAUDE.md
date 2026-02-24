@@ -17,7 +17,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 **Production**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Last Updated**: February 23, 2026
+**Last Updated**: February 24, 2026
 
 ## Tech Stack
 
@@ -37,7 +37,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 2. **Guide Management**: Multi-language, pagination (20/page), RESTful PUT updates, DB indexes
 3. **Payment System**: Group-aware (1 group = 1 payment), dedup prevention, 4 PDF reports, Europe/Rome TZ
 4. **Bokun Integration**: Auto-sync every 15 min, SUPPLIER + SELLER roles, 200/page multi-page pagination
-5. **Authentication**: bcrypt, 24h tokens, role-based (admin/viewer)
+5. **Authentication**: bcrypt, 24h tokens, role-based (admin/viewer), Middleware-enforced on all endpoints
 6. **Ticket Management**: Accademia museum tickets, 15-min intervals (08:15-17:30)
 7. **Priority Tickets**: Museum ticket bookings with details modal, participant breakdown
 8. **Mobile Responsive**: Dedicated mobile components, 44px touch targets, hamburger + card layout
@@ -58,7 +58,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
    - Kill existing: `netstat -ano | findstr :5173` then `taskkill //PID [PID] //F`
 2. **Database**: 40+ columns in `tours` table. Sessions table uses `token` column (not `session_token`).
 3. **Config pattern**: All API files use `require_once 'config.php'` which provides `$conn`, DB vars.
-4. **tours.php quirk**: Creates a SECOND `$conn` connection (line 28) despite config.php providing one.
+4. **Authentication**: All API endpoints require `Middleware::requireAuth($conn)` (except auth.php login/logout).
 
 ### Environment Details
 | Property | Development | Production |
@@ -171,10 +171,11 @@ Sentry.ErrorBoundary
 
 ### Request Flow
 1. Browser sends HTTPS + `Authorization: Bearer <token>`
-2. `config.php` inits DB, CORS, gzip, Sentry
-3. `autoRateLimit()` enforces per-endpoint limits
-4. Endpoint validates input, executes prepared statements, returns JSON
-5. Frontend caches GET responses in localStorage (1-min TTL)
+2. `config.php` inits DB, CORS, gzip, Sentry, security headers
+3. `Middleware::requireAuth($conn)` verifies Bearer token (all endpoints except auth login/logout)
+4. `autoRateLimit()` enforces per-endpoint limits
+5. Endpoint validates input, executes prepared statements, returns JSON (generic error messages only)
+6. Frontend caches GET responses in localStorage (1-min TTL)
 
 ### Data Service Pattern (mysqlDB.js)
 ```javascript
@@ -317,6 +318,39 @@ Located in `src/utils/pdfGenerator.js`. Tuscan theme with terracotta accent (#C7
 - **Components**: `TourCardMobile.jsx`, `TourGroupCardMobile.jsx`
 - **Mobile merge**: Selection mode → floating bottom bar → "Merge Selected" + "Assign Guide"
 
+## Security Hardening (Feb 2026)
+
+### Authentication Enforcement
+- All API endpoints require `Middleware::requireAuth($conn)` except auth.php login/logout
+- Token verified via `sessions` table with expiry check
+- Frontend axios interceptor reads `localStorage.getItem('token')` for Bearer header
+
+### CORS
+- Handled exclusively by PHP in `config.php` (environment-aware origin checking)
+- `.htaccess` does NOT set CORS headers (was removed — it overrode PHP logic)
+- Production origins: `https://withlocals.deetech.cc`, `http://withlocals.deetech.cc`
+
+### Error Information Policy
+- Client responses use generic messages ("Failed to fetch tours", "An internal error occurred")
+- Detailed errors go to `error_log()` only — never expose `$conn->error`, `$stmt->error`, or `$e->getMessage()`
+- 404 responses do not leak request URI or endpoint names
+
+### SQL Injection Prevention
+- All queries use prepared statements with `bind_param()` — no string interpolation
+- `guide-payments.php` was the last file converted from `real_escape_string` to prepared statements
+
+### Security Headers
+- Production: HSTS, CSP, X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- Development: Permissive CSP allowing localhost:* but still protective
+
+### Session Management
+- 24-hour token expiry
+- Probabilistic expired session cleanup (5% chance on login)
+- Tokens stored in `sessions` table with `expires_at` column
+
+### .gitignore Protection
+- Patterns block test/debug/migration/config files: `test_*.php`, `*_test.php`, `debug_*.php`, `check_*.php`, `fix_*.php`, `migrate_*.php`, `import_*.php`, `create_*.php`, `config_*_backup.php`
+
 ## Deployment
 
 ### CI/CD (GitHub Actions)
@@ -345,10 +379,13 @@ scp -P 65002 -r dist/* u803853690@82.25.82.111:/home/u803853690/domains/deetech.
 ### API Endpoint Pattern
 ```php
 require_once 'config.php';
+require_once 'Middleware.php';
+Middleware::requireAuth($conn);
 autoRateLimit('endpoint_name');
 // GET/POST/PUT/DELETE switch
 // Prepared statements with bind_param()
 // JSON response: { success: true, data: [...] }
+// Error responses: generic messages only (details to error_log)
 ```
 
 ### URL ID Extraction
@@ -375,8 +412,11 @@ Edit `src/hooks/useBokunAutoSync.jsx` → `SYNC_INTERVAL_MS`.
 ```php
 <?php
 require_once 'config.php';
+require_once 'Middleware.php';
+Middleware::requireAuth($conn);
 autoRateLimit('your_endpoint');
 // Prepared statements + JSON response
+// Never expose $conn->error or $e->getMessage() to client
 ```
 
 ## Working on This Project
@@ -405,7 +445,7 @@ Custom skills in `../florence-skills/` directory:
 
 ---
 
-**Last Updated**: February 23, 2026
+**Last Updated**: February 24, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: Fully Operational
 **Tests**: 52 passing (Vitest + React Testing Library)

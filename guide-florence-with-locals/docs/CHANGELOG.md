@@ -1,5 +1,56 @@
 # Changelog - Recent Major Updates
 
+## ✅ SECURITY HARDENING (2026-02-24)
+
+### Comprehensive Security Audit & Fixes
+✅ COMPLETED - Full security review and remediation across 4 severity levels
+
+- **Scope**: 18 vulnerabilities identified (3 Critical, 9 High, 6 Medium, 3 Low), all fixed
+- **Commits**: 4 commits (`b7beeba`, `5c91244`, `b5edc8b`, `a906629`)
+- **Deployed**: All changes live on production, verified via smoke tests
+
+### Critical & High Priority Fixes
+- **Deleted 57 test/debug files** from repository — contained hardcoded credentials, database info, and debug endpoints (e.g., `test_password.php`, `debug_headers.php`, `check_db.php`)
+- **Added `Middleware::requireAuth($conn)`** to all API endpoints (tours, guides, payments, tickets, tour-groups, guide-payments, payment-reports, bokun_sync, bokun_webhook)
+- **Fixed auth bypass** in `bokun_sync.php` — `action=sync` path skipped authentication
+- **Removed wildcard CORS** `Access-Control-Allow-Origin: *` from `tours.php`
+- **Enabled SSL verification** in `BokunAPI.php` — was using `CURLOPT_SSL_VERIFYPEER => false`
+
+### Medium Priority Fixes
+- **Fixed token key mismatch** — `mysqlDB.js` axios interceptor read `authToken` but `AuthContext.jsx` stored `token` in localStorage (was breaking all authenticated API calls after auth enforcement)
+- **Converted SQL interpolation to prepared statements** in `guide-payments.php` — 3 queries using `real_escape_string` + string interpolation replaced with `bind_param()`
+- **Suppressed error message leaks** across 10 PHP files — `$conn->error`, `$stmt->error`, `$e->getMessage()` no longer exposed to clients; moved to `error_log()` only
+- **Added session cleanup** — probabilistic (5% on login) deletion of expired sessions
+- **Removed info leaks** — auth default response no longer exposes database name; config error responses no longer expose environment name
+
+### Low Priority Fixes
+- **Deleted 8 remaining debug files from production server** (not in git) — including `check_getyourguide.php` which had a hardcoded password
+- **Added development CSP header** — was missing entirely for dev environment
+- **Fixed `.htaccess` wildcard CORS** — Apache `Header always set Access-Control-Allow-Origin "*"` was overriding PHP's environment-aware origin checking; removed CORS from `.htaccess` entirely
+- **Updated `.gitignore`** — added patterns for `*_test.php`, explicit entries for `compression_test.php`, `sentry_test.php`, `tests/run_tests.php`
+- **Fixed dead routes** in `index.php` — removed references to deleted files (`update_paid_status.php`, `update_cancelled_status.php`), consolidated to `tours.php`
+- **Fixed `404.php`** — removed `$_SERVER['REQUEST_URI']` from JSON response
+
+### Smoke Test Results (Production)
+All 7 tests passing:
+| Test | Status |
+|------|--------|
+| Frontend loads (200) | PASS |
+| Protected endpoints return 401 | PASS |
+| Login returns valid token | PASS |
+| Tours API with token | PASS |
+| Tickets API with token | PASS |
+| Bokun sync responds correctly | PASS |
+| CORS not wildcard | PASS |
+
+### Files Modified
+- **Backend** (12 files): tours.php, guides.php, payments.php, tickets.php, tour-groups.php, guide-payments.php, payment-reports.php, bokun_sync.php, bokun_webhook.php, auth.php, config.php, BokunAPI.php
+- **Frontend** (1 file): mysqlDB.js (token key fix)
+- **Config** (3 files): .htaccess, index.php, 404.php, .gitignore
+- **Deleted**: 57 test/debug/migration files from repository + 8 from production server
+
+---
+
 ## ✅ UNASSIGNED TOURS REPORT (2026-02-23)
 
 ### Downloadable Unassigned Tours Report
