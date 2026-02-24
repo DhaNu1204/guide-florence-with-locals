@@ -114,7 +114,11 @@ export const getTickets = async (forceRefresh = false) => {
     const response = await axios.get(addCacheBuster(`${API_BASE_URL}/tickets.php`));
     
     // Extract tickets array from the response
-    const serverTickets = response.data.tickets || [];
+    // Map 'museum' DB column back to 'code' for frontend compatibility
+    const serverTickets = (response.data.tickets || []).map(t => ({
+      ...t,
+      code: t.museum || t.code || ''
+    }));
     
     // Store in cache with timestamp
     try {
@@ -163,13 +167,24 @@ export const addTicket = async (ticketData) => {
   };
 
   try {
-    const response = await axios.post(`${API_BASE_URL}/tickets.php`, ticketData);
-    
+    // Explicitly send 'museum' key that the DB expects (frontend uses 'code')
+    const payload = {
+      ...ticketData,
+      museum: ticketData.museum || ticketData.code || '',
+    };
+    const response = await axios.post(`${API_BASE_URL}/tickets.php`, payload);
+
     // Clear cache to force refresh on next get
     clearTicketsCache();
-    
+
+    // Map 'museum' DB column back to 'code' for frontend compatibility
+    const savedTicket = response.data.ticket;
+    if (savedTicket) {
+      savedTicket.code = savedTicket.museum || savedTicket.code || '';
+    }
+
     // Return the newly created ticket from the API response
-    return response.data.ticket || newTicket;
+    return savedTicket || newTicket;
   } catch (error) {
     console.error('Error adding ticket:', error);
     
@@ -263,16 +278,19 @@ export const updateTicket = async (ticketId, ticketData) => {
     console.log('Update ticket API response:', data);
     
     if (data.success && data.ticket) {
+      // Map 'museum' DB column back to 'code' for frontend compatibility
+      data.ticket.code = data.ticket.museum || data.ticket.code || '';
+
       // Clear cache to force refresh
       clearCache();
-      
+
       // Update fallback data
       const currentFallback = getFallbackData();
-      const updatedFallback = currentFallback.map(ticket => 
+      const updatedFallback = currentFallback.map(ticket =>
         ticket.id === ticketId ? data.ticket : ticket
       );
       setFallbackData(updatedFallback);
-      
+
       return data.ticket;
     } else {
       throw new Error('Failed to update ticket on server');

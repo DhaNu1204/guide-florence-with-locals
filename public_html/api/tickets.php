@@ -1,10 +1,10 @@
 <?php
-// Enable error reporting for debugging
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 // Include the config file for database credentials
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/Middleware.php';
+
+// Require authentication for all ticket operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('tickets');
@@ -67,7 +67,7 @@ try {
 } catch (Exception $e) {
     echo json_encode(array(
         "success" => false,
-        "message" => "Database initialization error: " . $e->getMessage()
+        "message" => "Database initialization error"
     ));
     exit();
 }
@@ -100,7 +100,7 @@ switch($method) {
         } else {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Error fetching tickets: " . $conn->error
+                "message" => "Error fetching tickets"
             ));
         }
         break;
@@ -162,7 +162,7 @@ switch($method) {
         } else {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Error adding ticket: " . $stmt->error
+                "message" => "Error adding ticket"
             ));
             $stmt->close();
         }
@@ -250,7 +250,7 @@ switch($method) {
         } else {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Error updating ticket: " . $stmt->error
+                "message" => "Error updating ticket"
             ));
             $stmt->close();
         }
@@ -295,7 +295,7 @@ switch($method) {
         } else {
             echo json_encode(array(
                 "success" => false,
-                "message" => "Error deleting ticket: " . $stmt->error
+                "message" => "Error deleting ticket"
             ));
             $stmt->close();
         }

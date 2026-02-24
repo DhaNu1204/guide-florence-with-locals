@@ -58,7 +58,7 @@ try {
 } catch (Exception $e) {
     logWebhook($topic, $data, $e->getMessage());
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    echo json_encode(['status' => 'error', 'message' => 'Webhook processing failed']);
 }
 
 function handleBookingCreated($bookingId, $data) {

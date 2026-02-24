@@ -74,15 +74,15 @@ const BokunIntegration = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 overflow-x-hidden">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="p-3 bg-terracotta-100 rounded-tuscan-lg">
-          <FiCloud className="w-8 h-8 text-terracotta-600" />
+      <div className="flex items-center gap-3 md:gap-4">
+        <div className="p-2 md:p-3 bg-terracotta-100 rounded-tuscan-lg flex-shrink-0">
+          <FiCloud className="w-6 h-6 md:w-8 md:h-8 text-terracotta-600" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-stone-900">Bokun Integration</h1>
-          <p className="text-stone-600 mt-1">Manage automatic booking synchronization with Bokun API</p>
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold text-stone-900">Bokun Integration</h1>
+          <p className="text-xs md:text-sm text-stone-600 mt-0.5 md:mt-1">Manage automatic booking synchronization</p>
         </div>
       </div>
 
@@ -90,25 +90,25 @@ const BokunIntegration = () => {
       {syncStatus && (
         <Card className="border-terracotta-200 bg-terracotta-50">
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-full ${syncStatus.syncInProgress || fullSyncLoading ? 'bg-gold-100' : 'bg-olive-100'}`}>
+                <div className={`p-2 rounded-full flex-shrink-0 ${syncStatus.syncInProgress || fullSyncLoading ? 'bg-gold-100' : 'bg-olive-100'}`}>
                   {syncStatus.syncInProgress || fullSyncLoading ? (
                     <FiRefreshCw className="w-4 h-4 text-gold-600 animate-spin" />
                   ) : (
                     <FiCheck className="w-4 h-4 text-olive-600" />
                   )}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-terracotta-900">Auto-Sync Status</h3>
-                    <span className={`px-2 py-1 text-xs rounded-tuscan ${
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-medium text-terracotta-900 text-sm md:text-base">Auto-Sync Status</h3>
+                    <span className={`px-2 py-0.5 text-xs rounded-tuscan ${
                       syncStatus.enabled ? 'bg-olive-100 text-olive-800' : 'bg-stone-100 text-stone-600'
                     }`}>
                       {syncStatus.enabled ? 'Enabled' : 'Disabled'}
                     </span>
                   </div>
-                  <p className="text-sm text-terracotta-700">
+                  <p className="text-xs md:text-sm text-terracotta-700">
                     {syncStatus.syncInProgress
                       ? 'Syncing bookings...'
                       : fullSyncLoading
@@ -118,18 +118,18 @@ const BokunIntegration = () => {
                           : 'No sync performed yet'
                     }
                     {syncStatus.enabled && !syncStatus.syncInProgress && !fullSyncLoading && (
-                      <span className="ml-2 text-terracotta-600">
+                      <span className="hidden md:inline ml-2 text-terracotta-600">
                         • Auto-sync every {syncStatus.intervalMinutes} minutes
                       </span>
                     )}
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 w-full md:w-auto">
                 <button
                   onClick={syncNow}
                   disabled={syncStatus.syncInProgress || fullSyncLoading}
-                  className={`px-3 py-2 text-sm rounded-tuscan transition-colors ${
+                  className={`flex-1 md:flex-initial min-h-[44px] px-3 py-2 text-sm rounded-tuscan transition-colors touch-manipulation ${
                     syncStatus.syncInProgress || fullSyncLoading
                       ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
                       : 'bg-terracotta-600 text-white hover:bg-terracotta-700'
@@ -140,14 +140,14 @@ const BokunIntegration = () => {
                 <button
                   onClick={handleFullSync}
                   disabled={syncStatus.syncInProgress || fullSyncLoading}
-                  className={`px-3 py-2 text-sm rounded-tuscan transition-colors ${
+                  className={`flex-1 md:flex-initial min-h-[44px] px-3 py-2 text-sm rounded-tuscan transition-colors touch-manipulation ${
                     syncStatus.syncInProgress || fullSyncLoading
                       ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
                       : 'bg-renaissance-600 text-white hover:bg-renaissance-700'
                   }`}
                   title="Sync all bookings for the next 12 months"
                 >
-                  {fullSyncLoading ? 'Full Sync...' : 'Full Sync (1 Year)'}
+                  {fullSyncLoading ? 'Full Sync...' : <span><span className="hidden md:inline">Full Sync (</span>1 Year<span className="hidden md:inline">)</span></span>}
                 </button>
               </div>
             </div>
@@ -185,10 +185,10 @@ const BokunIntegration = () => {
 
       {/* Tab Navigation */}
       <div className="border-b border-stone-200">
-        <nav className="-mb-px flex space-x-8">
+        <nav className="-mb-px flex space-x-4 md:space-x-8 overflow-x-auto scrollbar-hide">
           <button
             onClick={() => setActiveTab('sync')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 touch-manipulation ${
               activeTab === 'sync'
                 ? 'border-terracotta-600 text-terracotta-600'
                 : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
@@ -196,12 +196,13 @@ const BokunIntegration = () => {
           >
             <div className="flex items-center gap-2">
               <FiRefreshCw />
-              Synchronization
+              <span className="hidden md:inline">Synchronization</span>
+              <span className="md:hidden">Sync</span>
             </div>
           </button>
           <button
             onClick={() => setActiveTab('monitor')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 touch-manipulation ${
               activeTab === 'monitor'
                 ? 'border-terracotta-600 text-terracotta-600'
                 : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
@@ -209,7 +210,8 @@ const BokunIntegration = () => {
           >
             <div className="flex items-center gap-2">
               <FiActivity />
-              API Monitor
+              <span className="hidden md:inline">API Monitor</span>
+              <span className="md:hidden">Monitor</span>
             </div>
           </button>
         </nav>

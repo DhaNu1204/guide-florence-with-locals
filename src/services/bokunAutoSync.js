@@ -155,8 +155,8 @@ class BokunAutoSyncService {
           success: true
         });
 
-        // Show subtle notification if new bookings were found
-        if (synced_count > 0 && trigger !== 'manual') {
+        // Show subtle notification only for manual sync with new bookings
+        if (synced_count > 0 && trigger === 'manual') {
           this.showNewBookingsNotification(synced_count);
         }
       } else {

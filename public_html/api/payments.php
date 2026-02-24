@@ -12,6 +12,10 @@
  */
 
 require_once 'config.php';
+require_once 'Middleware.php';
+
+// Require authentication for all payment operations
+Middleware::requireAuth($conn);
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('payments');
@@ -62,7 +66,8 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+    error_log("Payments error: " . $e->getMessage());
+    echo json_encode(['error' => 'An internal error occurred']);
 }
 
 /**
@@ -84,10 +89,13 @@ function getAllPayments($conn) {
                 t.date as tour_date,
                 t.time as tour_time,
                 t.customer_name,
+                t.group_id,
+                tg.display_name as group_display_name,
                 g.name as guide_name,
                 g.email as guide_email
             FROM payments pt
             JOIN tours t ON pt.tour_id = t.id
+            LEFT JOIN tour_groups tg ON t.group_id = tg.id
             JOIN guides g ON pt.guide_id = g.id
             ORDER BY pt.payment_date DESC, pt.created_at DESC";
 
@@ -101,7 +109,8 @@ function getAllPayments($conn) {
         echo json_encode(['success' => true, 'data' => $payments]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to fetch payments: ' . $conn->error]);
+        error_log("Failed to fetch payments: " . $conn->error);
+        echo json_encode(['error' => 'Failed to fetch payments']);
     }
 }
 
@@ -176,14 +185,19 @@ function getPaymentsByTour($conn, $tour_id) {
 
     // Also get tour info and current payment status
     $tour_stmt = $conn->prepare("SELECT
-                                    title,
-                                    payment_status,
-                                    total_amount_paid,
-                                    expected_amount,
-                                    customer_name,
-                                    date,
-                                    time
-                                FROM tours WHERE id = ?");
+                                    t.title,
+                                    t.payment_status,
+                                    t.total_amount_paid,
+                                    t.expected_amount,
+                                    t.customer_name,
+                                    t.date,
+                                    t.time,
+                                    t.group_id,
+                                    tg.display_name as group_display_name,
+                                    tg.total_pax as group_total_pax
+                                FROM tours t
+                                LEFT JOIN tour_groups tg ON t.group_id = tg.id
+                                WHERE t.id = ?");
     $tour_stmt->bind_param("i", $tour_id);
     $tour_stmt->execute();
     $tour_result = $tour_stmt->get_result();
@@ -262,6 +276,66 @@ function createPayment($conn) {
         $update_stmt->execute();
     }
 
+    // Group-aware duplicate check: if tour is in a group, check if any tour in
+    // the same group already has a payment for this guide (1 group = 1 payment)
+    $groupCheck = $conn->prepare("SELECT group_id FROM tours WHERE id = ?");
+    $groupCheck->bind_param("i", $input['tour_id']);
+    $groupCheck->execute();
+    $groupRow = $groupCheck->get_result()->fetch_assoc();
+
+    if ($groupRow && $groupRow['group_id']) {
+        $tour_group_id = intval($groupRow['group_id']);
+        $dupCheck = $conn->prepare("
+            SELECT p.id, t.customer_name, t.id as paid_tour_id
+            FROM payments p
+            INNER JOIN tours t ON p.tour_id = t.id
+            WHERE t.group_id = ? AND p.guide_id = ?
+            LIMIT 1
+        ");
+        $dupCheck->bind_param("ii", $tour_group_id, $input['guide_id']);
+        $dupCheck->execute();
+        $dupResult = $dupCheck->get_result();
+
+        if ($dupRow = $dupResult->fetch_assoc()) {
+            // Allow bypass with force flag for intentional additional payments
+            if (!isset($input['force_group_payment']) || !$input['force_group_payment']) {
+                http_response_code(409);
+                echo json_encode([
+                    'error' => 'Duplicate group payment',
+                    'message' => 'A payment already exists for this tour group (booking: ' . ($dupRow['customer_name'] ?? 'N/A') . '). Grouped tours only need one guide payment.',
+                    'existing_payment_id' => intval($dupRow['id']),
+                    'paid_tour_id' => intval($dupRow['paid_tour_id']),
+                    'group_id' => $tour_group_id
+                ]);
+                return;
+            }
+        }
+    } else {
+        // Per-tour duplicate check: prevent duplicate payment for same tour_id + guide_id
+        // This catches cases where a group was dissolved after payment, or ungrouped tours
+        $perTourCheck = $conn->prepare("
+            SELECT p.id, p.amount, p.payment_date
+            FROM payments p
+            WHERE p.tour_id = ? AND p.guide_id = ?
+            LIMIT 1
+        ");
+        $perTourCheck->bind_param("ii", $input['tour_id'], $input['guide_id']);
+        $perTourCheck->execute();
+        $perTourResult = $perTourCheck->get_result();
+
+        if ($perTourDup = $perTourResult->fetch_assoc()) {
+            if (!isset($input['force_payment']) || !$input['force_payment']) {
+                http_response_code(409);
+                echo json_encode([
+                    'error' => 'Duplicate tour payment',
+                    'message' => 'A payment already exists for this tour and guide (payment #' . $perTourDup['id'] . ' on ' . $perTourDup['payment_date'] . '). Use force_payment to add another.',
+                    'existing_payment_id' => intval($perTourDup['id'])
+                ]);
+                return;
+            }
+        }
+    }
+
     // Insert payment transaction
     $stmt = $conn->prepare("INSERT INTO payments
                             (tour_id, guide_id, amount, payment_method, payment_date, payment_time, transaction_reference, notes)
@@ -304,7 +378,8 @@ function createPayment($conn) {
         ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to create payment: ' . $stmt->error]);
+        error_log("Failed to create payment: " . $stmt->error);
+        echo json_encode(['error' => 'Failed to create payment']);
     }
 }
 
@@ -385,7 +460,8 @@ function updatePayment($conn, $payment_id) {
         echo json_encode(['success' => true, 'message' => 'Payment updated successfully']);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to update payment: ' . $stmt->error]);
+        error_log("Failed to update payment: " . $stmt->error);
+        echo json_encode(['error' => 'Failed to update payment']);
     }
 }
 
@@ -429,7 +505,8 @@ function deletePayment($conn, $payment_id) {
         ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to delete payment: ' . $stmt->error]);
+        error_log("Failed to delete payment: " . $stmt->error);
+        echo json_encode(['error' => 'Failed to delete payment']);
     }
 }
 

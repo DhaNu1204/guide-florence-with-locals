@@ -20,20 +20,13 @@ if (empty($endpoint)) {
 // Strip trailing slashes
 $endpoint = rtrim($endpoint, '/');
 
-// First, check for paid and cancelled status routes
-if (preg_match('/tours\/(\d+)\/cancelled$/', $endpoint)) {
-    error_log("Routing to update_cancelled_status.php for endpoint: " . $endpoint);
-    include_once "update_cancelled_status.php";
+// Check for tour sub-routes (paid/cancelled status updates)
+if (preg_match('/tours\/(\d+)\/(cancelled|paid)$/', $endpoint)) {
+    include_once "tours.php";
     exit();
 }
 
-if (preg_match('/tours\/(\d+)\/paid$/', $endpoint)) {
-    error_log("Routing to update_paid_status.php for endpoint: " . $endpoint);
-    include_once "update_paid_status.php";
-    exit();
-}
-
-// Check if it's a delete request with ID
+// Check if it's a request with ID
 if (preg_match('/(guides|tours|tickets)\/(\d+)$/', $endpoint, $matches)) {
     $resource = $matches[1];
     $id = $matches[2];
@@ -44,12 +37,12 @@ if (preg_match('/(guides|tours|tickets)\/(\d+)$/', $endpoint, $matches)) {
 }
 
 // Handle standard API endpoints
-if (in_array($endpoint, ['guides', 'tours', 'tickets', 'test'])) {
+if (in_array($endpoint, ['guides', 'tours', 'tickets'])) {
     include_once "{$endpoint}.php";
     exit();
 }
 
 // If no valid endpoint is found
 http_response_code(404);
-echo json_encode(['error' => 'Endpoint not found', 'requested_endpoint' => $endpoint]);
+echo json_encode(['error' => 'Endpoint not found']);
 ?> 

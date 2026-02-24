@@ -104,11 +104,12 @@ const BokunMonitor = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-tuscan-lg shadow-tuscan p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold flex items-center gap-2 text-stone-900">
+      <div className="bg-white rounded-tuscan-lg shadow-tuscan p-4 md:p-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-4">
+          <h2 className="text-lg md:text-2xl font-bold flex items-center gap-2 text-stone-900">
             <FiActivity className="text-terracotta-600" />
-            Bokun API Monitor
+            <span className="hidden md:inline">Bokun API Monitor</span>
+            <span className="md:hidden">API Monitor</span>
           </h2>
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-stone-700">
@@ -123,7 +124,7 @@ const BokunMonitor = () => {
             <button
               onClick={runDiagnostics}
               disabled={loading}
-              className="px-4 py-2 bg-terracotta-600 text-white rounded-tuscan hover:bg-terracotta-700 flex items-center gap-2 disabled:opacity-50"
+              className="min-h-[44px] px-3 md:px-4 py-2 bg-terracotta-600 text-white text-sm rounded-tuscan hover:bg-terracotta-700 flex items-center gap-2 disabled:opacity-50 touch-manipulation"
             >
               <FiRefreshCw className={loading ? 'animate-spin' : ''} />
               Refresh
@@ -163,8 +164,8 @@ const BokunMonitor = () => {
 
       {/* Authentication Status */}
       {diagnostics?.authentication && (
-        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
+        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
             <FiShield className="text-terracotta-600" />
             Authentication
           </h3>
@@ -186,8 +187,8 @@ const BokunMonitor = () => {
 
       {/* Permissions */}
       {diagnostics?.permissions && (
-        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
+        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
             <FiShield className="text-terracotta-600" />
             API Permissions
           </h3>
@@ -212,8 +213,8 @@ const BokunMonitor = () => {
 
       {/* Booking Channels */}
       {diagnostics?.booking_channels && (
-        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
+        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
             <FiDatabase className="text-terracotta-600" />
             Booking Channels
           </h3>
@@ -239,8 +240,8 @@ const BokunMonitor = () => {
 
       {/* Search Tests */}
       {diagnostics?.search_parameters?.tests && (
-        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
+        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold mb-4 flex items-center gap-2 text-stone-900">
             <FiSearch className="text-terracotta-600" />
             Search Parameter Tests
           </h3>
@@ -274,9 +275,10 @@ const BokunMonitor = () => {
 
       {/* Endpoint Tests */}
       {diagnostics?.endpoints?.endpoints && (
-        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-6">
-          <h3 className="text-lg font-semibold mb-4 text-stone-900">API Endpoints Status</h3>
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold mb-4 text-stone-900">API Endpoints Status</h3>
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-stone-200">
@@ -312,13 +314,38 @@ const BokunMonitor = () => {
               </tbody>
             </table>
           </div>
+          {/* Mobile Cards */}
+          <div className="md:hidden divide-y divide-stone-100">
+            {diagnostics.endpoints.endpoints.map((endpoint, idx) => (
+              <div key={idx} className="py-3 flex items-center justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-stone-800 truncate">{endpoint.name}</p>
+                  <p className="text-xs text-stone-500 mt-0.5">{endpoint.status}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                  <span className={`px-2 py-0.5 rounded-tuscan text-xs ${
+                    endpoint.http_code === 200 ? 'bg-olive-100 text-olive-800' :
+                    endpoint.http_code === 303 ? 'bg-gold-100 text-gold-800' :
+                    'bg-terracotta-100 text-terracotta-800'
+                  }`}>
+                    {endpoint.http_code}
+                  </span>
+                  {endpoint.has_data ? (
+                    <FiCheckCircle className="text-olive-500" />
+                  ) : (
+                    <FiXCircle className="text-terracotta-500" />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {/* Recommendations */}
       {diagnostics?.recommendations && diagnostics.recommendations.length > 0 && (
-        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-6">
-          <h3 className="text-lg font-semibold mb-4 text-terracotta-600">Action Required</h3>
+        <div className="bg-white rounded-tuscan-lg shadow-tuscan p-4 md:p-6">
+          <h3 className="text-base md:text-lg font-semibold mb-4 text-terracotta-600">Action Required</h3>
           <div className="space-y-3">
             {diagnostics.recommendations.map((rec, idx) => (
               <div key={idx} className={`p-4 rounded-tuscan-lg border ${
