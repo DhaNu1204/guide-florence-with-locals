@@ -66,7 +66,8 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+    error_log("Payments error: " . $e->getMessage());
+    echo json_encode(['error' => 'An internal error occurred']);
 }
 
 /**
@@ -108,7 +109,8 @@ function getAllPayments($conn) {
         echo json_encode(['success' => true, 'data' => $payments]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to fetch payments: ' . $conn->error]);
+        error_log("Failed to fetch payments: " . $conn->error);
+        echo json_encode(['error' => 'Failed to fetch payments']);
     }
 }
 
@@ -376,7 +378,8 @@ function createPayment($conn) {
         ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to create payment: ' . $stmt->error]);
+        error_log("Failed to create payment: " . $stmt->error);
+        echo json_encode(['error' => 'Failed to create payment']);
     }
 }
 
@@ -457,7 +460,8 @@ function updatePayment($conn, $payment_id) {
         echo json_encode(['success' => true, 'message' => 'Payment updated successfully']);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to update payment: ' . $stmt->error]);
+        error_log("Failed to update payment: " . $stmt->error);
+        echo json_encode(['error' => 'Failed to update payment']);
     }
 }
 
@@ -501,7 +505,8 @@ function deletePayment($conn, $payment_id) {
         ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to delete payment: ' . $stmt->error]);
+        error_log("Failed to delete payment: " . $stmt->error);
+        echo json_encode(['error' => 'Failed to delete payment']);
     }
 }
 

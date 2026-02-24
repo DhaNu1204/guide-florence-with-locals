@@ -12,7 +12,7 @@ const addCacheBuster = (url) => {
 // Setup axios interceptor to add auth token to all requests
 axios.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

@@ -275,7 +275,7 @@ try {
 
         error_log("Database connection failed in $environment: " . $conn->connect_error);
         header("HTTP/1.1 500 Internal Server Error");
-        echo json_encode(['error' => $errorMessage, 'environment' => $environment]);
+        echo json_encode(['error' => $errorMessage]);
         exit();
     }
 
@@ -289,7 +289,7 @@ try {
 
     error_log("Database error in $environment: " . $e->getMessage());
     header("HTTP/1.1 500 Internal Server Error");
-    echo json_encode(['error' => $errorMessage, 'environment' => $environment]);
+    echo json_encode(['error' => $errorMessage]);
     exit();
 }
 

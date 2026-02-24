@@ -18,7 +18,8 @@ if ($columnResult->num_rows === 0) {
     $addColumnQuery = "ALTER TABLE tours ADD COLUMN cancelled TINYINT(1) DEFAULT 0";
     if (!$conn->query($addColumnQuery)) {
         header("HTTP/1.1 500 Internal Server Error");
-        echo json_encode(["error" => "Failed to add cancelled column: " . $conn->error]);
+        error_log("Failed to add cancelled column: " . $conn->error);
+        echo json_encode(["error" => "Database migration error"]);
         exit();
     }
 }
@@ -32,7 +33,8 @@ if ($bookingChannelResult->num_rows === 0) {
     $addBookingChannelQuery = "ALTER TABLE tours ADD COLUMN booking_channel VARCHAR(255) DEFAULT NULL";
     if (!$conn->query($addBookingChannelQuery)) {
         header("HTTP/1.1 500 Internal Server Error");
-        echo json_encode(["error" => "Failed to add booking_channel column: " . $conn->error]);
+        error_log("Failed to add booking_channel column: " . $conn->error);
+        echo json_encode(["error" => "Database migration error"]);
         exit();
     }
 }
@@ -46,7 +48,8 @@ if ($notesResult->num_rows === 0) {
     $addNotesQuery = "ALTER TABLE tours ADD COLUMN notes TEXT DEFAULT NULL";
     if (!$conn->query($addNotesQuery)) {
         header("HTTP/1.1 500 Internal Server Error");
-        echo json_encode(["error" => "Failed to add notes column: " . $conn->error]);
+        error_log("Failed to add notes column: " . $conn->error);
+        echo json_encode(["error" => "Database migration error"]);
         exit();
     }
 }
@@ -277,7 +280,8 @@ switch ($method) {
             ]);
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to get tours: " . $conn->error]);
+            error_log("Failed to get tours: " . $conn->error);
+            echo json_encode(["error" => "Failed to get tours"]);
         }
         break;
         
@@ -367,7 +371,8 @@ switch ($method) {
             echo json_encode($newTour);
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to create tour: " . $stmt->error]);
+            error_log("Failed to create tour: " . $stmt->error);
+            echo json_encode(["error" => "Failed to create tour"]);
         }
         break;
         
@@ -553,7 +558,8 @@ switch ($method) {
             }
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to update tour: " . $stmt->error]);
+            error_log("Failed to update tour: " . $stmt->error);
+            echo json_encode(["error" => "Failed to update tour"]);
         }
         break;
         
@@ -578,7 +584,8 @@ switch ($method) {
             }
         } else {
             header("HTTP/1.1 500 Internal Server Error");
-            echo json_encode(["error" => "Failed to delete tour: " . $stmt->error]);
+            error_log("Failed to delete tour: " . $stmt->error);
+            echo json_encode(["error" => "Failed to delete tour"]);
         }
         break;
         

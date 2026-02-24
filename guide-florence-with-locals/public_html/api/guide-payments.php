@@ -44,7 +44,8 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+    error_log("Guide payments error: " . $e->getMessage());
+    echo json_encode(['error' => 'An internal error occurred']);
 }
 
 /**
@@ -140,7 +141,8 @@ function getAllGuidePaymentSummaries($conn) {
         echo json_encode(['success' => true, 'data' => $summaries]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to fetch guide payment summaries: ' . $conn->error]);
+        error_log("Failed to fetch guide payment summaries: " . $conn->error);
+        echo json_encode(['error' => 'Failed to fetch guide payment summaries']);
     }
 }
 
@@ -269,7 +271,6 @@ function getGuidePaymentDetails($conn, $guide_id) {
 
     // Get unpaid tours for this guide — group-aware (1 group = 1 row)
     // Uses the same time-based "completed" check and NOT EXISTS pattern as getPendingTours
-    $romeNowEsc = $conn->real_escape_string($romeNow);
     $stmt = $conn->prepare("SELECT
                                 t.id,
                                 t.title,
@@ -281,7 +282,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
                                 t.group_id
                             FROM tours t
                             WHERE t.guide_id = ?
-                              AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
+                              AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                               AND t.cancelled = 0
                               AND t.title NOT LIKE '%Entry Ticket%'
                               AND t.title NOT LIKE '%Entrance Ticket%'
@@ -294,7 +295,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
                               )
                             ORDER BY t.date DESC");
 
-    $stmt->bind_param("i", $guide_id);
+    $stmt->bind_param("is", $guide_id, $romeNow);
     $stmt->execute();
     $unpaid_result = $stmt->get_result();
 
@@ -514,12 +515,11 @@ function getPaymentOverview($conn) {
 
     // Group-aware: count groups as 1 tour unit (paid)
     // Compare date+time against Rome timezone for same-day detection
-    $romeNowEsc = $conn->real_escape_string($romeNow);
-    $result = $conn->query("SELECT COUNT(*) as count FROM (
+    $paidStmt = $conn->prepare("SELECT COUNT(*) as count FROM (
                                 SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
                                 FROM tours t
                                 INNER JOIN payments p ON p.tour_id = t.id
-                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
+                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                                   AND t.cancelled = 0
                                   AND t.guide_id IS NOT NULL
                                   AND t.title NOT LIKE '%Entry Ticket%'
@@ -529,16 +529,19 @@ function getPaymentOverview($conn) {
                                   AND t.title NOT LIKE '%Skip-the-Line%'
                                 GROUP BY tour_unit
                             ) paid_units");
+    $paidStmt->bind_param("s", $romeNow);
+    $paidStmt->execute();
+    $result = $paidStmt->get_result();
     if ($result && $row = $result->fetch_assoc()) {
         $tour_statuses[] = ['status' => 'paid', 'count' => intval($row['count'])];
     }
 
     // Group-aware: count groups as 1 tour unit (unpaid)
-    $result = $conn->query("SELECT COUNT(*) as count FROM (
+    $unpaidStmt = $conn->prepare("SELECT COUNT(*) as count FROM (
                                 SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
                                 FROM tours t
                                 LEFT JOIN payments p ON p.tour_id = t.id
-                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
+                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                                   AND t.cancelled = 0
                                   AND t.guide_id IS NOT NULL
                                   AND t.title NOT LIKE '%Entry Ticket%'
@@ -549,15 +552,18 @@ function getPaymentOverview($conn) {
                                 GROUP BY tour_unit
                                 HAVING MAX(p.id) IS NULL
                             ) unpaid_units");
+    $unpaidStmt->bind_param("s", $romeNow);
+    $unpaidStmt->execute();
+    $result = $unpaidStmt->get_result();
     if ($result && $row = $result->fetch_assoc()) {
         $tour_statuses[] = ['status' => 'unpaid', 'count' => intval($row['count'])];
     }
 
     // Group-aware: count groups as 1 tour unit (upcoming)
-    $result = $conn->query("SELECT COUNT(*) as count FROM (
+    $upcomingStmt = $conn->prepare("SELECT COUNT(*) as count FROM (
                                 SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) as tour_unit
                                 FROM tours t
-                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) >= '$romeNowEsc'
+                                WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) >= ?
                                   AND t.cancelled = 0
                                   AND t.title NOT LIKE '%Entry Ticket%'
                                   AND t.title NOT LIKE '%Entrance Ticket%'
@@ -566,6 +572,9 @@ function getPaymentOverview($conn) {
                                   AND t.title NOT LIKE '%Skip-the-Line%'
                                 GROUP BY tour_unit
                             ) upcoming_units");
+    $upcomingStmt->bind_param("s", $romeNow);
+    $upcomingStmt->execute();
+    $result = $upcomingStmt->get_result();
     if ($result && $row = $result->fetch_assoc()) {
         $tour_statuses[] = ['status' => 'upcoming', 'count' => intval($row['count'])];
     }
@@ -604,7 +613,6 @@ function getPendingTours($conn) {
     // Get all individual pending tours (with group_id for grouping)
     // Compare date+time against Rome timezone so tours show as pending
     // immediately after their scheduled time passes
-    $romeNowEsc = $conn->real_escape_string($romeNow);
     $sql = "SELECT
                 t.id,
                 t.title,
@@ -621,7 +629,7 @@ function getPendingTours($conn) {
                 t.group_id
             FROM tours t
             JOIN guides g ON t.guide_id = g.id
-            WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < '$romeNowEsc'
+            WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
               AND t.cancelled = 0
               AND t.title NOT LIKE '%Entry Ticket%'
               AND t.title NOT LIKE '%Entrance Ticket%'
@@ -634,7 +642,10 @@ function getPendingTours($conn) {
               )
             ORDER BY t.date DESC";
 
-    $result = $conn->query($sql);
+    $pendingStmt = $conn->prepare($sql);
+    $pendingStmt->bind_param("s", $romeNow);
+    $pendingStmt->execute();
+    $result = $pendingStmt->get_result();
 
     if ($result) {
         $ungrouped = [];
@@ -720,7 +731,8 @@ function getPendingTours($conn) {
         ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to fetch pending tours: ' . $conn->error]);
+        error_log("Failed to fetch pending tours: " . $conn->error);
+        echo json_encode(['error' => 'Failed to fetch pending tours']);
     }
 }
 

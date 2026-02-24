@@ -411,7 +411,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         }
 
         return [
-            'error' => 'Bokun API Error: ' . $e->getMessage(),
+            'error' => 'Bokun sync failed',
             'start_date' => $startDate,
             'end_date' => $endDate,
             'sync_type' => $syncType
@@ -543,7 +543,7 @@ function testBokunConnection() {
         } catch (Exception $e) {
             return [
                 'success' => false,
-                'error' => 'Network connectivity test failed: ' . $e->getMessage(),
+                'error' => 'Network connectivity test failed',
                 'solution' => 'Please check your internet connection and firewall settings'
             ];
         }
@@ -591,15 +591,8 @@ function testBokunConnection() {
         
         return [
             'success' => false,
-            'error' => 'Connection test failed: ' . $errorMsg,
-            'solution' => $solution,
-            'debug' => [
-                'php_version' => PHP_VERSION,
-                'curl_enabled' => function_exists('curl_init'),
-                'openssl_enabled' => extension_loaded('openssl'),
-                'allow_url_fopen' => ini_get('allow_url_fopen'),
-                'https_wrapper' => in_array('https', stream_get_wrappers())
-            ]
+            'error' => 'Connection test failed',
+            'solution' => $solution
         ];
     }
 }
@@ -856,7 +849,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
         $conn->rollback();
         $conn->query("SELECT RELEASE_LOCK('auto_group')");
         error_log("autoGroupAfterSync: Transaction failed: " . $e->getMessage());
-        return ['groups_created' => 0, 'tours_grouped' => 0, 'error' => $e->getMessage()];
+        return ['groups_created' => 0, 'tours_grouped' => 0, 'error' => 'Auto-grouping failed'];
     }
 
     $conn->query("SELECT RELEASE_LOCK('auto_group')");

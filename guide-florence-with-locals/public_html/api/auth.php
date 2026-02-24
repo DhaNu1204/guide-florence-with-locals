@@ -18,6 +18,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
+// Probabilistic cleanup of expired sessions (runs ~5% of requests)
+function cleanupExpiredSessions($conn) {
+    if (mt_rand(1, 20) !== 1) return; // 5% chance
+    try {
+        $stmt = $conn->prepare("DELETE FROM sessions WHERE expires_at < NOW()");
+        if ($stmt) {
+            $stmt->execute();
+            $deleted = $stmt->affected_rows;
+            if ($deleted > 0) {
+                error_log("Session cleanup: removed $deleted expired sessions");
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Session cleanup error: " . $e->getMessage());
+    }
+}
+
 // Function to verify password - SECURITY: Only use proper password hashing
 function verifyPassword($inputPassword, $hashedPassword) {
     // Use only proper password verification
@@ -142,6 +159,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param("ssi", $sessionToken, $sessionToken, $user['id']);
                 $stmt->execute();
 
+                // Cleanup expired sessions probabilistically
+                cleanupExpiredSessions($conn);
+
                 echo json_encode([
                     'success' => true,
                     'message' => 'Login successful',
@@ -182,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(500);
         echo json_encode([
             'success' => false,
-            'message' => 'Database error: ' . $e->getMessage()
+            'message' => 'An internal error occurred'
         ]);
     }
     exit();
@@ -231,11 +251,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
         }
 
         http_response_code(500);
-        echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
+        error_log("Auth verify error: " . $e->getMessage());
+        echo json_encode(['error' => 'An internal error occurred']);
     }
     exit();
 }
 
 // Default response
-echo json_encode(['message' => 'Auth endpoint ready', 'database' => 'florence_guides']);
+echo json_encode(['message' => 'Auth endpoint ready']);
 ?>

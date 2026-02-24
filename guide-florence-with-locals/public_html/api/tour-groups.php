@@ -469,7 +469,8 @@ function autoGroupTours($conn, $data) {
         $conn->rollback();
         $conn->query("SELECT RELEASE_LOCK('auto_group')");
         http_response_code(500);
-        echo json_encode(['error' => 'Auto-grouping failed: ' . $e->getMessage()]);
+        error_log("Auto-grouping failed: " . $e->getMessage());
+        echo json_encode(['error' => 'Auto-grouping failed']);
         return;
     }
 
@@ -578,8 +579,9 @@ function manualMergeTours($conn, $data) {
         $conn->commit();
     } catch (Exception $e) {
         $conn->rollback();
+        error_log("Manual merge failed: " . $e->getMessage());
         http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
+        echo json_encode(['error' => 'Manual merge failed']);
         return;
     }
 
@@ -636,7 +638,8 @@ function unmergeTour($conn, $data) {
     } catch (Exception $e) {
         $conn->rollback();
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to unmerge tour: ' . $e->getMessage()]);
+        error_log("Failed to unmerge tour: " . $e->getMessage());
+        echo json_encode(['error' => 'Failed to unmerge tour']);
         return;
     }
 
@@ -742,8 +745,9 @@ function updateGroup($conn, $groupId, $data) {
         $conn->commit();
     } catch (Exception $e) {
         $conn->rollback();
+        error_log("Failed to update group: " . $e->getMessage());
         http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
+        echo json_encode(['error' => 'Failed to update group']);
         return;
     }
 
@@ -786,7 +790,8 @@ function dissolveGroup($conn, $groupId) {
     } catch (Exception $e) {
         $conn->rollback();
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to dissolve group: ' . $e->getMessage()]);
+        error_log("Failed to dissolve group: " . $e->getMessage());
+        echo json_encode(['error' => 'Failed to dissolve group']);
         return;
     }
 

@@ -53,7 +53,8 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+    error_log("Payment reports error: " . $e->getMessage());
+    echo json_encode(['error' => 'An internal error occurred']);
 }
 
 /**

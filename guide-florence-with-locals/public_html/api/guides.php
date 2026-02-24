@@ -77,7 +77,8 @@ if ($method === 'GET') {
         ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to fetch guides: ' . $conn->error]);
+        error_log("Failed to fetch guides: " . $conn->error);
+        echo json_encode(['error' => 'Failed to fetch guides']);
     }
 }
 
@@ -168,8 +169,8 @@ else if ($method === 'POST') {
             echo json_encode(['error' => 'A guide with this email already exists']);
         } else {
             http_response_code(500);
-            echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
             error_log("Guide insert error: " . $e->getMessage());
+            echo json_encode(['error' => 'Failed to add guide']);
         }
     }
 }
@@ -276,8 +277,8 @@ else if ($method === 'PUT') {
             echo json_encode(['error' => 'Another guide already has this email']);
         } else {
             http_response_code(500);
-            echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
             error_log("Guide update error: " . $e->getMessage());
+            echo json_encode(['error' => 'Failed to update guide']);
         }
     }
 }
