@@ -16,6 +16,18 @@ import { getTours, getGuides } from '../services/mysqlDB';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { useBokunSync } from '../hooks/useBokunAutoSync';
 
+// Authenticated fetch wrapper - adds Bearer token from localStorage
+const authFetch = (url, options = {}) => {
+  const token = localStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+  });
+};
+
 // Helper function to format time ago
 const formatTimeAgo = (date) => {
   if (!date) return 'Never';
@@ -63,7 +75,7 @@ const Dashboard = () => {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
       let pendingPaymentsCount = 0;
       try {
-        const pendingResponse = await fetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
+        const pendingResponse = await authFetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
         if (pendingResponse.ok) {
           const pendingData = await pendingResponse.json();
           if (pendingData.success) {

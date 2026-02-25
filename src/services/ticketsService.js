@@ -3,19 +3,17 @@ import axios from 'axios';
 // Use the same API base URL as other services
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
-// Setup axios interceptor to add auth token to all requests
-axios.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+// Authenticated fetch wrapper - adds Bearer token from localStorage
+const authFetch = (url, options = {}) => {
+  const token = localStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+  });
+};
 
 // Storage key for tickets cache
 const STORAGE_KEY = 'tickets_v1';
@@ -209,7 +207,7 @@ export const addTicket = async (ticketData) => {
 // DELETE a ticket
 export const deleteTicket = async (ticketId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/tickets.php/${ticketId}`, {
+    const response = await authFetch(`${API_BASE_URL}/tickets.php/${ticketId}`, {
       method: 'DELETE'
     });
 
@@ -252,7 +250,7 @@ export const deleteTicket = async (ticketId) => {
 // UPDATE a ticket
 export const updateTicket = async (ticketId, ticketData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/tickets.php/${ticketId}`, {
+    const response = await authFetch(`${API_BASE_URL}/tickets.php/${ticketId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
