@@ -11,6 +11,18 @@ import { isTicketProduct } from '../utils/tourFilters';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
+// Authenticated fetch wrapper - adds Bearer token from localStorage
+const authFetch = (url, options = {}) => {
+  const token = localStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+  });
+};
+
 const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) => {
   // Get current date and time in Italian timezone
   const getItalianDateTime = () => {
@@ -84,7 +96,7 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
     setLoadingTours(true);
     try {
       // Fetch tours directly from API with date filter to get ALL tours for that date
-      const response = await fetch(`${API_BASE_URL}/tours.php?date=${dateString}&per_page=100`, {
+      const response = await authFetch(`${API_BASE_URL}/tours.php?date=${dateString}&per_page=100`, {
         signal: abortControllerRef.current.signal
       });
       const result = await response.json();
@@ -282,7 +294,7 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/payments.php`, {
+      const response = await authFetch(`${API_BASE_URL}/payments.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
