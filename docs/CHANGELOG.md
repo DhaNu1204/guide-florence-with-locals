@@ -1,5 +1,24 @@
 # Changelog - Recent Major Updates
 
+## ✅ AUTH FIX FOR PAYMENTS PAGE (2026-02-25)
+
+### Bug Fix — fetch() calls missing Authorization header
+✅ COMPLETED - Fixed 401 errors on Payments page, Dashboard pending count, PaymentRecordForm, and ticket operations
+
+- **Root cause**: Security hardening (2026-02-24) added `Middleware::requireAuth()` to all API endpoints. However, several components used raw `fetch()` instead of `axios`, bypassing the axios interceptor that adds the `Authorization: Bearer <token>` header. These requests were sent without authentication and rejected with 401.
+- **Symptom**: "Error loading payment data: Failed to load payment overview" on the Payments page in production. Dashboard "Guide Payments Pending" count also failed silently.
+
+### Files Fixed
+- **Payments.jsx**: 10 `fetch()` → `authFetch()` (overview, summaries, pending tours, guides list, record payment, guide details, reports x2, edit transaction, delete payment)
+- **Dashboard.jsx**: 1 `fetch()` → `authFetch()` (pending payments count)
+- **PaymentRecordForm.jsx**: 2 `fetch()` → `authFetch()` (load tours by date, submit payment)
+- **ticketsService.js**: 2 `fetch()` → `authFetch()` (delete ticket, update ticket) + removed stale axios interceptor that read wrong key (`authToken` instead of `token`)
+
+### Fix Pattern
+Added `authFetch()` wrapper in each affected file — injects `Bearer <token>` from `localStorage.getItem('token')` into every `fetch()` request, matching the axios interceptor behavior in `mysqlDB.js`.
+
+---
+
 ## ✅ PRODUCT CLASSIFICATION SYSTEM (2026-02-24)
 
 ### DB-Driven Product Type Filtering
