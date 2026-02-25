@@ -18,7 +18,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 **Production**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Last Updated**: February 24, 2026
+**Last Updated**: February 25, 2026
 
 ## Tech Stack
 
@@ -187,6 +187,23 @@ export const tourGroupsAPI = { list(), autoGroup(), manualMerge(), unmerge(), up
 // Axios interceptor adds Bearer token from localStorage
 // Cache: localStorage 'tours_v1' with 60-second TTL
 // Anti-browser-cache: _={timestamp} query param
+```
+
+### Auth Fetch Pattern (for components using raw fetch)
+```javascript
+// Use this instead of bare fetch() in any component that calls API endpoints
+const authFetch = (url, options = {}) => {
+  const token = localStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+  });
+};
+// Used in: Payments.jsx, Dashboard.jsx, PaymentRecordForm.jsx, ticketsService.js
+// Prefer axios (via mysqlDB.js) for new code — it has the interceptor built in
 ```
 
 ## Tour Grouping System (Feb 2026)
@@ -359,6 +376,7 @@ Located in `src/utils/pdfGenerator.js`. Tuscan theme with terracotta accent (#C7
 - All API endpoints require `Middleware::requireAuth($conn)` except auth.php login/logout
 - Token verified via `sessions` table with expiry check
 - Frontend axios interceptor reads `localStorage.getItem('token')` for Bearer header
+- **IMPORTANT**: Components using raw `fetch()` must use the `authFetch()` wrapper (not bare `fetch()`) to include the Bearer token. The axios interceptor only covers `axios` calls. Fixed in: Payments.jsx, Dashboard.jsx, PaymentRecordForm.jsx, ticketsService.js
 
 ### CORS
 - Handled exclusively by PHP in `config.php` (environment-aware origin checking)
@@ -483,7 +501,7 @@ Custom skills in `../florence-skills/` directory:
 
 ---
 
-**Last Updated**: February 24, 2026
+**Last Updated**: February 25, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: Fully Operational
 **Tests**: 52 passing (Vitest + React Testing Library)
