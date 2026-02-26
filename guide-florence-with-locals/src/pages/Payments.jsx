@@ -12,6 +12,18 @@ import {
   generatePaymentTransactionsPDF
 } from '../utils/pdfGenerator';
 
+// Authenticated fetch wrapper - adds Bearer token from localStorage
+const authFetch = (url, options = {}) => {
+  const token = localStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+  });
+};
+
 const Payments = () => {
   const { setPageTitle } = usePageTitle();
   const [activeTab, setActiveTab] = useState('overview');
@@ -71,12 +83,12 @@ const Payments = () => {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
       // Load payment overview
-      const overviewResponse = await fetch(`${API_BASE_URL}/guide-payments.php?action=overview`);
+      const overviewResponse = await authFetch(`${API_BASE_URL}/guide-payments.php?action=overview`);
       if (!overviewResponse.ok) throw new Error('Failed to load payment overview');
       const overviewResult = await overviewResponse.json();
 
       // Load guide payment summaries
-      const guidesResponse = await fetch(`${API_BASE_URL}/guide-payments.php`);
+      const guidesResponse = await authFetch(`${API_BASE_URL}/guide-payments.php`);
       if (!guidesResponse.ok) throw new Error('Failed to load guide payments');
       const guidesResult = await guidesResponse.json();
 
@@ -85,7 +97,7 @@ const Payments = () => {
 
       // Load unpaid tours from API - uses server-side logic checking payments table
       // This ensures consistency with the database (tours with NO payment record)
-      const pendingToursResponse = await fetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
+      const pendingToursResponse = await authFetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
       if (pendingToursResponse.ok) {
         const pendingToursResult = await pendingToursResponse.json();
         if (pendingToursResult.success) {
@@ -106,7 +118,7 @@ const Payments = () => {
   const loadGuides = async () => {
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      const response = await fetch(`${API_BASE_URL}/guides.php?per_page=100`);
+      const response = await authFetch(`${API_BASE_URL}/guides.php?per_page=100`);
       if (response.ok) {
         const result = await response.json();
         const data = result?.data || result;
@@ -200,7 +212,7 @@ const Payments = () => {
     for (const tour of selectedTours) {
       try {
         const tourId = tour.id; // For groups, this is the first tour's ID
-        const response = await fetch(`${API_BASE_URL}/payments.php`, {
+        const response = await authFetch(`${API_BASE_URL}/payments.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -262,7 +274,7 @@ const Payments = () => {
       setSelectedGuide(guideId);
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      const response = await fetch(`${API_BASE_URL}/guide-payments.php?guide_id=${guideId}`);
+      const response = await authFetch(`${API_BASE_URL}/guide-payments.php?guide_id=${guideId}`);
       if (!response.ok) throw new Error('Failed to load guide payment details');
 
       const result = await response.json();
@@ -307,7 +319,7 @@ const Payments = () => {
         url += `&guide_id=${selectedGuideForReport}`;
       }
 
-      const response = await fetch(url);
+      const response = await authFetch(url);
       if (!response.ok) throw new Error('Failed to load payment reports');
 
       const result = await response.json();
@@ -359,7 +371,7 @@ const Payments = () => {
   const saveTransactionEdit = async (transactionId) => {
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      const response = await fetch(`${API_BASE_URL}/payments.php?id=${transactionId}`, {
+      const response = await authFetch(`${API_BASE_URL}/payments.php?id=${transactionId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -399,7 +411,7 @@ const Payments = () => {
 
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      const response = await fetch(`${API_BASE_URL}/payments.php?id=${paymentId}`, {
+      const response = await authFetch(`${API_BASE_URL}/payments.php?id=${paymentId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json'
@@ -453,7 +465,7 @@ const Payments = () => {
       }
 
       // Fetch the data
-      const response = await fetch(url);
+      const response = await authFetch(url);
       if (!response.ok) throw new Error('Failed to fetch report data');
 
       const result = await response.json();

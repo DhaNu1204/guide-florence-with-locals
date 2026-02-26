@@ -1,5 +1,65 @@
 # Changelog - Recent Major Updates
 
+## ✅ AUTH FIX FOR PAYMENTS PAGE (2026-02-25)
+
+### Bug Fix — fetch() calls missing Authorization header
+✅ COMPLETED - Fixed 401 errors on Payments page, Dashboard pending count, PaymentRecordForm, and ticket operations
+
+- **Root cause**: Security hardening (2026-02-24) added `Middleware::requireAuth()` to all API endpoints. However, several components used raw `fetch()` instead of `axios`, bypassing the axios interceptor that adds the `Authorization: Bearer <token>` header. These requests were sent without authentication and rejected with 401.
+- **Symptom**: "Error loading payment data: Failed to load payment overview" on the Payments page in production. Dashboard "Guide Payments Pending" count also failed silently.
+
+### Files Fixed
+- **Payments.jsx**: 10 `fetch()` → `authFetch()` (overview, summaries, pending tours, guides list, record payment, guide details, reports x2, edit transaction, delete payment)
+- **Dashboard.jsx**: 1 `fetch()` → `authFetch()` (pending payments count)
+- **PaymentRecordForm.jsx**: 2 `fetch()` → `authFetch()` (load tours by date, submit payment)
+- **ticketsService.js**: 2 `fetch()` → `authFetch()` (delete ticket, update ticket) + removed stale axios interceptor that read wrong key (`authToken` instead of `token`)
+
+### Fix Pattern
+Added `authFetch()` wrapper in each affected file — injects `Bearer <token>` from `localStorage.getItem('token')` into every `fetch()` request, matching the axios interceptor behavior in `mysqlDB.js`.
+
+---
+
+## ✅ PRODUCT CLASSIFICATION SYSTEM (2026-02-24)
+
+### DB-Driven Product Type Filtering
+✅ COMPLETED - Replaced fragile keyword-based ticket filtering with reliable product ID classification
+
+- **Problem**: Ticket products (museum entry tickets, audio guides) were filtered from the Tours page using 5 `NOT LIKE` keyword patterns matched against tour titles. This was brittle — new ticket products with different titles would slip through, and the same 45 lines of keyword matching were duplicated across 9 locations in `guide-payments.php`.
+- **Solution**: New `products` table classifies each Bokun product by ID as `tour` or `ticket`. Filtering now happens server-side via a single `LEFT JOIN` + `WHERE` clause.
+
+### Database Changes
+- **New table**: `products` (`bokun_product_id` PK, `title`, `product_type` ENUM('tour','ticket'), timestamps)
+- **New column**: `tours.product_id` INT — extracted from `bokun_data` JSON via `JSON_EXTRACT`
+- **Auto-migration**: `tours.php` creates table/column on first request (guarded by `SHOW TABLES`/`SHOW COLUMNS`)
+- **Backfill**: One-time population of `product_id` from existing `bokun_data` + seeding `products` table
+- **Known tickets**: 7 product IDs marked as `ticket`: 809838, 845665, 877713, 961802, 1115497, 1119143, 1162586
+
+### Backend Changes
+- **tours.php**: Added `?product_type=tour|ticket|all` query parameter; `LEFT JOIN products` for filtering; default `tour` excludes tickets
+- **bokun_sync.php**: Auto-registers new products via `INSERT IGNORE INTO products`; includes `product_id` in both INSERT and UPDATE
+- **BokunAPI.php**: Extracts `product_id` from `productBookings[0].product.id` in `transformBookingToTour()`
+- **guide-payments.php**: Replaced 9 blocks of 5-line `NOT LIKE` matching (45 lines total) with single `NOT EXISTS` subquery each
+
+### Frontend Changes
+- **Tours.jsx**: Removed client-side `filterToursOnly()` call — backend now handles filtering
+- **PriorityTickets.jsx**: Passes `product_type: 'ticket'` filter to API
+- **mysqlDB.js**: Added `product_type` parameter passthrough in `getTours()`
+
+### Files Modified
+- **Backend** (4 files): tours.php, bokun_sync.php, BokunAPI.php, guide-payments.php
+- **Frontend** (3 files): Tours.jsx, PriorityTickets.jsx, mysqlDB.js
+- **New**: `database/migrations/create_products_table.sql` (migration documentation)
+
+### Production Verification
+| Test | Result |
+|------|--------|
+| Tours API (default, no tickets) | 116 upcoming tours |
+| Tickets API (`product_type=ticket`) | 238 upcoming tickets |
+| Product type field in response | `tour` / `ticket` correctly set |
+| Auto-migration on first request | Products table + backfill completed |
+
+---
+
 ## ✅ SECURITY HARDENING (2026-02-24)
 
 ### Comprehensive Security Audit & Fixes

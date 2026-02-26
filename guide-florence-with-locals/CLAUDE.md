@@ -10,6 +10,7 @@
 > - Troubleshooting: `docs/TROUBLESHOOTING.md`
 > - Architecture: `docs/ARCHITECTURE.md`
 > - Bokun integration: `docs/BOKUN_INTEGRATION.md`
+> - Technical report: `docs/TECHNICAL_REPORT.md`
 
 ## Project Overview
 
@@ -17,7 +18,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 **Production**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Last Updated**: February 24, 2026
+**Last Updated**: February 25, 2026
 
 ## Tech Stack
 
@@ -45,7 +46,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 10. **GYG Participant Names**: Regex extraction from special requests, expandable display, copy-all
 11. **Cancelled/Rescheduled**: Auto-detection with visual indicators and audit trail
 12. **Multi-Channel Language Detection**: Extracted from Bokun notes, rate titles, product titles
-13. **Smart Ticket Filtering**: Keyword-based exclusion of museum entrance tickets from tour views
+13. **Product Classification**: DB-driven product_type filtering (tour/ticket) via `products` table, replaces keyword matching
 14. **Rate Limiting**: DB-backed, per-endpoint (login: 5/min, read: 100/min, write: 30/min)
 15. **Error Tracking**: Sentry.io (100% trace, 10% replay) + file logging with rotation
 16. **CI/CD Pipeline**: GitHub Actions: build verification + deploy to Hostinger + health checks
@@ -72,7 +73,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 ### Key File Locations
 - **Frontend Entry**: `src/main.jsx`
 - **Main Layout**: `src/components/Layout/ModernLayout.jsx` (354 lines)
-- **Largest Pages**: `src/pages/Payments.jsx` (2,125 lines), `src/pages/Tours.jsx` (1,531 lines)
+- **Largest Pages**: `src/pages/Payments.jsx` (2,125 lines), `src/pages/Tours.jsx` (1,698 lines)
 - **API Service**: `src/services/mysqlDB.js` (601 lines, 1-min localStorage cache)
 - **Database Config**: `public_html/api/config.php` (403 lines)
 - **Bokun Client**: `public_html/api/BokunAPI.php` (705 lines)
@@ -139,7 +140,7 @@ guide-florence-with-locals/
 │   └── HttpClient.php                   # Fallback HTTP client
 ├── database/migrations/                 # SQL migration files
 ├── scripts/                             # deploy.sh, deploy.ps1
-├── docs/                                # 14 documentation files
+├── docs/                                # 15 documentation files
 ├── .github/workflows/                   # main.yml (build), deploy.yml (deploy + health)
 └── dist/                                # Production build (.htaccess for SPA routing)
 ```
@@ -186,6 +187,23 @@ export const tourGroupsAPI = { list(), autoGroup(), manualMerge(), unmerge(), up
 // Axios interceptor adds Bearer token from localStorage
 // Cache: localStorage 'tours_v1' with 60-second TTL
 // Anti-browser-cache: _={timestamp} query param
+```
+
+### Auth Fetch Pattern (for components using raw fetch)
+```javascript
+// Use this instead of bare fetch() in any component that calls API endpoints
+const authFetch = (url, options = {}) => {
+  const token = localStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+  });
+};
+// Used in: Payments.jsx, Dashboard.jsx, PaymentRecordForm.jsx, ticketsService.js
+// Prefer axios (via mysqlDB.js) for new code — it has the interceptor built in
 ```
 
 ## Tour Grouping System (Feb 2026)
@@ -241,7 +259,41 @@ IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_u
 - `force_payment: true` bypasses per-tour duplicate check
 
 ### Ticket Filtering in Payments
-Excludes: "Entry Ticket", "Entrance Ticket", "Priority Ticket", "Skip the Line", "Skip-the-Line"
+Uses `NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')` — replaced 45 lines of `NOT LIKE` keyword matching across 9 locations.
+
+## Product Classification System (Feb 2026)
+
+### Overview
+Classifies Bokun products as `tour` or `ticket` via a dedicated `products` table, replacing fragile keyword-based filtering (`NOT LIKE '%Entry Ticket%'` etc.) with reliable product ID lookups.
+
+### Database
+- **`products`** table: `bokun_product_id` (PK), `title`, `product_type` ENUM('tour','ticket'), timestamps
+- **`tours.product_id`** column: FK to products, extracted from `bokun_data` JSON
+- **Auto-migration**: `tours.php` auto-creates table/column on first request via `SHOW TABLES`/`SHOW COLUMNS` guards
+- **Backfill**: One-time `JSON_EXTRACT` from `bokun_data` populates `product_id` for existing tours
+
+### Known Ticket Product IDs
+`809838`, `845665`, `877713`, `961802`, `1115497`, `1119143`, `1162586`
+
+### Query Parameter
+- `?product_type=tour` (default) — excludes tickets: `WHERE (pr.product_type = 'tour' OR t.product_id IS NULL)`
+- `?product_type=ticket` — tickets only: `WHERE pr.product_type = 'ticket'`
+- `?product_type=all` — no filter
+
+### Sync Integration
+- `BokunAPI.php` extracts `product_id` from `productBookings[0].product.id`
+- `bokun_sync.php` auto-registers new products via `INSERT IGNORE INTO products`
+- New products default to `product_type='tour'`
+
+### Files Modified
+- **Backend**: `tours.php` (auto-migration + query param), `bokun_sync.php` (product registration + product_id in INSERT/UPDATE), `BokunAPI.php` (product_id extraction), `guide-payments.php` (9x NOT LIKE → NOT EXISTS)
+- **Frontend**: `Tours.jsx` (removed `filterToursOnly()`), `PriorityTickets.jsx` (added `product_type: 'ticket'`), `mysqlDB.js` (product_type param passthrough)
+- **Migration**: `database/migrations/create_products_table.sql`
+
+### Classify a New Product as Ticket
+```sql
+UPDATE products SET product_type = 'ticket' WHERE bokun_product_id = <id>;
+```
 
 ## GYG Participant Names (Feb 2026)
 
@@ -324,6 +376,7 @@ Located in `src/utils/pdfGenerator.js`. Tuscan theme with terracotta accent (#C7
 - All API endpoints require `Middleware::requireAuth($conn)` except auth.php login/logout
 - Token verified via `sessions` table with expiry check
 - Frontend axios interceptor reads `localStorage.getItem('token')` for Bearer header
+- **IMPORTANT**: Components using raw `fetch()` must use the `authFetch()` wrapper (not bare `fetch()`) to include the Bearer token. The axios interceptor only covers `axios` calls. Fixed in: Payments.jsx, Dashboard.jsx, PaymentRecordForm.jsx, ticketsService.js
 
 ### CORS
 - Handled exclusively by PHP in `config.php` (environment-aware origin checking)
@@ -402,8 +455,11 @@ $perPage = max(1, min(500, intval($_GET['per_page'] ?? 50)));
 // Returns: { data: [...], pagination: { current_page, per_page, total, total_pages, has_next, has_prev } }
 ```
 
-### Add New Ticket Detection Keyword
-Edit `src/utils/tourFilters.js` → `TICKET_KEYWORDS` array.
+### Classify a New Bokun Product as Ticket
+```sql
+UPDATE products SET product_type = 'ticket' WHERE bokun_product_id = <id>;
+```
+New products auto-register as `tour` during Bokun sync. No code changes needed — just update the DB row.
 
 ### Extend Auto-Sync Interval
 Edit `src/hooks/useBokunAutoSync.jsx` → `SYNC_INTERVAL_MS`.
@@ -445,7 +501,7 @@ Custom skills in `../florence-skills/` directory:
 
 ---
 
-**Last Updated**: February 24, 2026
+**Last Updated**: February 25, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: Fully Operational
 **Tests**: 52 passing (Vitest + React Testing Library)
