@@ -26,7 +26,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 - **Tour Grouping** - Auto-group by product+date+time, max 9 PAX, drag-and-drop merge, advisory locks
 - **Group-Aware Payments** - 1 group = 1 payment, duplicate prevention, 4 PDF reports, Europe/Rome TZ
 - **Bokun Integration** - Auto-sync every 15 min, SUPPLIER + SELLER roles, 200/page pagination
-- **Product Classification** - DB-driven tour/ticket filtering via `products` table (replaces keyword matching)
+- **Product Classification** - DB-driven tour/ticket filtering via `products` table with idempotent enforcement of known ticket IDs
 - **Guide Management** - Multi-language, pagination, RESTful updates
 - **Priority Tickets** - Museum ticket bookings with details modal, participant breakdown
 - **Mobile Responsive** - Dedicated mobile components, 44px touch targets, card layouts

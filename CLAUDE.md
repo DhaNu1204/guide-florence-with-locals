@@ -18,7 +18,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 **Production**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Last Updated**: February 25, 2026
+**Last Updated**: March 3, 2026
 
 ## Tech Stack
 
@@ -285,12 +285,19 @@ Classifies Bokun products as `tour` or `ticket` via a dedicated `products` table
 - `bokun_sync.php` auto-registers new products via `INSERT IGNORE INTO products`
 - New products default to `product_type='tour'`
 
+### Idempotent Ticket Classification (Mar 2026 fix)
+- Known ticket IDs are enforced on **every request** to `tours.php` via `INSERT ... ON DUPLICATE KEY UPDATE`
+- Previously, the classification only ran once during initial migration — products synced later were never reclassified
+- The idempotent query handles all cases: new products inserted as `'ticket'`, mis-classified products corrected, already-correct rows are a no-op
+- **Root cause of Borghese bug**: Product 1162586 was synced after the one-time migration, so `INSERT IGNORE` registered it as `'tour'`
+
 ### Files Modified
-- **Backend**: `tours.php` (auto-migration + query param), `bokun_sync.php` (product registration + product_id in INSERT/UPDATE), `BokunAPI.php` (product_id extraction), `guide-payments.php` (9x NOT LIKE → NOT EXISTS)
+- **Backend**: `tours.php` (auto-migration + query param + idempotent classification), `bokun_sync.php` (product registration + product_id in INSERT/UPDATE), `BokunAPI.php` (product_id extraction), `guide-payments.php` (9x NOT LIKE → NOT EXISTS)
 - **Frontend**: `Tours.jsx` (removed `filterToursOnly()`), `PriorityTickets.jsx` (added `product_type: 'ticket'`), `mysqlDB.js` (product_type param passthrough)
 - **Migration**: `database/migrations/create_products_table.sql`
 
 ### Classify a New Product as Ticket
+Add the product ID to the known ticket list in `tours.php` (the `INSERT ... ON DUPLICATE KEY UPDATE` statement near line 148). This ensures the classification is enforced on every request. For an immediate one-off fix:
 ```sql
 UPDATE products SET product_type = 'ticket' WHERE bokun_product_id = <id>;
 ```
@@ -501,7 +508,7 @@ Custom skills in `../florence-skills/` directory:
 
 ---
 
-**Last Updated**: February 25, 2026
+**Last Updated**: March 3, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: Fully Operational
 **Tests**: 52 passing (Vitest + React Testing Library)
