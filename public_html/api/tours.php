@@ -134,14 +134,22 @@ if ($checkProductIdCol->num_rows === 0) {
         WHERE product_id IS NOT NULL
     ");
 
-    // Mark known ticket products
-    $conn->query("
-        UPDATE products SET product_type = 'ticket'
-        WHERE bokun_product_id IN (809838, 845665, 877713, 961802, 1115497, 1119143, 1162586)
-    ");
-
     error_log("Product classification: backfilled product_id column, populated products table");
 }
+
+// Always ensure known ticket products are classified correctly.
+// Runs after the products table is guaranteed to exist, and after
+// bokun_sync.php may have auto-registered new products as 'tour' via INSERT IGNORE.
+// INSERT ... ON DUPLICATE KEY UPDATE is idempotent:
+//   - Products not yet in the table → inserted as 'ticket'
+//   - Products mis-classified as 'tour' → corrected to 'ticket'
+//   - Products already 'ticket' → no-op
+$conn->query("
+    INSERT INTO products (bokun_product_id, product_type)
+    VALUES (809838, 'ticket'), (845665, 'ticket'), (877713, 'ticket'),
+           (961802, 'ticket'), (1115497, 'ticket'), (1119143, 'ticket'), (1162586, 'ticket')
+    ON DUPLICATE KEY UPDATE product_type = 'ticket'
+");
 
 // Get the request method
 $method = $_SERVER['REQUEST_METHOD'];
