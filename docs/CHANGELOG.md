@@ -1,5 +1,34 @@
 # Changelog - Recent Major Updates
 
+## ✅ IDEMPOTENT TICKET CLASSIFICATION FIX (2026-03-03)
+
+### Bug Fix — Borghese Gallery ticket appearing on Tours page
+✅ COMPLETED - Fixed product 1162586 ("Borghese Gallery Entry Ticket and Audio Guide") showing as a tour instead of a ticket
+
+- **Root cause**: The known ticket classification (`UPDATE products SET product_type = 'ticket'`) only ran inside a one-time migration block (`if ($checkProductIdCol->num_rows === 0)`). Product 1162586 was synced *after* the migration had already completed, so `bokun_sync.php` auto-registered it as `'tour'` via `INSERT IGNORE` and it was never reclassified.
+- **Symptom**: Borghese Gallery Entry Ticket appeared on the Tours page alongside real tours (e.g., on April 6 alongside "Private Tour in Bargello Museum").
+
+### Fix
+- **Moved** the known ticket classification **outside** the one-time migration block in `tours.php`
+- **Changed** from `UPDATE ... WHERE IN (...)` to `INSERT INTO products ... ON DUPLICATE KEY UPDATE product_type = 'ticket'`
+- This idempotent query runs on every request to `tours.php` and handles all cases:
+  - Products not yet in the table → inserted as `'ticket'`
+  - Products mis-classified as `'tour'` → corrected to `'ticket'`
+  - Products already `'ticket'` → no-op
+
+### Files Modified
+- **Backend** (1 file): `tours.php` (moved classification outside migration block, changed to INSERT...ON DUPLICATE KEY UPDATE)
+
+### Production Verification
+| Test | Result |
+|------|--------|
+| Products table — all 7 ticket IDs | All marked as `ticket` |
+| Tours API — April 6 (product_type=tour) | 1 tour (Bargello, 2 PAX) — Borghese excluded |
+| Tours API — April 6 (product_type=ticket) | 1 ticket (Borghese, 2 PAX) — correctly classified |
+| Total products in table | 24 (17 tours, 7 tickets) |
+
+---
+
 ## ✅ AUTH FIX FOR PAYMENTS PAGE (2026-02-25)
 
 ### Bug Fix — fetch() calls missing Authorization header
