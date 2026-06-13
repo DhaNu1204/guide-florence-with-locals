@@ -15,7 +15,8 @@
 ## ⚠️ DEPLOYMENT — READ BEFORE ANY GIT/DEPLOY WORK
 
 - **Deploy branch is `master`** (NOT `main`). `origin/main` is an old divergent branch with unrelated history — **never merge it, never deploy from it.**
-- **Pushing to `master` auto-deploys** via `.github/workflows/deploy.yml` (build → SCP/rsync to Hostinger → health check).
+- **Deploy by running `scripts/deploy.sh`** (Claude Code executes it): builds the frontend (vite), makes a remote backup, then SCP/rsync's backend + frontend to Hostinger. This is the live deploy path.
+- **GitHub Actions auto-deploy is NOT active.** `.github/workflows/deploy.yml` exists, but pushing to `master` does not deploy because the SSH secrets (`SSH_HOST`/`SSH_PORT`/`SSH_USERNAME`/`SSH_PRIVATE_KEY`) are unset in the repo — pushes just fail the workflow. Keep commits local until those secrets are configured.
 - **Use the `deploy` skill** in `.claude/skills/deploy/` for the full verified checklist. Always verify each changed file is COMPLETE (not truncated) before committing.
 - **Never touch payment logic or passwords.**
 - **Log every deploy** in `DEPLOY_LOG.md`.
