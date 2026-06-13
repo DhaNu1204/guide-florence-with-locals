@@ -60,6 +60,14 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadDashboardData();
+
+    // Reload dashboard when a Bokun sync brings in new/changed bookings
+    const onBookingsUpdated = () => {
+      console.log('[Dashboard] Bookings updated by Bokun sync — reloading');
+      loadDashboardData(true);
+    };
+    window.addEventListener('florence:bookings-updated', onBookingsUpdated);
+    return () => window.removeEventListener('florence:bookings-updated', onBookingsUpdated);
   }, []);
 
   const loadDashboardData = async (forceRefresh = false) => {
