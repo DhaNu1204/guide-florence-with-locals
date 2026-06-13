@@ -232,4 +232,4 @@ jobs:
           # Add Slack/Discord webhook here if needed
           # curl -X POST -H 'Content-type: application/json' \
           #   --data '{"text":"❌ Florence Guides deployment failed!"}' \
-          #   ${{ secrets.SLACK_
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}

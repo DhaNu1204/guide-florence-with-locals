@@ -19,6 +19,9 @@ Order: features that make daily operations easier first, then security cleanup, 
 **Problem:** Sync only runs while an admin has the app open in a browser. Overnight/weekend bookings wait until you open the app.
 **Fix:** Hostinger cron job calling `bokun_sync.php` every 15 min + verify Bokun webhook is active for instant updates.
 **Done when:** Opening the app in the morning shows last night's bookings immediately.
+- [x] CLI cron entry point added (`bokun_cron.php`) + CLI guard in `bokun_sync.php` (web endpoint stays authenticated) — 2026-06-13
+- [ ] Create the Hostinger cron job in hPanel (every 15 min) — *manual step, see instructions*
+- [ ] Verify Bokun webhook is registered + active in the Bokun dashboard — *manual step*
 
 ### Task 3: New-booking visibility
 **Fix:** Toast/badge showing "3 new bookings since you last looked" with quick link; highlight newly arrived tours in the list.

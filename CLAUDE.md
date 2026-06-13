@@ -12,6 +12,16 @@
 > - Bokun integration: `docs/BOKUN_INTEGRATION.md`
 > - Technical report: `docs/TECHNICAL_REPORT.md`
 
+## ⚠️ DEPLOYMENT — READ BEFORE ANY GIT/DEPLOY WORK
+
+- **Deploy branch is `master`** (NOT `main`). `origin/main` is an old divergent branch with unrelated history — **never merge it, never deploy from it.**
+- **Pushing to `master` auto-deploys** via `.github/workflows/deploy.yml` (build → SCP/rsync to Hostinger → health check).
+- **Use the `deploy` skill** in `.claude/skills/deploy/` for the full verified checklist. Always verify each changed file is COMPLETE (not truncated) before committing.
+- **Never touch payment logic or passwords.**
+- **Log every deploy** in `DEPLOY_LOG.md`.
+- **Hostinger cron does not work** — server-side sync relies on the Bokun webhook (`api/bokun_webhook.php`) + in-app 15-min sync. Do not rely on Hostinger cron jobs.
+- **Owner (Dhanu) does not use the terminal.** Cowork-Claude writes copy-paste prompts; Claude Code executes the git/terminal work.
+
 ## Project Overview
 
 A tour guide management system for Florence, Italy. Integrates with Bokun API for automatic booking synchronization from OTA channels (Viator, GetYourGuide) and direct sales. Features tour grouping, group-aware payments, mobile responsive UI, and PDF reporting.

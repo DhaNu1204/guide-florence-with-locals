@@ -924,6 +924,12 @@ function backfillParticipantNames() {
     ];
 }
 
+// Only run the web request handler when accessed over HTTP.
+// When this file is included from the CLI cron entry point (bokun_cron.php),
+// php_sapi_name() === 'cli', so we skip auth + routing and let the cron
+// script call syncBookings() directly. HTTP access stays fully authenticated.
+if (php_sapi_name() !== 'cli') {
+
 // Require authentication for all sync operations
 require_once __DIR__ . '/Middleware.php';
 Middleware::requireAuth($conn);
@@ -1012,4 +1018,6 @@ switch ($method) {
         http_response_code(405);
         echo json_encode(['error' => 'Method not allowed']);
 }
+
+} // end: web-only request handler (skipped under CLI / cron)
 ?>
