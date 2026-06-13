@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:
     inputs:
       deploy_frontend:
@@ -231,4 +232,4 @@ jobs:
           # Add Slack/Discord webhook here if needed
           # curl -X POST -H 'Content-type: application/json' \
           #   --data '{"text":"❌ Florence Guides deployment failed!"}' \
-          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+          #   ${{ secrets.SLACK_

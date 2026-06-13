@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { format } from 'date-fns';
+import { clearTourCache } from './mysqlDB';
 
 class BokunAutoSyncService {
   constructor() {
@@ -146,6 +147,15 @@ class BokunAutoSyncService {
         localStorage.setItem('bokun_last_sync', this.lastSyncTime);
 
         console.log(`Bokun sync completed: ${synced_count} synced bookings (${total_bookings} total)`);
+
+        // Clear stale tour cache and tell open pages to reload fresh data
+        // so new/changed bookings appear without logging out
+        clearTourCache();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('florence:bookings-updated', {
+            detail: { trigger, synced_count, total_bookings }
+          }));
+        }
 
         this.notifyListeners({
           type: 'sync_completed',

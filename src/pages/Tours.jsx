@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { FiPlus, FiRefreshCw, FiSave, FiX, FiLayers, FiCheckSquare, FiSquare, FiUsers as FiUsersIcon, FiDownload } from 'react-icons/fi';
 import { format } from 'date-fns';
 import mysqlDB, { tourGroupsAPI } from '../services/mysqlDB';
+import bokunAutoSync from '../services/bokunAutoSync';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
@@ -343,8 +344,14 @@ const Tours = () => {
   };
 
   // Handle refresh button click
+  // Reloads from the database immediately, then triggers a Bokun sync in the
+  // background — when the sync finishes, the 'florence:bookings-updated' event
+  // reloads the list again so brand-new bookings appear without re-login.
   const handleRefresh = async () => {
     await loadData(true, currentPage, getCurrentFilters());
+    bokunAutoSync.syncNow().catch((err) => {
+      console.warn('Background Bokun sync failed:', err?.message || err);
+    });
   };
 
   // Handle page change
@@ -360,6 +367,18 @@ const Tours = () => {
     setCurrentPage(1); // Reset to page 1 when filters change
     loadData(false, 1, getCurrentFilters());
   }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate, selectedGuideId]);
+
+  // Auto-reload when a Bokun sync brings in new/changed bookings,
+  // so the list stays current without logging out and back in
+  useEffect(() => {
+    const onBookingsUpdated = () => {
+      if (showDateRange && (!rangeStartDate || !rangeEndDate)) return;
+      console.log('[Tours] Bookings updated by Bokun sync — reloading tour list');
+      loadData(true, currentPage, getCurrentFilters());
+    };
+    window.addEventListener('florence:bookings-updated', onBookingsUpdated);
+    return () => window.removeEventListener('florence:bookings-updated', onBookingsUpdated);
+  }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate, selectedGuideId, currentPage]);
 
   // Build a Set of tour IDs that belong to groups (for filtering ungrouped tours)
   const groupedTourIds = useMemo(() => {
