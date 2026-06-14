@@ -1,10 +1,9 @@
 name: Deploy to Production
 
+# Auto-deploy on push is DISABLED — SSH secrets are not set in this repo and
+# deploys are done manually via scripts/deploy.sh. To re-enable push-to-deploy,
+# add the SSH_* secrets in repo Settings and restore a `push:` trigger here.
 on:
-  push:
-    branches:
-      - main
-      - master
   workflow_dispatch:
     inputs:
       deploy_frontend:
