@@ -1,9 +1,11 @@
 name: Deploy to Production
 
-# Auto-deploy on push is DISABLED — SSH secrets are not set in this repo and
-# deploys are done manually via scripts/deploy.sh. To re-enable push-to-deploy,
-# add the SSH_* secrets in repo Settings and restore a `push:` trigger here.
+# Push to master auto-deploys to production via SSH (secrets configured).
+# Manual runs also available via workflow_dispatch.
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       deploy_frontend:
@@ -162,7 +164,8 @@ jobs:
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://withlocals.deetech.cc/api/tours.php?upcoming=true&per_page=1")
 
-          if [ "$HTTP_CODE" -eq 200 ]; then
+          # 401 is healthy — auth is enforced on this endpoint
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 401 ]; then
             echo "✅ Tours API: OK ($HTTP_CODE)"
           else
             echo "❌ Tours API: Failed ($HTTP_CODE)"
@@ -173,7 +176,8 @@ jobs:
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://withlocals.deetech.cc/api/guides.php?per_page=1")
 
-          if [ "$HTTP_CODE" -eq 200 ]; then
+          # 401 is healthy — auth is enforced on this endpoint
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 401 ]; then
             echo "✅ Guides API: OK ($HTTP_CODE)"
           else
             echo "❌ Guides API: Failed ($HTTP_CODE)"
