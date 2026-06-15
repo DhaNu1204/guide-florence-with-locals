@@ -18,19 +18,22 @@ The working deploy method is running **`bash scripts/deploy.sh`** from the proje
 2. Review full diff: `git --no-pager diff`. Confirm intended changes only, and NO payment/password changes.
 3. Verify completeness: `for f in $(git diff --name-only); do echo "== $f =="; tail -3 "$f"; done` — PHP must end with proper `}`/`?>`, JS/JSX with a complete statement. If anything is cut off, STOP.
 4. Lint changed PHP: `for f in $(git diff --name-only -- 'public_html/api/*.php'); do php -l "$f"; done` — all must say "No syntax errors detected".
-5. Stage intended files, then `git commit -m "<clear message>"` (keep commits local; do NOT push — see "GitHub Actions" below).
-6. **Run the deploy:** `bash scripts/deploy.sh` from the project root. Let it run to completion.
-7. Confirm the deploy succeeded by these lines appearing in the script output:
+5. **VERIFY gate — both must pass before deploying (if either fails, STOP, do not deploy):**
+   - `npm run build` — must succeed (catches syntax/import errors).
+   - **All tests must pass: `npm test -- --run`** (one-shot Vitest; equivalently `npm run test:run`). This includes per-page render smoke tests (`src/**/__tests__/*.smoke.test.jsx`) that catch render-time crashes the build misses — TDZ / use-before-init / undefined call. The build compiles such code fine; only running it surfaces the crash.
+6. Stage intended files, then `git commit -m "<clear message>"` (keep commits local; do NOT push — see "GitHub Actions" below).
+7. **Run the deploy:** `bash scripts/deploy.sh` from the project root. Let it run to completion.
+8. Confirm the deploy succeeded by these lines appearing in the script output:
    - `SSH connection OK`
    - `Backup created: ...`
    - `Backend deployment complete`
    - `Frontend deployment complete`
    If it stops early with `Cannot connect to server. Check your SSH configuration.`, SSH key access isn't set up on this machine — STOP and report that exact message.
-8. Verify the new frontend bundle is actually live:
+9. Verify the new frontend bundle is actually live:
    `curl -s --ssl-no-revoke https://withlocals.deetech.cc/ | grep -o 'assets/[^"]*\.js' | head -3`
    The hashed filename(s) must match the freshly built `dist/assets/*.js` from this run.
-9. Append a row to DEPLOY_LOG.md: `| date time | short-sha (deploy.sh) | master | summary | manual deploy |`
-10. Report what shipped, the deployment-complete lines, the live asset filename, and the health-check result.
+10. Append a row to DEPLOY_LOG.md: `| date time | short-sha (deploy.sh) | master | summary | manual deploy |`
+11. Report what shipped, the deployment-complete lines, the live asset filename, and the health-check result.
 
 ## Health checks — what success looks like
 - **Frontend `/` must return 200.** This is the primary success signal, together with the script's `Backend deployment complete` / `Frontend deployment complete` lines.
