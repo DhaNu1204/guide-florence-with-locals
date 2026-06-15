@@ -199,6 +199,20 @@ export const getGuideRequests = async (tourId) => {
   return response.data;
 };
 
+// Open requests (pending/declined) for upcoming tours — for persistent badges.
+export const getOpenGuideRequests = async () => {
+  const url = `${API_BASE_URL}/guide-requests.php?action=open`;
+  const response = await axios.get(addCacheBuster(url));
+  return response.data;
+};
+
+// Recently answered (accepted/declined) requests within N days — dashboard summary.
+export const getRecentGuideResponses = async (days = 7) => {
+  const url = `${API_BASE_URL}/guide-requests.php?action=recent&days=${encodeURIComponent(days)}`;
+  const response = await axios.get(addCacheBuster(url));
+  return response.data;
+};
+
 // TOURS OPERATIONS
 export const getTours = async (forceRefresh = false, page = 1, perPage = 50, filters = {}) => {
   // Check if we need to force a refresh

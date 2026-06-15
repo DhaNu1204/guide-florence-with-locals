@@ -8,13 +8,17 @@ import {
   FiAlertCircle,
   FiRefreshCw,
   FiUsers,
-  FiMapPin
+  FiMapPin,
+  FiMessageCircle,
+  FiCheckCircle,
+  FiXCircle
 } from 'react-icons/fi';
 import Card from './UI/Card';
 import Button from './UI/Button';
-import { getTours, getGuides } from '../services/mysqlDB';
+import { getTours, getGuides, getRecentGuideResponses } from '../services/mysqlDB';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { useBokunSync } from '../hooks/useBokunAutoSync';
+import AskGuideModal from './AskGuideModal';
 
 // Authenticated fetch wrapper - adds Bearer token from localStorage
 const authFetch = (url, options = {}) => {
@@ -67,6 +71,10 @@ const Dashboard = () => {
   const [recentTours, setRecentTours] = useState([]);
   const [upcomingTours, setUpcomingTours] = useState([]);
   const [needsGuideSoon, setNeedsGuideSoon] = useState([]);
+  const [guides, setGuides] = useState([]);
+  const [recentResponses, setRecentResponses] = useState([]);
+  const [askTour, setAskTour] = useState(null);            // tour being asked about
+  const [dashRequested, setDashRequested] = useState({});  // tour_id -> guideName (in-session note)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -90,6 +98,15 @@ const Dashboard = () => {
       // Fetch all tours for accurate payment stats (past tours need to be counted)
       const allToursResponse = await getTours(forceRefresh, 1, 500, {});
       const guidesData = await getGuides();
+      setGuides(guidesData?.data || []);
+
+      // Recent guide availability responses (accepted/declined, last 7 days)
+      try {
+        const recentResp = await getRecentGuideResponses(7);
+        setRecentResponses(recentResp && recentResp.data ? recentResp.data : []);
+      } catch (e) {
+        console.warn('Failed to fetch recent guide responses:', e);
+      }
 
       // Fetch pending payments count from API (authoritative source)
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -299,12 +316,14 @@ const Dashboard = () => {
           </div>
           <div className="space-y-2">
             {needsGuideSoon.map((tour) => (
-              <Link
+              <div
                 key={tour.id}
-                to={`/tours?date=${toDateParam(tour.date)}`}
-                className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-tuscan-lg border border-gold-200 hover:bg-white hover:border-gold-300 transition-all touch-manipulation min-h-[44px]"
+                className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-tuscan-lg border border-gold-200 hover:border-gold-300 transition-all min-h-[44px]"
               >
-                <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap min-w-0">
+                <Link
+                  to={`/tours?date=${toDateParam(tour.date)}`}
+                  className="flex items-center gap-x-3 gap-y-0.5 flex-wrap min-w-0 flex-1 touch-manipulation"
+                >
                   <span className="flex items-center text-sm font-semibold text-stone-800 whitespace-nowrap">
                     <FiCalendar className="mr-1 text-gold-600 w-4 h-4" />
                     {new Date(tour.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
@@ -314,9 +333,21 @@ const Dashboard = () => {
                     {tour.time}
                   </span>
                   <span className="text-sm text-stone-700 line-clamp-1 min-w-0">{tour.title}</span>
-                </div>
-                <span className="text-xs font-medium text-gold-700 whitespace-nowrap flex-shrink-0">Needs guide →</span>
-              </Link>
+                </Link>
+                {dashRequested[tour.id] ? (
+                  <span className="text-xs font-medium text-olive-700 whitespace-nowrap flex-shrink-0">
+                    richiesto a {dashRequested[tour.id]}
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setAskTour(tour)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 min-h-[36px] text-xs font-medium text-olive-700 bg-olive-50 hover:bg-olive-100 active:bg-olive-200 border border-olive-200 rounded-tuscan transition-colors touch-manipulation flex-shrink-0"
+                    title="Ask a guide via WhatsApp"
+                  >
+                    <FiMessageCircle size={13} /> Ask
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -324,6 +355,37 @@ const Dashboard = () => {
         <div className="bg-gradient-to-br from-olive-50 to-olive-100/50 border border-olive-200 rounded-tuscan-xl shadow-tuscan-sm px-4 py-3 flex items-center text-sm text-olive-800">
           <span className="mr-2">✅</span>
           All tours in the next 7 days have a guide.
+        </div>
+      )}
+
+      {/* Recent guide responses */}
+      {recentResponses.length > 0 && (
+        <div className="bg-white rounded-tuscan-xl shadow-tuscan border border-stone-200/50 overflow-hidden">
+          <div className="px-4 md:px-5 py-3 md:py-4 bg-gradient-to-r from-renaissance-500 to-renaissance-600 flex items-center">
+            <h2 className="text-base md:text-lg font-semibold text-white flex items-center">
+              <FiMessageCircle className="mr-2" />
+              Recent guide responses
+            </h2>
+          </div>
+          <div className="p-3 md:p-4 space-y-2">
+            {recentResponses.map((r) => (
+              <div key={r.id} className="flex items-start gap-2 text-sm">
+                {r.status === 'accepted' ? (
+                  <FiCheckCircle className="text-olive-600 mt-0.5 flex-shrink-0" />
+                ) : (
+                  <FiXCircle className="text-terracotta-500 mt-0.5 flex-shrink-0" />
+                )}
+                <span className="text-stone-700">
+                  <span className="font-medium">{r.guide_name}</span>{' '}
+                  {r.status === 'accepted' ? 'accepted' : 'declined'} — {r.tour_title}{' '}
+                  <span className="text-stone-500 whitespace-nowrap">
+                    {new Date(r.tour_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    {r.tour_time ? ` ${String(r.tour_time).slice(0, 5)}` : ''}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -543,6 +605,20 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Ask-a-guide modal (reused from Tours) */}
+      {askTour && (
+        <AskGuideModal
+          tour={askTour}
+          guides={guides}
+          language={askTour.language}
+          time={askTour.time}
+          onClose={() => setAskTour(null)}
+          onRequested={({ tourId, guideName }) =>
+            setDashRequested((prev) => ({ ...prev, [tourId]: guideName }))
+          }
+        />
+      )}
     </div>
   );
 };
