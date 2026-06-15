@@ -28,6 +28,13 @@ const PDF_COLORS = {
 // Tour category display order (matches backend classifyTourCategory)
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Pitti', 'Accademia', 'Other'];
 
+// All-guides overview columns: always the 4 museums; include "Other"
+// only when some guide actually has Other > 0 (keeps the table clean).
+const overviewCategoryColumns = (guides = []) => {
+  const showOther = guides.some((g) => (g.by_category?.Other || 0) > 0);
+  return showOther ? CATEGORY_ORDER : CATEGORY_ORDER.filter((c) => c !== 'Other');
+};
+
 // Default to LAST month (invoices arrive at month-end) — returns 'YYYY-MM'
 const getLastMonth = () => {
   const d = new Date();
@@ -187,6 +194,7 @@ const GuideReports = () => {
     let body;
     let total;
     let tableStartY = 50;
+    let tableColumnStyles = {};
 
     if (report.mode === 'single') {
       total = report.total_tours || 0;
@@ -216,8 +224,16 @@ const GuideReports = () => {
     } else {
       const guideRows = report.guides || [];
       total = guideRows.reduce((sum, g) => sum + (parseInt(g.total_tours, 10) || 0), 0);
-      head = [['Guide', 'Tours']];
-      body = guideRows.map((g) => [g.guide_name || '-', g.total_tours || 0]);
+      const cats = overviewCategoryColumns(guideRows);
+      head = [['Guide', ...cats, 'Total']];
+      body = guideRows.map((g) => [
+        g.guide_name || '-',
+        ...cats.map((c) => g.by_category?.[c] || 0),
+        g.total_tours || 0
+      ]);
+      // Right-align every numeric column (categories + Total); bold the Total column
+      cats.forEach((_, idx) => { tableColumnStyles[idx + 1] = { halign: 'right' }; });
+      tableColumnStyles[cats.length + 1] = { halign: 'right', fontStyle: 'bold' };
     }
 
     autoTable(doc, {
@@ -228,6 +244,7 @@ const GuideReports = () => {
       headStyles: { fillColor: PDF_COLORS.terracotta, textColor: PDF_COLORS.white, fontStyle: 'bold', fontSize: 9 },
       bodyStyles: { fontSize: 9, textColor: PDF_COLORS.stone900 },
       alternateRowStyles: { fillColor: PDF_COLORS.stone100 },
+      columnStyles: tableColumnStyles,
       margin: { left: 20, right: 20 }
     });
 
@@ -271,10 +288,17 @@ const GuideReports = () => {
       rows.push(['Total tours', report.total_tours || 0]);
     } else {
       const guideRows = report.guides || [];
-      rows.push(['Guide', 'Tours']);
-      guideRows.forEach((g) => rows.push([g.guide_name || '', g.total_tours || 0]));
+      const cats = overviewCategoryColumns(guideRows);
+      rows.push(['Guide', ...cats, 'Total']);
+      guideRows.forEach((g) => rows.push([
+        g.guide_name || '',
+        ...cats.map((c) => g.by_category?.[c] || 0),
+        g.total_tours || 0
+      ]));
       rows.push([]);
-      rows.push(['Total tours (all guides)', guideRows.reduce((s, g) => s + (parseInt(g.total_tours, 10) || 0), 0)]);
+      const colTotals = cats.map((c) => guideRows.reduce((s, g) => s + (g.by_category?.[c] || 0), 0));
+      const grand = guideRows.reduce((s, g) => s + (parseInt(g.total_tours, 10) || 0), 0);
+      rows.push(['Total', ...colTotals, grand]);
     }
 
     const csv = rows.map((r) => r.map(escape).join(',')).join('\r\n');
@@ -289,6 +313,9 @@ const GuideReports = () => {
     (report.mode === 'single' && (report.tours?.length || 0) > 0) ||
     (report.mode === 'all' && (report.guides?.length || 0) > 0)
   );
+
+  // Category columns for the all-guides overview ("Other" only if any guide has it)
+  const overviewCats = report?.mode === 'all' ? overviewCategoryColumns(report.guides || []) : [];
 
   return (
     <div className="space-y-6">
@@ -494,26 +521,48 @@ const GuideReports = () => {
               </table>
             </div>
           ) : (
-            // All guides: Guide | Tours
+            // All guides: Guide | <categories> | Total
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-stone-100 text-stone-600 text-left">
                     <th className="px-3 py-2 font-semibold">Guide</th>
-                    <th className="px-3 py-2 font-semibold w-24 text-right">Tours</th>
+                    {overviewCats.map((cat) => (
+                      <th key={cat} className="px-3 py-2 font-semibold text-right">{cat}</th>
+                    ))}
+                    <th className="px-3 py-2 font-semibold text-right">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {report.guides.map((g) => (
                     <tr key={g.guide_id} className="border-b border-stone-100 hover:bg-stone-50">
                       <td className="px-3 py-2 text-stone-800">{g.guide_name}</td>
-                      <td className="px-3 py-2 text-stone-800 text-right font-medium">{g.total_tours}</td>
+                      {overviewCats.map((cat) => {
+                        const val = g.by_category?.[cat] || 0;
+                        const isOther = cat === 'Other';
+                        return (
+                          <td
+                            key={cat}
+                            className={`px-3 py-2 text-right ${
+                              isOther && val > 0 ? 'text-gold-800 font-medium' : 'text-stone-700'
+                            }`}
+                          >
+                            {val || '—'}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-stone-900">{g.total_tours}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="bg-stone-50 font-semibold text-stone-800">
-                    <td className="px-3 py-2 text-right">Total</td>
+                    <td className="px-3 py-2">Total</td>
+                    {overviewCats.map((cat) => (
+                      <td key={cat} className="px-3 py-2 text-right">
+                        {report.guides.reduce((s, g) => s + (g.by_category?.[cat] || 0), 0)}
+                      </td>
+                    ))}
                     <td className="px-3 py-2 text-right">
                       {report.guides.reduce((s, g) => s + (parseInt(g.total_tours, 10) || 0), 0)}
                     </td>

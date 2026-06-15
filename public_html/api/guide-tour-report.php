@@ -87,15 +87,21 @@ function resolveDateRange($period, $start, $end) {
 }
 
 /**
- * Month overview across all guides — group-aware unit count per guide.
+ * Month overview across all guides — group-aware unit count + category breakdown per guide.
+ * Collapses each tour-group to one unit and classifies it by its representative title
+ * (group display name preferred) using the shared classifyTourCategory() helper.
  */
 function getAllGuidesOverview($conn, $range, $period) {
     $sql = "SELECT
                 t.guide_id,
                 g.name AS guide_name,
-                COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) AS total_tours
+                t.id,
+                t.group_id,
+                t.title,
+                tg.display_name AS group_display_name
             FROM tours t
             JOIN guides g ON g.id = t.guide_id
+            LEFT JOIN tour_groups tg ON tg.id = t.group_id
             WHERE t.date >= ? AND t.date <= ?
               AND t.cancelled = 0
               AND t.guide_id IS NOT NULL
@@ -103,22 +109,57 @@ function getAllGuidesOverview($conn, $range, $period) {
                     SELECT 1 FROM products pr
                     WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket'
                   ))
-            GROUP BY t.guide_id, g.name
-            ORDER BY g.name";
+            ORDER BY g.name, t.date, t.time";
 
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("ss", $range['start'], $range['end']);
     $stmt->execute();
     $result = $stmt->get_result();
 
-    $guides = [];
+    $byGuide = []; // guide_id => aggregate row (with internal _seen unit map)
+
     while ($row = $result->fetch_assoc()) {
-        $guides[] = [
-            'guide_id'    => intval($row['guide_id']),
-            'guide_name'  => $row['guide_name'],
-            'total_tours' => intval($row['total_tours'])
-        ];
+        $gid = intval($row['guide_id']);
+        if (!isset($byGuide[$gid])) {
+            $byGuide[$gid] = [
+                'guide_id'    => $gid,
+                'guide_name'  => $row['guide_name'],
+                'total_tours' => 0,
+                'by_category' => [
+                    'Combo'     => 0,
+                    'Uffizi'    => 0,
+                    'Pitti'     => 0,
+                    'Accademia' => 0,
+                    'Other'     => 0
+                ],
+                '_seen'       => []
+            ];
+        }
+
+        // Group-aware unit key (1 group = 1 unit, scoped per guide)
+        $unitKey = $row['group_id'] ? ('g' . intval($row['group_id'])) : ('t' . intval($row['id']));
+        if (isset($byGuide[$gid]['_seen'][$unitKey])) {
+            continue; // this unit already counted for this guide
+        }
+        $byGuide[$gid]['_seen'][$unitKey] = true;
+
+        // Representative title — group display name preferred, else the tour title
+        $repTitle = ($row['group_id'] && $row['group_display_name']) ? $row['group_display_name'] : $row['title'];
+
+        $category = classifyTourCategory($repTitle);
+        $byGuide[$gid]['by_category'][$category]++;
+        $byGuide[$gid]['total_tours']++;
     }
+
+    // Drop internal bookkeeping and order by guide name
+    $guides = [];
+    foreach ($byGuide as $g) {
+        unset($g['_seen']);
+        $guides[] = $g;
+    }
+    usort($guides, function ($a, $b) {
+        return strcmp($a['guide_name'], $b['guide_name']);
+    });
 
     echo json_encode([
         'success' => true,
