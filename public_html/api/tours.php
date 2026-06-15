@@ -459,7 +459,66 @@ switch ($method) {
         }
         
         $data = json_decode(file_get_contents('php://input'), true);
-        
+
+        // --- Double-booking guard (guide assignment only; no payment logic) ---
+        // When this update assigns a guide to a NON-null value, block it if that
+        // guide already has another non-cancelled tour at the same date+time,
+        // unless the request explicitly passes force=true.
+        $incomingGuide = null;
+        if (isset($data['guide_id'])) {
+            $incomingGuide = $data['guide_id'];
+        } elseif (isset($data['guideId'])) {
+            $incomingGuide = $data['guideId'];
+        }
+        $forceAssign = isset($data['force']) &&
+            ($data['force'] === true || $data['force'] === 'true' || $data['force'] === 1 || $data['force'] === '1');
+
+        if ($incomingGuide !== null && $incomingGuide !== '' && !$forceAssign) {
+            $guideIdInt = intval($incomingGuide);
+
+            // Resolve the date/time to check against (incoming values win if the
+            // same request also changes them; otherwise use the tour's current values).
+            $tInfoStmt = $conn->prepare("SELECT date, time FROM tours WHERE id = ?");
+            $tInfoStmt->bind_param("i", $tourId);
+            $tInfoStmt->execute();
+            $tInfo = $tInfoStmt->get_result()->fetch_assoc();
+
+            if ($tInfo) {
+                $checkDate = isset($data['date']) ? $data['date'] : $tInfo['date'];
+                $checkTime = isset($data['time']) ? $data['time'] : $tInfo['time'];
+
+                $clashStmt = $conn->prepare(
+                    "SELECT id, title, date, time
+                     FROM tours
+                     WHERE guide_id = ?
+                       AND date = ?
+                       AND time = ?
+                       AND id != ?
+                       AND cancelled = 0
+                     LIMIT 1"
+                );
+                $clashStmt->bind_param("issi", $guideIdInt, $checkDate, $checkTime, $tourId);
+                $clashStmt->execute();
+                $clash = $clashStmt->get_result()->fetch_assoc();
+
+                if ($clash) {
+                    header("HTTP/1.1 409 Conflict");
+                    echo json_encode([
+                        "error" => "guide_double_booked",
+                        "message" => "This guide already has another tour at the same date and time.",
+                        "conflict" => [
+                            "id" => intval($clash['id']),
+                            "title" => $clash['title'],
+                            "date" => $clash['date'],
+                            "time" => $clash['time']
+                        ]
+                    ]);
+                    break;
+                }
+            }
+        }
+        // --- End double-booking guard ---
+
         // Build SET clause for the SQL statement based on provided fields
         $setFields = [];
         $bindTypes = "";

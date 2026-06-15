@@ -55,6 +55,7 @@ const Dashboard = () => {
   });
   const [recentTours, setRecentTours] = useState([]);
   const [upcomingTours, setUpcomingTours] = useState([]);
+  const [needsGuideSoon, setNeedsGuideSoon] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -124,6 +125,28 @@ const Dashboard = () => {
           })
           .slice(0, 10);
 
+        // Tours needing a guide within the next 7 days (today .. today+7)
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const endOfWindow = new Date(startOfToday);
+        endOfWindow.setDate(endOfWindow.getDate() + 7);
+        endOfWindow.setHours(23, 59, 59, 999);
+
+        const needsSoon = upcomingGuidedTours
+          .filter(tour => {
+            if (tour.cancelled) return false;
+            const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
+            if (hasGuide) return false;
+            const tourDate = new Date(tour.date);
+            tourDate.setHours(0, 0, 0, 0);
+            return tourDate >= startOfToday && tourDate <= endOfWindow;
+          })
+          .sort((a, b) => {
+            const dateA = new Date(a.date + ' ' + a.time);
+            const dateB = new Date(b.date + ' ' + b.time);
+            return dateA - dateB;
+          });
+
         // Upcoming tours list
         const upcoming = upcomingGuidedTours
           .filter(tour => {
@@ -141,6 +164,7 @@ const Dashboard = () => {
 
         setRecentTours(recent);
         setUpcomingTours(upcoming);
+        setNeedsGuideSoon(needsSoon);
       }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -244,6 +268,51 @@ const Dashboard = () => {
           >
             <span className="text-xl font-bold">×</span>
           </button>
+        </div>
+      )}
+
+      {/* Needs a guide — next 7 days (prominent alert) */}
+      {needsGuideSoon.length > 0 ? (
+        <div className="bg-gradient-to-br from-gold-50 to-gold-100/60 border-2 border-gold-300 rounded-tuscan-xl shadow-tuscan p-4 md:p-5">
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <h2 className="text-base md:text-lg font-bold text-gold-800 flex items-center">
+              <FiAlertCircle className="mr-2 flex-shrink-0 text-gold-600" />
+              ⚠️ Tours needing a guide — next 7 days ({needsGuideSoon.length})
+            </h2>
+            <Link
+              to="/tours"
+              className="text-sm font-medium text-gold-700 hover:text-gold-900 flex items-center min-h-[44px] touch-manipulation flex-shrink-0"
+            >
+              Assign <span className="ml-1">→</span>
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {needsGuideSoon.map((tour) => (
+              <Link
+                key={tour.id}
+                to="/tours"
+                className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-tuscan-lg border border-gold-200 hover:bg-white hover:border-gold-300 transition-all touch-manipulation min-h-[44px]"
+              >
+                <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap min-w-0">
+                  <span className="flex items-center text-sm font-semibold text-stone-800 whitespace-nowrap">
+                    <FiCalendar className="mr-1 text-gold-600 w-4 h-4" />
+                    {new Date(tour.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </span>
+                  <span className="flex items-center text-sm text-stone-600 whitespace-nowrap">
+                    <FiClock className="mr-1 text-stone-400 w-4 h-4" />
+                    {tour.time}
+                  </span>
+                  <span className="text-sm text-stone-700 line-clamp-1 min-w-0">{tour.title}</span>
+                </div>
+                <span className="text-xs font-medium text-gold-700 whitespace-nowrap flex-shrink-0">Needs guide →</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-gradient-to-br from-olive-50 to-olive-100/50 border border-olive-200 rounded-tuscan-xl shadow-tuscan-sm px-4 py-3 flex items-center text-sm text-olive-800">
+          <span className="mr-2">✅</span>
+          All tours in the next 7 days have a guide.
         </div>
       )}
 

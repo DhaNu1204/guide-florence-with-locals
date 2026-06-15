@@ -570,9 +570,9 @@ const Tours = () => {
     const guideName = guide?.name || 'Guide';
     setSavingChanges(prev => ({ ...prev, [`guide_${tourId}`]: true }));
 
-    try {
-      await mysqlDB.updateTour(tourId, { guide_id: guideId });
-      // Update local state
+    // Applies the assignment; pass force=true to bypass the double-booking guard.
+    const applyAssignment = async (force = false) => {
+      await mysqlDB.updateTour(tourId, force ? { guide_id: guideId, force: true } : { guide_id: guideId });
       setTours(prev => prev.map(tour =>
         tour.id === tourId ? { ...tour, guide_id: guideId } : tour
       ));
@@ -584,10 +584,35 @@ const Tours = () => {
       setError(null);
       setSuccess(`Guide "${guideName}" assigned successfully!`);
       setTimeout(() => setSuccess(null), 4000);
+    };
+
+    try {
+      await applyAssignment(false);
     } catch (error) {
-      console.error('Error saving guide assignment:', error);
-      setSuccess(null);
-      setError('Failed to save guide assignment');
+      if (error && error.code === 'guide_double_booked' && error.conflict) {
+        const c = error.conflict;
+        const proceed = window.confirm(
+          `⚠️ ${guideName} already has a tour at ${c.date} ${c.time}: ${c.title}. Assign anyway?`
+        );
+        if (proceed) {
+          try {
+            await applyAssignment(true);
+          } catch (retryError) {
+            console.error('Error saving guide assignment (forced):', retryError);
+            setSuccess(null);
+            setError('Failed to save guide assignment');
+          }
+        } else {
+          // Leave it unassigned; keep the dropdown open so another guide can be picked
+          setError(null);
+          setSuccess(`Assignment cancelled — ${guideName} not assigned (double-booked).`);
+          setTimeout(() => setSuccess(null), 4000);
+        }
+      } else {
+        console.error('Error saving guide assignment:', error);
+        setSuccess(null);
+        setError('Failed to save guide assignment');
+      }
     } finally {
       setSavingChanges(prev => {
         const newState = { ...prev };
@@ -770,16 +795,37 @@ const Tours = () => {
 
   const handleMobileAssignGuide = async (guideId) => {
     if (selectedItems.length === 0) return;
+    const guideName = guides.find(g => g.id === parseInt(guideId))?.name || 'None';
     try {
+      let assigned = 0;
+      let skipped = 0;
       for (const item of selectedItems) {
         if (item.type === 'tour') {
-          await mysqlDB.updateTour(item.id, { guide_id: guideId });
+          try {
+            await mysqlDB.updateTour(item.id, { guide_id: guideId });
+            assigned++;
+          } catch (err) {
+            if (err && err.code === 'guide_double_booked' && err.conflict) {
+              const c = err.conflict;
+              const proceed = window.confirm(
+                `⚠️ ${guideName} already has a tour at ${c.date} ${c.time}: ${c.title}. Assign anyway?`
+              );
+              if (proceed) {
+                await mysqlDB.updateTour(item.id, { guide_id: guideId, force: true });
+                assigned++;
+              } else {
+                skipped++;
+              }
+            } else {
+              throw err;
+            }
+          }
         } else if (item.type === 'group') {
           await tourGroupsAPI.update(item.id, { guide_id: guideId || null });
+          assigned++;
         }
       }
-      const guideName = guides.find(g => g.id === parseInt(guideId))?.name || 'None';
-      setSuccess(`Guide "${guideName}" assigned to ${selectedItems.length} item(s)`);
+      setSuccess(`Guide "${guideName}" assigned to ${assigned} item(s)${skipped ? `, ${skipped} skipped (double-booked)` : ''}`);
       setTimeout(() => setSuccess(null), 4000);
       setSelectionMode(false);
       setSelectedItems([]);
