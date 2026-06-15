@@ -5,7 +5,11 @@
  * Purpose (IMPROVEMENT_TASKS Task 2): keep bookings in sync even when nobody
  * has the web app open. Hostinger cron runs this every 15 minutes:
  *
- *     */15 * * * * /usr/bin/php /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron.php >> /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron.log 2>&1
+ *     0,15,30,45 * * * * /usr/bin/php /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron.php >> /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron.log 2>&1
+ *
+ * (Schedule above = every 15 minutes. Written as 0,15,30,45 rather than the
+ *  usual star-slash-15 form, because that form contains the block-comment
+ *  terminator and would close this docblock early and break parsing.)
  *
  * Security: this script refuses to run over HTTP. It only executes under the
  * PHP CLI SAPI, so it is never reachable from the public web. The HTTP API in
