@@ -161,6 +161,26 @@ export const updateGuide = async (guideId, guideData) => {
   }
 };
 
+// GUIDE TOUR REPORT (READ-ONLY tour verification — no payment data)
+// Returns a month/range overview across all guides, or a single guide's tour list.
+export const getGuideTourReport = async ({ guideId = null, period = null, start = null, end = null } = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (guideId) params.append('guide_id', guideId);
+    if (period) params.append('period', period);
+    if (start) params.append('start', start);
+    if (end) params.append('end', end);
+
+    const queryString = params.toString();
+    const url = `${API_BASE_URL}/guide-tour-report.php${queryString ? `?${queryString}` : ''}`;
+    const response = await axios.get(addCacheBuster(url));
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching guide tour report:', error);
+    throw error;
+  }
+};
+
 // TOURS OPERATIONS
 export const getTours = async (forceRefresh = false, page = 1, perPage = 50, filters = {}) => {
   // Check if we need to force a refresh
