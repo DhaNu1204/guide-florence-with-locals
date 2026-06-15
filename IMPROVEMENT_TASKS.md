@@ -26,13 +26,16 @@ Order: features that make daily operations easier first, then security cleanup, 
 ### Task 3: New-booking visibility
 **Fix:** Toast/badge showing "3 new bookings since you last looked" with quick link; highlight newly arrived tours in the list.
 
-### Task 4: Unassigned-tour alerts
+### Task 4: Unassigned-tour alerts ✅ DONE
 **Fix:** Clear warning (dashboard + optional daily summary) for upcoming tours within X days that still have no guide assigned.
+- [x] Dashboard "Tours needing a guide — next 7 days" alert (2026-06-15) — fulfilled by Guide availability Phase 1 (see Task 5).
 
 ### Task 5: Your next feature ideas
 Add here as they come up (e.g. guide availability calendar, WhatsApp-ready daily schedule message, etc.)
 
 - [x] Guide Reports (2026-06-15) — read-only month-end invoice verification. New sidebar page + guide-tour-report.php API. Per-guide monthly tour list (date/time/tour), group-aware count (1 group = 1 tour), excludes cancelled + ticket products. Category breakdown chips + Type column (Combo / Uffizi / Pitti / Accademia / Other) matching how guides reconcile on WhatsApp. PDF + Excel/CSV export. Verified: Caterina May 2026 = 20 Combo, 10 Uffizi, 2 Pitti, 1 Accademia.
+- [x] Guide availability — Phase 1 (2026-06-15): Dashboard "Tours needing a guide — next 7 days" alert (each row deep-links to that tour's date on the Tours page); double-booking guard on guide assignment (warns when the guide already has a tour at the same date/time, with override). Also fixed Vite base to '/' so directly-loaded deep routes work.
+- [x] Guide availability — Phase 2 (2026-06-15): per-tour WhatsApp Accept/Decline links. Owner "Ask a guide" picker (shows guides who speak the tour's language first) on Tours page + dashboard → pre-filled WhatsApp (wa.me) message with a secret link → guide opens a no-login mobile page at /respond/<token> → Accept (auto-assigns with double-booking + already-taken guards) or Decline. Backend: availability_requests table + guide-requests.php (owner endpoints + public token endpoint). Pending/declined badges on tours; dashboard "recent guide responses" panel.
 
 ---
 
