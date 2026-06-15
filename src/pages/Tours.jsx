@@ -391,6 +391,37 @@ const Tours = () => {
     loadData(false, 1, getCurrentFilters());
   }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate, selectedGuideId]);
 
+  // ---- "Ask a guide" availability-request flow ----------------------------
+  // NB: declared BEFORE the mount effect below — that effect lists loadOpenRequests
+  // in its dependency array, which is evaluated during render, so the const must
+  // exist by then (avoids a temporal-dead-zone ReferenceError).
+  const openAskGuide = (tour) => setAskTour(tour);
+  const closeAskGuide = () => setAskTour(null);
+
+  // Load open (pending/declined) requests and map them per tour for persistent badges.
+  const loadOpenRequests = useCallback(async () => {
+    try {
+      const res = await getOpenGuideRequests();
+      const list = res && res.data ? res.data : [];
+      const map = {};
+      for (const r of list) {
+        const existing = map[r.tour_id];
+        // Prefer a 'pending' over a 'declined' when both exist for the same tour
+        if (!existing || (existing.status === 'declined' && r.status === 'pending')) {
+          map[r.tour_id] = { status: r.status, guide_name: r.guide_name };
+        }
+      }
+      setOpenRequests(map);
+    } catch (e) {
+      console.warn('Failed to load open guide requests:', e);
+    }
+  }, []);
+
+  // Refresh badges after a request is created so it persists across reloads
+  const handleGuideRequested = () => {
+    loadOpenRequests();
+  };
+
   // Load open guide requests once on mount (persistent request-status badges)
   useEffect(() => {
     loadOpenRequests();
@@ -648,34 +679,6 @@ const Tours = () => {
         return newState;
       });
     }
-  };
-
-  // ---- "Ask a guide" availability-request flow ----------------------------
-  const openAskGuide = (tour) => setAskTour(tour);
-  const closeAskGuide = () => setAskTour(null);
-
-  // Load open (pending/declined) requests and map them per tour for persistent badges.
-  const loadOpenRequests = useCallback(async () => {
-    try {
-      const res = await getOpenGuideRequests();
-      const list = res && res.data ? res.data : [];
-      const map = {};
-      for (const r of list) {
-        const existing = map[r.tour_id];
-        // Prefer a 'pending' over a 'declined' when both exist for the same tour
-        if (!existing || (existing.status === 'declined' && r.status === 'pending')) {
-          map[r.tour_id] = { status: r.status, guide_name: r.guide_name };
-        }
-      }
-      setOpenRequests(map);
-    } catch (e) {
-      console.warn('Failed to load open guide requests:', e);
-    }
-  }, []);
-
-  // Refresh badges after a request is created so it persists across reloads
-  const handleGuideRequested = () => {
-    loadOpenRequests();
   };
 
   const handleRowClick = (tour) => {
