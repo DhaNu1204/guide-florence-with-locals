@@ -231,9 +231,13 @@ class BokunAPI {
                             }
                         }
 
-                        // Check if there are more pages
-                        $totalHits = $result['totalHits'] ?? count($result['items']);
-                        $hasMore = (($pageNum + 1) * $actualPageSize) < $totalHits;
+                        // Paginate by PAGE FULLNESS, not by totalHits: Bokun's
+                        // totalHits under-reports the real count (e.g. says 787 when
+                        // there are 987), which made the old `((page+1)*pageSize) < totalHits`
+                        // check stop one page early and silently drop page 4+ bookings
+                        // (incl. cancelled/rescheduled ones that then never update).
+                        // A full page means there's likely more; a short page is the last one.
+                        $hasMore = (count($result['items']) === $actualPageSize);
                         $pageNum++;
                     } else {
                         $hasMore = false;
