@@ -116,7 +116,7 @@ function saveBokunConfig($data) {
 }
 
 // Constants for sync ranges
-define('DEFAULT_SYNC_DAYS', 120);  // 4 months for regular sync
+define('DEFAULT_SYNC_DAYS', 60);   // 2 months for regular/auto/cron sync — keeps each run under the 2000-result page cap so it finishes in seconds (120 returned too many bookings and never completed under rate limits)
 define('FULL_SYNC_DAYS', 365);     // 1 year for full sync
 define('PAST_DAYS_BUFFER', 7);     // Always include past 7 days
 
