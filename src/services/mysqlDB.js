@@ -442,22 +442,35 @@ export const updateTourCancelStatus = async (tourId, isCancelled) => {
 };
 
 // Update tour details
+// tourData may include `force: true` to bypass the backend double-booking guard.
 export const updateTour = async (tourId, tourData) => {
   try {
-    // Use PUT request to update the tour
+    // Use PUT request to update the tour (force flag, if present, is sent in the body)
     const response = await axios.put(`${API_BASE_URL}/tours.php/${tourId}`, tourData);
-    
+
     // After updating, force refresh the tour list
     await getTours(true);
-    
+
     return response.data;
   } catch (error) {
+    // Surface a double-booking conflict (HTTP 409) to the caller with its payload.
+    // Do NOT fall back to the local cache here — that would hide the conflict and
+    // make the assignment look successful when it was actually rejected.
+    if (error.response && error.response.status === 409) {
+      const payload = error.response.data || {};
+      const conflictError = new Error(payload.message || 'Guide is double-booked');
+      conflictError.code = payload.error || 'guide_double_booked';
+      conflictError.conflict = payload.conflict || null;
+      conflictError.status = 409;
+      throw conflictError;
+    }
+
     console.error('Error updating tour:', error);
-    
+
     // If API call fails, update localStorage as fallback
     try {
       updateLocalTourCache(tourId, tourData);
-      
+
       // Return the updated tour data
       return { ...tourData, id: tourId };
     } catch (localError) {
