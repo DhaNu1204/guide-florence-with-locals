@@ -1501,7 +1501,7 @@ const Tours = () => {
                                       >
                                         {guideName}
                                       </span>
-                                      {!tour.guide_id && (
+                                      {!tour.guide_id && !tour.cancelled && (
                                         <>
                                           {openRequests[tour.id] && (
                                             openRequests[tour.id].status === 'pending' ? (
