@@ -1,11 +1,12 @@
 name: Deploy to Production
 
-# Push to master auto-deploys to production via SSH (secrets configured).
-# Manual runs also available via workflow_dispatch.
+# Auto-deploy on push is DISABLED. The SSH_* secrets and the dedicated deploy key
+# ARE configured and work, but Hostinger blocks SSH (port 65002) from GitHub's
+# runner IPs (TCP connection times out), so runner-based SSH deploys can't reach
+# the server. Deploys are done locally via scripts/deploy.sh (run by Claude Code).
+# To enable auto-deploy later: convert this workflow to FTPS upload, or use a
+# self-hosted / static-IP runner Hostinger allows, then restore a `push:` trigger.
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
     inputs:
       deploy_frontend:

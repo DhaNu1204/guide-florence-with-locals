@@ -16,7 +16,7 @@
 
 - **Deploy branch is `master`** (NOT `main`). `origin/main` is an old divergent branch with unrelated history — **never merge it, never deploy from it.**
 - **Deploy by running `scripts/deploy.sh`** (Claude Code executes it): builds the frontend (vite), makes a remote backup, then SCP/rsync's backend + frontend to Hostinger. This is the live deploy path.
-- **GitHub Actions auto-deploy is NOT active.** `.github/workflows/deploy.yml` exists, but pushing to `master` does not deploy because the SSH secrets (`SSH_HOST`/`SSH_PORT`/`SSH_USERNAME`/`SSH_PRIVATE_KEY`) are unset in the repo — pushes just fail the workflow. Keep commits local until those secrets are configured.
+- **GitHub Actions auto-deploy is NOT active.** `.github/workflows/deploy.yml` exists and the SSH secrets (`SSH_HOST`/`SSH_PORT`/`SSH_USERNAME`/`SSH_PRIVATE_KEY`) **and a dedicated deploy key ARE configured** — but they go unused because **Hostinger blocks SSH (port 65002) from GitHub's runner IPs** (the TCP connection times out at the `Deploy Backend` step), so runner-based SSH deploys can't reach the server. The workflow is `workflow_dispatch`-only (no `push:` trigger). **Deploy via `scripts/deploy.sh` instead**, which works from this machine. To enable auto-deploy later: convert the workflow to FTPS upload, or use a self-hosted/static-IP runner Hostinger allows, then restore a `push:` trigger.
 - **Use the `deploy` skill** in `.claude/skills/deploy/` for the full verified checklist. Always verify each changed file is COMPLETE (not truncated) before committing.
 - **Never touch payment logic or passwords.**
 - **Log every deploy** in `DEPLOY_LOG.md`.
@@ -424,11 +424,11 @@ Located in `src/utils/pdfGenerator.js`. Tuscan theme with terracotta accent (#C7
 
 ## Deployment
 
-### CI/CD (GitHub Actions)
-Push to `main` triggers:
+### CI/CD (GitHub Actions) — currently DISABLED
+`.github/workflows/deploy.yml` is `workflow_dispatch`-only (no `push:` trigger). Auto-deploy is **not active** because Hostinger blocks SSH (port 65002) from GitHub's runner IPs, so the runner can't reach the server — even though the SSH secrets and dedicated deploy key are configured. **Use `scripts/deploy.sh` for deploys.** The workflow, if ever re-enabled, runs:
 1. Build: npm ci + vite build + PHP syntax check
-2. Deploy: SCP backend + rsync frontend to Hostinger
-3. Health check: curl tours API, guides API, frontend → HTTP 200
+2. Deploy: SCP backend + rsync frontend to Hostinger (fails here from GitHub runners — SSH blocked)
+3. Health check: curl tours/guides APIs (200 **or 401** = healthy, since auth is enforced) + frontend → HTTP 200
 
 ### Manual Deploy
 ```bash

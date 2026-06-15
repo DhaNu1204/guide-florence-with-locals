@@ -38,8 +38,8 @@ The working deploy method is running **`bash scripts/deploy.sh`** from the proje
 - **On this Windows machine, curl needs `--ssl-no-revoke`** or it returns `000` (schannel `CRYPT_E_NO_REVOCATION_CHECK` — it can't reach the CA revocation servers). The deploy script's built-in health checks do NOT pass this flag, so they may report `000` / "Some health checks failed!" even on a successful deploy. Re-check manually with `--ssl-no-revoke` before concluding anything failed.
 
 ## GitHub Actions (future option — currently DISABLED)
-- `.github/workflows/deploy.yml` exists but auto-deploy is **NOT active**: the SSH secrets (`SSH_HOST`, `SSH_PORT`, `SSH_USERNAME`, `SSH_PRIVATE_KEY`) are **not set in the repo**, so pushing to `master` produces a run that fails at the "Deploy Backend (PHP files)" step (`scp: bad port` from an empty `SSH_PORT`).
-- Until those secrets are configured in GitHub → repo Settings → Secrets and variables → Actions, **do NOT push to deploy** — use `scripts/deploy.sh` instead, and keep commits local.
+- `.github/workflows/deploy.yml` exists but auto-deploy is **NOT active**: **Hostinger blocks SSH (port 65002) from GitHub runner IPs** — the secrets (`SSH_HOST`, `SSH_PORT`, `SSH_USERNAME`, `SSH_PRIVATE_KEY`) and a dedicated deploy key ARE configured and work locally, but the runner can't reach the server. A push-triggered run fails at the "Deploy Backend (PHP files)" step with `ssh: connect to host ... port ...: Connection timed out`.
+- The workflow is therefore `workflow_dispatch`-only (no `push:` trigger). **Use `scripts/deploy.sh` for deploys** — it works from this machine. To enable auto-deploy later, convert the workflow to FTPS upload or use a self-hosted/static-IP runner Hostinger allows, then restore a `push:` trigger.
 
 ## Reference
 Repo: https://github.com/DhaNu1204/guide-florence-with-locals | Branch: master | Deploy script: scripts/deploy.sh | Workflow (disabled): .github/workflows/deploy.yml | URL: https://withlocals.deetech.cc | Prod path: /home/u803853690/domains/deetech.cc/public_html/withlocals
