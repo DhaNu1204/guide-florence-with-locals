@@ -28,6 +28,17 @@ const authFetch = (url, options = {}) => {
   });
 };
 
+// Format a tour date to YYYY-MM-DD for the Tours deep-link.
+// Prefer the literal date part (tour.date is already 'YYYY-MM-DD') to avoid timezone shifts.
+const toDateParam = (d) => {
+  if (!d) return '';
+  const m = String(d).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '';
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
+
 // Helper function to format time ago
 const formatTimeAgo = (date) => {
   if (!date) return 'Never';
@@ -280,7 +291,7 @@ const Dashboard = () => {
               ⚠️ Tours needing a guide — next 7 days ({needsGuideSoon.length})
             </h2>
             <Link
-              to="/tours"
+              to={`/tours?date=${toDateParam(needsGuideSoon[0].date)}`}
               className="text-sm font-medium text-gold-700 hover:text-gold-900 flex items-center min-h-[44px] touch-manipulation flex-shrink-0"
             >
               Assign <span className="ml-1">→</span>
@@ -290,7 +301,7 @@ const Dashboard = () => {
             {needsGuideSoon.map((tour) => (
               <Link
                 key={tour.id}
-                to="/tours"
+                to={`/tours?date=${toDateParam(tour.date)}`}
                 className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-tuscan-lg border border-gold-200 hover:bg-white hover:border-gold-300 transition-all touch-manipulation min-h-[44px]"
               >
                 <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap min-w-0">
