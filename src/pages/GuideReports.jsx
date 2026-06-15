@@ -25,6 +25,9 @@ const PDF_COLORS = {
   white: [255, 255, 255]
 };
 
+// Tour category display order (matches backend classifyTourCategory)
+const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Pitti', 'Accademia', 'Other'];
+
 // Default to LAST month (invoices arrive at month-end) — returns 'YYYY-MM'
 const getLastMonth = () => {
   const d = new Date();
@@ -183,15 +186,32 @@ const GuideReports = () => {
     let head;
     let body;
     let total;
+    let tableStartY = 50;
 
     if (report.mode === 'single') {
       total = report.total_tours || 0;
-      head = [['#', 'Date', 'Time', 'Tour']];
+
+      // Category summary line (non-zero categories only)
+      const summary = report.summary_by_category || {};
+      const summaryLine = CATEGORY_ORDER
+        .filter((cat) => (summary[cat] || 0) > 0)
+        .map((cat) => `${cat}: ${summary[cat]}`)
+        .join('   ·   ');
+      if (summaryLine) {
+        doc.setFontSize(10);
+        doc.setTextColor(...PDF_COLORS.stone600);
+        doc.setFont('helvetica', 'normal');
+        doc.text(summaryLine, pageWidth / 2, 49, { align: 'center' });
+        tableStartY = 56;
+      }
+
+      head = [['#', 'Date', 'Time', 'Tour', 'Type']];
       body = (report.tours || []).map((t, i) => [
         i + 1,
         formatDate(t.date),
         formatTime(t.time),
-        t.title || '-'
+        t.title || '-',
+        t.category || 'Other'
       ]);
     } else {
       const guideRows = report.guides || [];
@@ -201,7 +221,7 @@ const GuideReports = () => {
     }
 
     autoTable(doc, {
-      startY: 50,
+      startY: tableStartY,
       head,
       body,
       theme: 'striped',
@@ -237,9 +257,15 @@ const GuideReports = () => {
     rows.push([]);
 
     if (report.mode === 'single') {
-      rows.push(['#', 'Date', 'Time', 'Tour']);
+      // Category summary block (all five categories, in order)
+      const summary = report.summary_by_category || {};
+      rows.push(['Category', 'Count']);
+      CATEGORY_ORDER.forEach((cat) => rows.push([cat, summary[cat] || 0]));
+      rows.push([]);
+
+      rows.push(['#', 'Date', 'Time', 'Tour', 'Type']);
       (report.tours || []).forEach((t, i) => {
-        rows.push([i + 1, formatDate(t.date), formatTime(t.time), t.title || '']);
+        rows.push([i + 1, formatDate(t.date), formatTime(t.time), t.title || '', t.category || 'Other']);
       });
       rows.push([]);
       rows.push(['Total tours', report.total_tours || 0]);
@@ -394,11 +420,35 @@ const GuideReports = () => {
             </div>
           </div>
 
-          {/* Single-guide big total */}
+          {/* Single-guide big total + category breakdown */}
           {report.mode === 'single' && (
-            <div className="mb-5 inline-flex items-baseline space-x-2 bg-terracotta-50 border border-terracotta-200 rounded-tuscan-lg px-4 py-3">
-              <span className="text-4xl font-bold text-terracotta-700">{report.total_tours || 0}</span>
-              <span className="text-sm font-medium text-stone-600">tours this period</span>
+            <div className="mb-5 flex flex-wrap items-center gap-3">
+              <div className="inline-flex items-baseline space-x-2 bg-terracotta-50 border border-terracotta-200 rounded-tuscan-lg px-4 py-3">
+                <span className="text-4xl font-bold text-terracotta-700">{report.total_tours || 0}</span>
+                <span className="text-sm font-medium text-stone-600">tours this period</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {CATEGORY_ORDER
+                  .filter((cat) => (report.summary_by_category?.[cat] || 0) > 0)
+                  .map((cat) => {
+                    const count = report.summary_by_category[cat];
+                    const isOther = cat === 'Other';
+                    return (
+                      <span
+                        key={cat}
+                        title={isOther ? 'Tours that did not match a known museum type' : undefined}
+                        className={`inline-flex items-baseline space-x-1 rounded-tuscan-lg border px-3 py-2 ${
+                          isOther
+                            ? 'bg-gold-50 border-gold-300 text-gold-800'
+                            : 'bg-stone-50 border-stone-200 text-stone-700'
+                        }`}
+                      >
+                        <span className="text-lg font-bold">{count}</span>
+                        <span className="text-xs font-medium">{cat}</span>
+                      </span>
+                    );
+                  })}
+              </div>
             </div>
           )}
 
@@ -419,6 +469,7 @@ const GuideReports = () => {
                     <th className="px-3 py-2 font-semibold">Date</th>
                     <th className="px-3 py-2 font-semibold">Time</th>
                     <th className="px-3 py-2 font-semibold">Tour</th>
+                    <th className="px-3 py-2 font-semibold">Type</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -428,6 +479,15 @@ const GuideReports = () => {
                       <td className="px-3 py-2 text-stone-800 whitespace-nowrap">{formatDate(t.date)}</td>
                       <td className="px-3 py-2 text-stone-800 whitespace-nowrap">{formatTime(t.time)}</td>
                       <td className="px-3 py-2 text-stone-800">{t.title || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          t.category === 'Other'
+                            ? 'bg-gold-100 text-gold-800'
+                            : 'bg-stone-100 text-stone-700'
+                        }`}>
+                          {t.category || 'Other'}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

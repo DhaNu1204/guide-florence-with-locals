@@ -183,10 +183,12 @@ function getGuideReport($conn, $guide_id, $range, $period) {
             $groupStmt->execute();
             $groupInfo = $groupStmt->get_result()->fetch_assoc();
 
+            $repTitle = $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $row['title'];
             $tours[] = [
                 'date'     => $groupInfo && $groupInfo['group_date'] ? $groupInfo['group_date'] : $row['date'],
                 'time'     => $groupInfo && $groupInfo['group_time'] ? $groupInfo['group_time'] : $row['time'],
-                'title'    => $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $row['title'],
+                'title'    => $repTitle,
+                'category' => classifyTourCategory($repTitle),
                 'group_id' => $gid
             ];
         } else {
@@ -194,6 +196,7 @@ function getGuideReport($conn, $guide_id, $range, $period) {
                 'date'     => $row['date'],
                 'time'     => $row['time'],
                 'title'    => $row['title'],
+                'category' => classifyTourCategory($row['title']),
                 'group_id' => null
             ];
         }
@@ -206,16 +209,68 @@ function getGuideReport($conn, $guide_id, $range, $period) {
         return strcmp($a['time'] ?? '', $b['time'] ?? '');
     });
 
+    // Category breakdown — always include all five keys in this fixed order
+    $summary_by_category = [
+        'Combo'     => 0,
+        'Uffizi'    => 0,
+        'Pitti'     => 0,
+        'Accademia' => 0,
+        'Other'     => 0
+    ];
+    foreach ($tours as $t) {
+        $summary_by_category[$t['category']]++;
+    }
+
     echo json_encode([
         'success' => true,
         'data' => [
-            'guide_info'  => $guide_info,
-            'period'      => $period,
-            'range'       => $range,
-            'total_tours' => count($tours),
-            'tours'       => $tours
+            'guide_info'          => $guide_info,
+            'period'              => $period,
+            'range'               => $range,
+            'total_tours'         => count($tours),
+            'summary_by_category' => $summary_by_category,
+            'tours'               => $tours
         ]
     ]);
+}
+
+/**
+ * Classify a tour by its title (case-insensitive).
+ *
+ * Keyword rules (tweak here):
+ *   uffizi    = title contains "uffizi"
+ *   accademia = title contains "accademia" OR "david"
+ *   pitti     = title contains "pitti" OR "boboli" OR "palatina" OR "palatine"
+ *
+ * Category:
+ *   2+ of {uffizi, accademia, pitti} present -> "Combo"
+ *   else uffizi    -> "Uffizi"
+ *   else pitti     -> "Pitti"
+ *   else accademia -> "Accademia"
+ *   else           -> "Other"
+ */
+function classifyTourCategory($title) {
+    $t = mb_strtolower($title ?? '');
+
+    $uffizi    = (strpos($t, 'uffizi') !== false);
+    $accademia = (strpos($t, 'accademia') !== false) || (strpos($t, 'david') !== false);
+    $pitti     = (strpos($t, 'pitti') !== false)
+                 || (strpos($t, 'boboli') !== false)
+                 || (strpos($t, 'palatina') !== false)
+                 || (strpos($t, 'palatine') !== false);
+
+    $count = ($uffizi ? 1 : 0) + ($accademia ? 1 : 0) + ($pitti ? 1 : 0);
+
+    if ($count >= 2) {
+        return 'Combo';
+    } elseif ($uffizi) {
+        return 'Uffizi';
+    } elseif ($pitti) {
+        return 'Pitti';
+    } elseif ($accademia) {
+        return 'Accademia';
+    }
+    return 'Other';
 }
 
 $conn->close();
