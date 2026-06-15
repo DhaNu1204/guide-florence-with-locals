@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: './', // Changed from default '/' to relative path './'
+  base: '/', // App is served at the domain root; absolute '/assets/...' so deep routes (e.g. /respond/:token) load JS/CSS correctly
   test: {
     globals: true,
     environment: 'jsdom',
