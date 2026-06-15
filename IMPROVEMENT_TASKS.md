@@ -32,6 +32,8 @@ Order: features that make daily operations easier first, then security cleanup, 
 ### Task 5: Your next feature ideas
 Add here as they come up (e.g. guide availability calendar, WhatsApp-ready daily schedule message, etc.)
 
+- [x] Guide Reports (2026-06-15) — read-only month-end invoice verification. New sidebar page + guide-tour-report.php API. Per-guide monthly tour list (date/time/tour), group-aware count (1 group = 1 tour), excludes cancelled + ticket products. Category breakdown chips + Type column (Combo / Uffizi / Pitti / Accademia / Other) matching how guides reconcile on WhatsApp. PDF + Excel/CSV export. Verified: Caterina May 2026 = 20 Combo, 10 Uffizi, 2 Pitti, 1 Accademia.
+
 ---
 
 ## Phase B — Security Cleanup (proper way; no password rotation per Dhanu's decision)

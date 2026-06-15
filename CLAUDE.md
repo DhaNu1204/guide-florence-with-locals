@@ -62,6 +62,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 15. **Error Tracking**: Sentry.io (100% trace, 10% replay) + file logging with rotation
 16. **CI/CD Pipeline**: GitHub Actions: build verification + deploy to Hostinger + health checks
 17. **Unassigned Tours Report**: Downloadable .txt report (date/time/location) of guideless tours, location extracted from title
+18. **Guide Reports**: Per-guide monthly tour verification with category breakdown and PDF/CSV export (read-only)
 
 ## CRITICAL INFORMATION
 
@@ -252,6 +253,19 @@ const authFetch = (url, options = {}) => {
 | POST | `?action=unmerge` | Remove tour from group |
 | PUT | `/{id}` | Update group (guide propagates) |
 | DELETE | `/{id}` | Dissolve group |
+
+## Guide Reports (Jun 2026)
+
+Read-only month-end invoice verification — lists the tours a guide actually performed so the owner can check them against the guide's monthly invoice. **Touches no payment logic.** Group-aware (1 group = 1 tour unit), excludes cancelled tours and ticket products (same `products.product_type='ticket'` exclusion as guide-payments.php). Title-based category classification (Combo / Uffizi / Pitti / Accademia / Other) mirrors how guides reconcile on WhatsApp.
+
+- **Backend**: `guide-tour-report.php` — `classifyTourCategory()` keyword rules (uffizi; accademia incl. "david"; pitti incl. boboli/palatina/palatine; 2+ museums = Combo)
+- **Frontend**: `src/pages/GuideReports.jsx` (sidebar: Guide Reports), service `getGuideTourReport()` in mysqlDB.js
+- **Exports**: PDF (jsPDF + autoTable) and Excel-compatible CSV (no xlsx dep)
+
+### API
+| Method | Endpoint | Notes |
+|--------|----------|-------|
+| GET | `/api/guide-tour-report.php` | Auth required (read-only). Params: optional `guide_id`; `period=YYYY-MM` **or** `start=YYYY-MM-DD&end=YYYY-MM-DD`. With `guide_id`: returns `guide_info`, `total_tours`, `tours[]` (date/time/title/category) + `summary_by_category` (Combo/Uffizi/Pitti/Accademia/Other). Without `guide_id`: month overview `guides[]` (guide_id/guide_name/total_tours). |
 
 ## Group-Aware Payment System (Feb 2026)
 
