@@ -12,7 +12,8 @@ import {
   FiChevronLeft,
   FiRefreshCw,
   FiDollarSign,
-  FiMapPin
+  FiMapPin,
+  FiClipboard
 } from 'react-icons/fi';
 import { BsBoxSeam } from 'react-icons/bs';
 
@@ -103,6 +104,14 @@ const ModernLayout = ({ children }) => {
       color: 'text-olive-600',
       bgColor: 'bg-olive-50',
       borderColor: 'border-olive-500'
+    },
+    {
+      title: 'Guide Reports',
+      icon: FiClipboard,
+      path: '/guide-reports',
+      color: 'text-renaissance-600',
+      bgColor: 'bg-renaissance-50',
+      borderColor: 'border-renaissance-500'
     },
     {
       title: 'Bokun Integration',

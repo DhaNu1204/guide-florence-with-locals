@@ -8,6 +8,7 @@ import Guides from './pages/Guides';
 import Tours from './pages/Tours';
 import Tickets from './pages/Tickets';
 import Payments from './pages/Payments';
+import GuideReports from './pages/GuideReports';
 import EditTour from './pages/EditTour';
 import BokunIntegration from './pages/BokunIntegration';
 import PriorityTickets from './pages/PriorityTickets';
@@ -77,6 +78,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <ModernLayout>
               <Payments />
+            </ModernLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/guide-reports"
+        element={
+          <ProtectedRoute>
+            <ModernLayout>
+              <GuideReports />
             </ModernLayout>
           </ProtectedRoute>
         }
