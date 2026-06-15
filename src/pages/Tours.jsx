@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { FiPlus, FiRefreshCw, FiSave, FiX, FiLayers, FiCheckSquare, FiSquare, FiUsers as FiUsersIcon, FiDownload } from 'react-icons/fi';
+import { FiPlus, FiRefreshCw, FiSave, FiX, FiLayers, FiCheckSquare, FiSquare, FiUsers as FiUsersIcon, FiDownload, FiMessageCircle, FiCopy, FiExternalLink, FiCheck } from 'react-icons/fi';
 import { format } from 'date-fns';
-import mysqlDB, { tourGroupsAPI } from '../services/mysqlDB';
+import mysqlDB, { tourGroupsAPI, createGuideRequest } from '../services/mysqlDB';
 import bokunAutoSync from '../services/bokunAutoSync';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
@@ -277,6 +277,12 @@ const Tours = () => {
   const [rangeEndDate, setRangeEndDate] = useState(''); // YYYY-MM-DD string
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTour, setSelectedTour] = useState(null);
+  // "Ask a guide" (availability request) flow
+  const [askTour, setAskTour] = useState(null);          // tour being asked about
+  const [askSubmitting, setAskSubmitting] = useState(false);
+  const [askResult, setAskResult] = useState(null);      // { guideName, link, waUrl, hasPhone, message }
+  const [askCopied, setAskCopied] = useState(false);
+  const [requestedNotes, setRequestedNotes] = useState({}); // { [tourId]: guideName }
   const [autoGrouping, setAutoGrouping] = useState(false);
   const [dragState, setDragState] = useState({ draggedId: null, draggedType: null, overTargetId: null, overTargetType: null });
   // Mobile merge selection mode
@@ -638,6 +644,59 @@ const Tours = () => {
         delete newState[`guide_${tourId}`];
         return newState;
       });
+    }
+  };
+
+  // ---- "Ask a guide" availability-request flow ----------------------------
+  const openAskGuide = (tour) => {
+    setAskTour(tour);
+    setAskResult(null);
+    setAskCopied(false);
+  };
+
+  const closeAskGuide = () => {
+    setAskTour(null);
+    setAskResult(null);
+    setAskSubmitting(false);
+    setAskCopied(false);
+  };
+
+  // Format the tour date as dd/MM/yyyy (parse from parts to avoid TZ drift)
+  const formatAskDate = (dateStr) => {
+    const m = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : (dateStr || '');
+  };
+
+  const requestGuide = async (guide) => {
+    if (!askTour || !guide) return;
+    setAskSubmitting(true);
+    try {
+      const res = await createGuideRequest({ tourId: askTour.id, guideId: guide.id });
+      const link = res.link;
+      const lingua = getTourLanguage(askTour);
+      const dataStr = formatAskDate(askTour.date);
+      const oraStr = String(getBookingTime(askTour)).slice(0, 5);
+      const message = `Ciao ${guide.name}, sei disponibile il ${dataStr} alle ${oraStr} per ${askTour.title} (${lingua})? Conferma qui: ${link}`;
+      const phoneDigits = (guide.phone || '').replace(/\D/g, '');
+      const waUrl = phoneDigits ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}` : '';
+      setAskResult({ guideName: guide.name, link, waUrl, hasPhone: !!phoneDigits, message });
+      setRequestedNotes(prev => ({ ...prev, [askTour.id]: guide.name }));
+    } catch (e) {
+      console.error('Error creating guide request:', e);
+      setError('Failed to create guide request');
+    } finally {
+      setAskSubmitting(false);
+    }
+  };
+
+  const copyAskLink = async () => {
+    if (!askResult?.link) return;
+    try {
+      await navigator.clipboard.writeText(askResult.link);
+      setAskCopied(true);
+      setTimeout(() => setAskCopied(false), 2500);
+    } catch (e) {
+      console.warn('Clipboard copy failed:', e);
     }
   };
 
@@ -1451,7 +1510,7 @@ const Tours = () => {
                                       </button>
                                     </div>
                                   ) : (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <span
                                         className="cursor-pointer hover:bg-stone-100 px-2 py-1 rounded-tuscan"
                                         onClick={() => setEditingGuides(prev => ({
@@ -1461,6 +1520,22 @@ const Tours = () => {
                                       >
                                         {guideName}
                                       </span>
+                                      {!tour.guide_id && (
+                                        requestedNotes[tour.id] ? (
+                                          <span className="text-xs text-olive-700 whitespace-nowrap">
+                                            Richiesto a {requestedNotes[tour.id]} — in attesa
+                                          </span>
+                                        ) : (
+                                          <button
+                                            onClick={() => openAskGuide(tour)}
+                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[32px] text-xs font-medium text-olive-700 bg-olive-50 hover:bg-olive-100 active:bg-olive-200 border border-olive-200 rounded-tuscan transition-colors touch-manipulation"
+                                            title="Ask a guide via WhatsApp"
+                                          >
+                                            <FiMessageCircle size={13} />
+                                            Ask
+                                          </button>
+                                        )
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -1729,6 +1804,150 @@ const Tours = () => {
         ticket={selectedTour}
         onUpdateNotes={handleUpdateNotesFromModal}
       />
+
+      {/* Ask-a-guide (availability request) Modal */}
+      {askTour && (() => {
+        const askLang = getTourLanguage(askTour);
+        const langLc = (askLang || '').toLowerCase();
+        const speaksLang = (g) => Array.isArray(g.languages) &&
+          g.languages.some(l => String(l).toLowerCase() === langLc);
+        const speakers = guides.filter(speaksLang);
+        const others = guides.filter(g => !speaksLang(g));
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
+            onClick={closeAskGuide}
+          >
+            <div
+              className="bg-white w-full sm:max-w-md rounded-t-tuscan-xl sm:rounded-tuscan-xl shadow-tuscan-xl max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between p-4 border-b border-stone-200">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+                    <FiMessageCircle className="text-olive-600" /> Ask a guide
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-0.5 truncate">
+                    {formatAskDate(askTour.date)} · {String(getBookingTime(askTour)).slice(0, 5)} · {askTour.title}
+                  </p>
+                </div>
+                <button
+                  onClick={closeAskGuide}
+                  className="p-2 min-h-[40px] min-w-[40px] text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-tuscan flex items-center justify-center flex-shrink-0"
+                  title="Close"
+                >
+                  <FiX size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-4 overflow-y-auto">
+                {askResult ? (
+                  // ---- Result: created → send via WhatsApp ----
+                  <div className="space-y-4">
+                    <div className="bg-olive-50 border border-olive-200 rounded-tuscan-lg p-3">
+                      <p className="text-sm text-olive-800 font-medium">
+                        Richiesta creata per {askResult.guideName}.
+                      </p>
+                    </div>
+
+                    {askResult.hasPhone ? (
+                      <a
+                        href={askResult.waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 w-full min-h-[52px] px-5 rounded-tuscan-lg bg-olive-600 hover:bg-olive-700 active:bg-olive-800 text-white text-base font-semibold shadow-tuscan transition-colors"
+                      >
+                        <FiMessageCircle /> Apri WhatsApp
+                      </a>
+                    ) : (
+                      <div className="bg-gold-50 border border-gold-200 rounded-tuscan-lg p-3 text-sm text-gold-800">
+                        Nessun numero di telefono per {askResult.guideName}. Copia il link qui sotto e invialo manualmente, oppure aggiungi il numero nella pagina Guides.
+                      </div>
+                    )}
+
+                    <div className="bg-stone-50 border border-stone-200 rounded-tuscan-lg p-3">
+                      <p className="text-xs text-stone-500 mb-1">Link richiesta</p>
+                      <p className="text-xs text-stone-700 break-all">{askResult.link}</p>
+                    </div>
+
+                    <button
+                      onClick={copyAskLink}
+                      className="flex items-center justify-center gap-2 w-full min-h-[44px] px-5 rounded-tuscan-lg border-2 border-stone-300 hover:border-stone-400 hover:bg-stone-50 text-stone-700 font-medium transition-colors"
+                    >
+                      {askCopied ? <><FiCheck className="text-olive-600" /> Copiato!</> : <><FiCopy /> Copia link</>}
+                    </button>
+
+                    <button
+                      onClick={closeAskGuide}
+                      className="w-full text-sm text-stone-500 hover:text-stone-700 min-h-[40px]"
+                    >
+                      Chiudi
+                    </button>
+                  </div>
+                ) : (
+                  // ---- Guide picker ----
+                  <div className="space-y-4">
+                    <p className="text-sm text-stone-600">
+                      Lingua del tour: <span className="font-semibold text-stone-800">{askLang || 'n/a'}</span>. Scegli una guida da contattare:
+                    </p>
+
+                    {speakers.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-olive-700 uppercase tracking-wide mb-2">Parla {askLang}</p>
+                        <div className="space-y-2">
+                          {speakers.map(g => (
+                            <button
+                              key={g.id}
+                              onClick={() => requestGuide(g)}
+                              disabled={askSubmitting}
+                              className="flex items-center justify-between w-full p-3 min-h-[48px] rounded-tuscan-lg border border-olive-200 bg-olive-50/50 hover:bg-olive-50 active:bg-olive-100 disabled:opacity-50 transition-colors text-left touch-manipulation"
+                            >
+                              <span className="font-medium text-stone-800">{g.name}</span>
+                              <span className="text-xs text-olive-700">parla {askLang}{!g.phone ? ' · no tel' : ''}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {others.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Altre guide</p>
+                        <div className="space-y-2">
+                          {others.map(g => (
+                            <button
+                              key={g.id}
+                              onClick={() => requestGuide(g)}
+                              disabled={askSubmitting}
+                              className="flex items-center justify-between w-full p-3 min-h-[48px] rounded-tuscan-lg border border-stone-200 hover:bg-stone-50 active:bg-stone-100 disabled:opacity-50 transition-colors text-left touch-manipulation"
+                            >
+                              <span className="font-medium text-stone-700">{g.name}</span>
+                              <span className="text-xs text-gold-700">non parla {askLang}{!g.phone ? ' · no tel' : ''}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {guides.length === 0 && (
+                      <p className="text-sm text-stone-500 text-center py-4">Nessuna guida disponibile.</p>
+                    )}
+
+                    {askSubmitting && (
+                      <div className="flex items-center justify-center gap-2 text-sm text-stone-500 pt-1">
+                        <FiRefreshCw className="animate-spin" /> Creazione richiesta…
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Mobile Merge/Assign Floating Bottom Bar */}
       {selectionMode && selectedItems.length > 0 && (

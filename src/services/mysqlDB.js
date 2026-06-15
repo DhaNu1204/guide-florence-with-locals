@@ -181,6 +181,24 @@ export const getGuideTourReport = async ({ guideId = null, period = null, start 
   }
 };
 
+// GUIDE AVAILABILITY REQUESTS (Phase 2) — owner side (authenticated)
+// Create a request asking a guide if they're available for a tour.
+// Returns { id, token, status, link, message }.
+export const createGuideRequest = async ({ tourId, guideId }) => {
+  const response = await axios.post(`${API_BASE_URL}/guide-requests.php`, {
+    tour_id: tourId,
+    guide_id: guideId
+  });
+  return response.data;
+};
+
+// List availability requests for a tour: { success, data: [...] }
+export const getGuideRequests = async (tourId) => {
+  const url = `${API_BASE_URL}/guide-requests.php?tour_id=${encodeURIComponent(tourId)}`;
+  const response = await axios.get(addCacheBuster(url));
+  return response.data;
+};
+
 // TOURS OPERATIONS
 export const getTours = async (forceRefresh = false, page = 1, perPage = 50, filters = {}) => {
   // Check if we need to force a refresh
