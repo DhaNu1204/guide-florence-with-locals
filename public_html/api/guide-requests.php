@@ -265,11 +265,13 @@ function handleOwner($conn, $method) {
         $action = isset($_GET['action']) ? $_GET['action'] : '';
         if ($action === 'recent') {
             ownerRecent($conn);
+        } elseif ($action === 'open') {
+            ownerOpen($conn);
         } elseif (isset($_GET['tour_id'])) {
             ownerListForTour($conn, intval($_GET['tour_id']));
         } else {
             http_response_code(400);
-            echo json_encode(['error' => 'tour_id or action=recent required']);
+            echo json_encode(['error' => 'tour_id, action=open or action=recent required']);
         }
     } elseif ($method === 'POST') {
         $data = json_decode(file_get_contents('php://input'), true);
@@ -399,6 +401,38 @@ function ownerListForTour($conn, $tourId) {
     while ($r = $result->fetch_assoc()) {
         $rows[] = [
             'id'           => intval($r['id']),
+            'guide_id'     => intval($r['guide_id']),
+            'guide_name'   => $r['guide_name'],
+            'status'       => $r['status'],
+            'created_at'   => $r['created_at'],
+            'responded_at' => $r['responded_at']
+        ];
+    }
+    echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+/**
+ * Open requests (pending or declined) for upcoming tours (date >= today).
+ * Used to map persistent request-status badges onto tours.
+ */
+function ownerOpen($conn) {
+    $stmt = $conn->prepare(
+        "SELECT ar.id, ar.tour_id, ar.guide_id, g.name AS guide_name, ar.status, ar.created_at, ar.responded_at
+         FROM availability_requests ar
+         JOIN tours t ON t.id = ar.tour_id
+         JOIN guides g ON g.id = ar.guide_id
+         WHERE ar.status IN ('pending','declined')
+           AND t.date >= CURDATE()
+         ORDER BY ar.created_at DESC"
+    );
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    $rows = [];
+    while ($r = $result->fetch_assoc()) {
+        $rows[] = [
+            'id'           => intval($r['id']),
+            'tour_id'      => intval($r['tour_id']),
             'guide_id'     => intval($r['guide_id']),
             'guide_name'   => $r['guide_name'],
             'status'       => $r['status'],
