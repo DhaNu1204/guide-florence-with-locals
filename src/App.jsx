@@ -13,6 +13,7 @@ import EditTour from './pages/EditTour';
 import BokunIntegration from './pages/BokunIntegration';
 import PriorityTickets from './pages/PriorityTickets';
 import Login from './pages/Login';
+import GuideRespond from './pages/GuideRespond';
 import { PageTitleProvider } from './contexts/PageTitleContext';
 import BokunAutoSyncProvider from './components/BokunAutoSyncProvider';
 import './index.css';
@@ -32,6 +33,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Public, no-login guide availability response page (secret token link) */}
+      <Route path="/respond/:token" element={<GuideRespond />} />
       <Route
         path="/"
         element={
