@@ -63,6 +63,8 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 16. **CI/CD Pipeline**: GitHub Actions: build verification + deploy to Hostinger + health checks
 17. **Unassigned Tours Report**: Downloadable .txt report (date/time/location) of guideless tours, location extracted from title
 18. **Guide Reports**: Per-guide monthly tour verification with category breakdown and PDF/CSV export (read-only)
+19. **Needs-a-guide alert**: Dashboard alert for tours needing a guide in the next 7 days + double-booking guard on assignment
+20. **Guide availability requests**: WhatsApp Accept/Decline links, language-matched guide picker, no-login guide page
 
 ## CRITICAL INFORMATION
 
@@ -174,11 +176,13 @@ Sentry.ErrorBoundary
 | Path | Component | Access |
 |------|-----------|--------|
 | `/login` | Login | Public |
+| `/respond/:token` | GuideRespond | **Public** — standalone, rendered OUTSIDE ProtectedRoute/ModernLayout (no sidebar/login) |
 | `/` | Dashboard | Protected |
 | `/tours` | Tours | Protected |
 | `/guides` | Guides | Protected |
 | `/tickets` | Tickets | Protected |
 | `/payments` | Payments | Protected |
+| `/guide-reports` | GuideReports | Protected |
 | `/priority-tickets` | PriorityTickets | Protected |
 | `/bokun-integration` | BokunIntegration | Admin only |
 
@@ -266,6 +270,27 @@ Read-only month-end invoice verification — lists the tours a guide actually pe
 | Method | Endpoint | Notes |
 |--------|----------|-------|
 | GET | `/api/guide-tour-report.php` | Auth required (read-only). Params: optional `guide_id`; `period=YYYY-MM` **or** `start=YYYY-MM-DD&end=YYYY-MM-DD`. With `guide_id`: returns `guide_info`, `total_tours`, `tours[]` (date/time/title/category) + `summary_by_category` (Combo/Uffizi/Pitti/Accademia/Other). Without `guide_id`: month overview `guides[]` (guide_id/guide_name/total_tours). |
+
+## Guide Availability Requests (Jun 2026)
+
+WhatsApp-based "ask a guide if they're available" flow. **Touches no payment logic.** The owner picks a guide for an unassigned tour (picker lists guides who speak the tour's language first), gets a pre-filled WhatsApp message + secret link, and the guide accepts/declines on a no-login page. Accepting assigns the guide (with double-booking + already-taken guards).
+
+- **DB**: `availability_requests` table — self-provisioned via `CREATE TABLE IF NOT EXISTS` on first request to `guide-requests.php` (columns: id, tour_id, guide_id, token UNIQUE, status ENUM('pending','accepted','declined','cancelled','expired'), created_at, responded_at).
+- **Frontend**: `src/components/AskGuideModal.jsx` (reusable; used on Tours page + Dashboard), public page `src/pages/GuideRespond.jsx` at `/respond/:token` (Italian, mobile, plain `fetch` — NOT the axios instance, so no Bearer token is sent). Services in mysqlDB.js: `createGuideRequest`, `getGuideRequests`, `getOpenGuideRequests`, `getRecentGuideResponses`.
+- **Double-booking guard** also enforced on the tours.php PUT guide assignment (HTTP 409 `guide_double_booked` unless `force=true`).
+
+### API — `guide-requests.php` (conditional auth)
+A `token` query param routes to the **PUBLIC guide branch** (no auth); otherwise it's an **OWNER** request requiring `Middleware::requireAuth`.
+
+| Mode | Method | Endpoint | Notes |
+|------|--------|----------|-------|
+| Owner | POST | `/api/guide-requests.php` `{tour_id, guide_id}` | Create (or reuse pending) request → `{id, token, status, link, message}` |
+| Owner | POST | `{action:'cancel', id}` | Cancel a request |
+| Owner | GET | `?tour_id=X` | List a tour's requests |
+| Owner | GET | `?action=open` | Pending/declined requests for upcoming tours (for persistent badges) |
+| Owner | GET | `?action=recent&days=N` | Recently accepted/declined responses (dashboard panel) |
+| Public | GET | `?token=XYZ` | Minimal tour logistics only (date/time/title/language/participants/meeting_point) — **never customer PII** |
+| Public | POST | `?token=XYZ` `{action:'accept'\|'decline'}` | Accept assigns the guide (double-booking + already-taken guards, expires sibling pendings); decline records it |
 
 ## Group-Aware Payment System (Feb 2026)
 
@@ -437,6 +462,9 @@ Located in `src/utils/pdfGenerator.js`. Tuscan theme with terracotta accent (#C7
 - Patterns block test/debug/migration/config files: `test_*.php`, `*_test.php`, `debug_*.php`, `check_*.php`, `fix_*.php`, `migrate_*.php`, `import_*.php`, `create_*.php`, `config_*_backup.php`
 
 ## Deployment
+
+### Build config
+- **Vite `base` must be `'/'` (absolute).** The app is served at the domain root (https://withlocals.deetech.cc/); a relative base (`'./'`) breaks directly-loaded deep routes like `/respond/:token` because the browser resolves assets against the route path (e.g. `/respond/assets/...`) and the JS never loads (blank page).
 
 ### CI/CD (GitHub Actions) — currently DISABLED
 `.github/workflows/deploy.yml` is `workflow_dispatch`-only (no `push:` trigger). Auto-deploy is **not active** because Hostinger blocks SSH (port 65002) from GitHub's runner IPs, so the runner can't reach the server — even though the SSH secrets and dedicated deploy key are configured. **Use `scripts/deploy.sh` for deploys.** The workflow, if ever re-enabled, runs:
