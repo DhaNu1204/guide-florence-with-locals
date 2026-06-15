@@ -237,12 +237,31 @@ const getTourLanguage = (tour) => {
   }
 };
 
+// Read an optional ?date=YYYY-MM-DD deep link (e.g. from the Dashboard "needs a guide" alert).
+// Parse from parts (not new Date('YYYY-MM-DD')) to avoid a UTC off-by-one shifting the day.
+const getInitialDateParam = () => {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('date');
+    if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [y, m, d] = raw.split('-').map(Number);
+      const parsed = new Date(y, m - 1, d);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+  } catch (e) {
+    /* ignore malformed URL/param */
+  }
+  return null;
+};
+
 const Tours = () => {
+  // If the page was opened with ?date=YYYY-MM-DD, start in single-date mode on that date.
+  const initialDateParam = getInitialDateParam();
+
   const [tours, setTours] = useState([]);
   const [tourGroups, setTourGroups] = useState([]);
   const [guides, setGuides] = useState([]);
   const [selectedGuideId, setSelectedGuideId] = useState('all');
-  const [filterDate, setFilterDate] = useState(new Date()); // Default to today
+  const [filterDate, setFilterDate] = useState(initialDateParam || new Date()); // Default to today (or ?date= deep link)
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -251,7 +270,7 @@ const Tours = () => {
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
-  const [showUpcoming, setShowUpcoming] = useState(true); // Default to upcoming to show 2026 data
+  const [showUpcoming, setShowUpcoming] = useState(initialDateParam ? false : true); // Single-date mode when ?date= present, else Upcoming
   const [showPast, setShowPast] = useState(false); // Show past 40 days for payment verification
   const [showDateRange, setShowDateRange] = useState(false); // Custom date range mode
   const [rangeStartDate, setRangeStartDate] = useState(''); // YYYY-MM-DD string
