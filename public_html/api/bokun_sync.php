@@ -12,8 +12,13 @@ if (file_exists(__DIR__ . '/Encryption.php')) {
     require_once __DIR__ . '/Encryption.php';
 }
 
-// Apply rate limiting for Bokun sync operations (stricter: 10 per minute)
-applyRateLimit('bokun_sync');
+// Apply rate limiting for Bokun sync operations (stricter: 10 per minute).
+// Only for direct HTTP access — skip under CLI cron and when included as a
+// library (BOKUN_SYNC_LIB, e.g. bokun_webhook.php) so we don't double-charge
+// the webhook's own 'webhook' rate budget and risk a 429 abort on bursts.
+if (php_sapi_name() !== 'cli' && !defined('BOKUN_SYNC_LIB')) {
+    applyRateLimit('bokun_sync');
+}
 
 // Auth check function for API endpoints
 function checkAuth() {

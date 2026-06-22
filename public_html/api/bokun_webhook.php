@@ -132,39 +132,37 @@ if (is_array($data) && isset($data['activityBookings']) && is_array($data['activ
 }
 $uniqueDates = array_keys($dates);
 
-// If the body has no usable date, fall back to a small window so nothing is
-// silently dropped (today -> +2 days, Europe/Rome).
-$fallbackRange = null;
-if (empty($uniqueDates)) {
-    $today = new DateTime('now', new DateTimeZone('Europe/Rome'));
-    $end = (new DateTime('now', new DateTimeZone('Europe/Rome')))->modify('+2 days');
-    $fallbackRange = [$today->format('Y-m-d'), $end->format('Y-m-d')];
-    error_log("bokun_webhook: no date in body for booking " . ($bookingId ?? 'unknown') . ", falling back to range {$fallbackRange[0]}..{$fallbackRange[1]}");
-}
-
-// Load the sync library WITHOUT triggering its auth/routing block.
-define('BOKUN_SYNC_LIB', true);
-require_once __DIR__ . '/bokun_sync.php';
-
 $syncError = null;
-try {
-    if ($fallbackRange) {
-        syncBookings($fallbackRange[0], $fallbackRange[1], 'webhook', (string)$bookingId);
-    } else {
+$skipped = false;
+
+if (empty($uniqueDates)) {
+    // No usable booking date in the body — this is non-booking noise (or an
+    // event shape we don't act on). Skip the sync entirely rather than run a
+    // slow multi-day fallback that can exceed the gateway timeout (504 -> Bokun
+    // retries). The payload is already captured; any real change is also picked
+    // up by the in-app 15-min sync. Return 200 fast.
+    $skipped = true;
+    error_log("bokun_webhook: no usable date in body for booking " . ($bookingId ?? 'unknown') . " — skipping sync");
+} else {
+    // Load the sync library WITHOUT triggering its auth/routing block.
+    define('BOKUN_SYNC_LIB', true);
+    require_once __DIR__ . '/bokun_sync.php';
+
+    try {
         foreach ($uniqueDates as $d) {
             // Targeted 1-day sync per affected date through the proven path.
             syncBookings($d, $d, 'webhook', (string)$bookingId);
         }
+    } catch (Throwable $e) {
+        // Never fatal: record the error and still return 200 so Bokun does not
+        // enter a retry storm. The raw payload is already captured above.
+        $syncError = $e->getMessage();
+        error_log("bokun_webhook: sync failed for booking " . ($bookingId ?? 'unknown') . ": " . $syncError);
+        logWebhook($topic, $data, "sync failed: " . $syncError);
     }
-} catch (Throwable $e) {
-    // Never fatal: record the error and still return 200 so Bokun does not
-    // enter a retry storm. The raw payload is already captured above.
-    $syncError = $e->getMessage();
-    error_log("bokun_webhook: sync failed for booking " . ($bookingId ?? 'unknown') . ": " . $syncError);
-    logWebhook($topic, $data, "sync failed: " . $syncError);
 }
 
-// Mark the captured log row processed on success.
+// Mark the captured log row processed on success (synced or intentionally skipped).
 if ($syncError === null && $logId) {
     try {
         $stmt = $conn->prepare("UPDATE bokun_webhook_logs SET processed = 1 WHERE id = ?");
@@ -181,7 +179,9 @@ if ($syncError === null && $logId) {
 http_response_code(200);
 echo json_encode([
     'status' => $syncError === null ? 'success' : 'received',
-    'message' => $syncError === null ? 'Webhook processed (real-time sync)' : 'Webhook received (sync deferred)',
-    'synced_dates' => $fallbackRange ? [$fallbackRange[0] . '..' . $fallbackRange[1]] : $uniqueDates
+    'message' => $skipped
+        ? 'Webhook received (no booking date — sync skipped)'
+        : ($syncError === null ? 'Webhook processed (real-time sync)' : 'Webhook received (sync deferred)'),
+    'synced_dates' => $uniqueDates
 ]);
 ?>
