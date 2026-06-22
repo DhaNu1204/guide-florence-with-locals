@@ -387,6 +387,33 @@ UPDATE products SET product_type = 'ticket' WHERE bokun_product_id = <id>;
 - On app focus/visibility change
 - Manual trigger (admin only)
 
+## Bokun Sync Architecture (Jun 2026)
+
+Hard-won facts from the sync overhaul (2026-06-22/23). The server-side mechanism is the **real-time webhook**, not Hostinger cron.
+
+### Pagination — paginate by PAGE FULLNESS, not totalHits
+`BokunAPI.php` `getBookings()`: Bokun's `totalHits` **under-reports** the true count (e.g. says 787 when there are 987). The old `((page+1)*pageSize) < totalHits` check stopped one page early and **silently dropped page-4+ bookings** (incl. cancelled/rescheduled ones, which then never updated). Now: **continue while a page returns a full `pageSize`** (a short page is the last one), with a 10-page (2,000-booking) safety cap.
+
+### Sync window
+- `DEFAULT_SYNC_DAYS` reduced **120 → 60**. The 120-day pass ran **145–267s** and got killed under rate/time limits, so syncs never completed. 60 days completes reliably.
+- `FULL_SYNC_DAYS` **365** kept for occasional deep/manual sync.
+
+### Cron — do NOT rely on it
+- **Hostinger cron does not reliably fire on this account** — jobs added in hPanel never triggered. The webhook is the server-side freshness mechanism.
+- `bokun_cron.php` (CLI entry point) had a **latent parse error since creation**: a `*/15` crontab example inside the docblock contained `*/`, closing the `/** */` comment early → file unparseable. Fixed; the schedule comment is now written as `0,15,30,45`.
+
+### Webhook (`bokun_webhook.php`) — real-time, body-driven
+- **History**: previously **500'd on EVERY call** — the `bokun_webhook_logs` table never existed in prod and `logWebhook()` ran *before* the try/catch, so the request died at the logging step before any handler. Now: **self-provisions `bokun_webhook_logs`** (CREATE TABLE IF NOT EXISTS, same pattern `tours.php` uses for `products`), **non-fatal logging**, and **always returns HTTP 200** (so Bokun never enters a retry storm).
+- **Payload shape**: Bokun sends an **EMPTY `X-Bokun-Topic` header** (and empty `X-Bokun-Booking-Id`) — the header-based topic switch never matched. The event is the **full booking object in the BODY**: top-level `bookingId` / `status` / `confirmationCode` / `externalBookingReference` + **`activityBookings[]`** with **`startDateTime` (epoch ms)** / `startTime` / `date` / `dateString`. ⚠️ This is the **booking-detail shape**, NOT the `productBookings[]` / `startTimeStr` shape the polling/search path uses — do not assume they're interchangeable.
+- **Flow**: read body → extract unique affected date(s) (Europe/Rome) from `activityBookings` → for each date call **`syncBookings(D, D, 'webhook', bookingId)`** through the **proven path** (reuses transform / match / reschedule / cancel — booking-search includes CANCELLED — product registration / auto-grouping). Marks the log row `processed=1` on success.
+- **Dateless events skip the sync** (capture + 200 fast). Running a multi-day fallback could exceed the gateway timeout (504 → Bokun retries); the in-app 15-min sync catches anything a dateless event would miss.
+
+### `bokun_sync.php` as a LIBRARY
+Define `BOKUN_SYNC_LIB` **before** `require`-ing the file to expose `syncBookings()` without running the endpoint: the guard `if (php_sapi_name() !== 'cli' && !defined('BOKUN_SYNC_LIB'))` skips **both** the web auth/routing block **and** the top-level `applyRateLimit('bokun_sync')`. Used by the webhook (which keeps its own `webhook` 30/min limit, so no double-charge / 429-abort on bursts). CLI cron skips the same block via `php_sapi_name() === 'cli'`. Direct HTTP access stays fully authenticated + rate-limited.
+
+### HOST NOTE — no PHP logs
+**`log_errors` is `Off` server-wide**, so `error_log()` output is **NOT persisted anywhere** on this host. Debug via **DB side-effects** instead: `tours.last_sync` (bumped by a sync), `bokun_webhook_logs` (`processed` flag + captured `payload`), and the webhook's JSON response (`synced_dates`) — not PHP logs.
+
 ## API Rate Limiting
 
 | Type | Limit | Window |
