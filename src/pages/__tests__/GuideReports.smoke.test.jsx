@@ -12,7 +12,7 @@ vi.mock('../../contexts/PageTitleContext', () => ({
 vi.mock('../../services/mysqlDB', () => {
   const resolved = (val) => vi.fn().mockResolvedValue(val);
   return {
-    getGuides: resolved({ data: [] }),
+    getAllGuides: resolved([]),
     getGuideTourReport: resolved({ data: {} }),
   };
 });

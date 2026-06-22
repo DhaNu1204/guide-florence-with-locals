@@ -15,7 +15,7 @@ import {
 } from 'react-icons/fi';
 import Card from './UI/Card';
 import Button from './UI/Button';
-import { getTours, getGuides, getRecentGuideResponses } from '../services/mysqlDB';
+import { getTours, getAllGuides, getRecentGuideResponses } from '../services/mysqlDB';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { useBokunSync } from '../hooks/useBokunAutoSync';
 import AskGuideModal from './AskGuideModal';
@@ -97,8 +97,8 @@ const Dashboard = () => {
       const upcomingResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
       // Fetch all tours for accurate payment stats (past tours need to be counted)
       const allToursResponse = await getTours(forceRefresh, 1, 500, {});
-      const guidesData = await getGuides();
-      setGuides(guidesData?.data || []);
+      const guidesData = await getAllGuides();
+      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
 
       // Recent guide availability responses (accepted/declined, last 7 days)
       try {

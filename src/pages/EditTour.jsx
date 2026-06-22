@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getTours, getGuides, updateTour } from '../services/mysqlDB';
+import { getTours, getAllGuides, updateTour } from '../services/mysqlDB';
 import DatePicker from "react-datepicker";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
@@ -147,7 +147,7 @@ const EditTour = () => {
       // Fetch both tours and guides
       const [toursData, guidesData] = await Promise.all([
         getTours(),
-        getGuides()
+        getAllGuides()
       ]);
       
       // Debug logging

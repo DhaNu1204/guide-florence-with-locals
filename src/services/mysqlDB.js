@@ -89,6 +89,30 @@ export const getGuides = async (page = 1, perPage = 20) => {
   }
 };
 
+// Returns the COMPLETE guide list as a flat array (all pages combined).
+// Use this for selection lists / dropdowns (assignment, filters, Ask-a-guide,
+// reports) — getGuides() returns only one page (default 20), so newly added
+// guides beyond the first page would otherwise be missing from pickers.
+// The Guides management page intentionally keeps paginated getGuides().
+export const getAllGuides = async () => {
+  // guides.php caps per_page at 100.
+  const first = await getGuides(1, 100);
+  const all = Array.isArray(first?.data) ? [...first.data] : [];
+  const pagination = first?.pagination || {};
+
+  const totalPages = Number(pagination.total_pages) || 1;
+  for (let page = 2; page <= totalPages; page++) {
+    const next = await getGuides(page, 100);
+    if (Array.isArray(next?.data) && next.data.length > 0) {
+      all.push(...next.data);
+    } else {
+      break;
+    }
+  }
+
+  return all;
+};
+
 export const addGuide = async (guideData) => {
   try {
     // Convert languages array to comma-separated string for backend storage
@@ -661,6 +685,7 @@ const mysqlDB = {
 
   // Guides operations
   fetchGuides: getGuides,
+  getAllGuides,
   addGuide,
   updateGuide,
   deleteGuide,

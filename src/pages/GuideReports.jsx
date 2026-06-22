@@ -13,7 +13,7 @@ import {
 } from 'react-icons/fi';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { getGuides, getGuideTourReport } from '../services/mysqlDB';
+import { getAllGuides, getGuideTourReport } from '../services/mysqlDB';
 
 // Tuscan PDF palette (mirrors src/utils/pdfGenerator.js)
 const PDF_COLORS = {
@@ -88,8 +88,8 @@ const GuideReports = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await getGuides(1, 100);
-        if (!cancelled) setGuides(res?.data || []);
+        const all = await getAllGuides();
+        if (!cancelled) setGuides(Array.isArray(all) ? all : (all?.data || []));
       } catch (err) {
         console.error('Failed to load guides:', err);
       }

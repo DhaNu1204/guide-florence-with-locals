@@ -320,7 +320,7 @@ const Tours = () => {
 
       const [toursResponse, guidesData, groupsResponse] = await Promise.all([
         mysqlDB.fetchTours(forceRefresh, page, toursPerPage, apiFilters),
-        mysqlDB.fetchGuides(),
+        mysqlDB.getAllGuides(),
         tourGroupsAPI.list(groupFilters).catch(() => ({ data: [] }))
       ]);
 
