@@ -21,6 +21,7 @@ vi.mock('../../services/mysqlDB', () => {
   const mysqlDB = {
     fetchTours: resolved({ data: [], pagination: { current_page: 1, per_page: 50, total: 0, total_pages: 1 } }),
     fetchGuides: resolved({ data: [] }),
+    getAllGuides: resolved([]),
     updateTour: resolved({ success: true }),
     clearTourCache: vi.fn(),
   };

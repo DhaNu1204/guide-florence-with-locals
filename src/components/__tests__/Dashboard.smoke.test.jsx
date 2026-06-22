@@ -10,7 +10,7 @@ vi.mock('../../services/mysqlDB', () => {
   const resolved = (val) => vi.fn().mockResolvedValue(val);
   return {
     getTours: resolved({ data: [] }),
-    getGuides: resolved({ data: [] }),
+    getAllGuides: resolved([]),
     getRecentGuideResponses: resolved({ data: [] }),
     createGuideRequest: resolved({ id: 1, token: 't', status: 'pending', link: 'x', message: 'm' }),
   };
