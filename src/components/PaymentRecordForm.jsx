@@ -6,7 +6,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format } from "date-fns";
 import { FiSave, FiDollarSign, FiCalendar, FiUser, FiClock } from 'react-icons/fi';
-import { getTours, getGuides } from '../services/mysqlDB.js';
+import { getTours, getAllGuides } from '../services/mysqlDB.js';
 import { isTicketProduct } from '../utils/tourFilters';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -75,8 +75,8 @@ const PaymentRecordForm = ({ onPaymentRecorded, onCancel, onShowNotification }) 
   // Load only guides on initial mount (tours loaded on-demand by date)
   const loadGuides = async () => {
     try {
-      const guidesData = await getGuides();
-      // Handle paginated response - extract data array
+      const guidesData = await getAllGuides();
+      // getAllGuides returns a flat array of every guide (all pages)
       setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
     } catch (error) {
       console.error('Error loading guides:', error);
