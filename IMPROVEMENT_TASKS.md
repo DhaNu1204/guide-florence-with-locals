@@ -15,13 +15,18 @@ Order: features that make daily operations easier first, then security cleanup, 
 - [x] Returning to the browser tab already triggers a sync if stale (>15 min) — the new auto-reload now makes the results visible
 **Done when:** A new booking appears on screen within ~15 min (or instantly after pressing Refresh) without logging out.
 
-### Task 2: Server-side sync (bookings sync even when app is closed)
+### Task 2: Server-side sync (bookings sync even when app is closed) — ✅ DONE 2026-06-22/23
 **Problem:** Sync only runs while an admin has the app open in a browser. Overnight/weekend bookings wait until you open the app.
-**Fix:** Hostinger cron job calling `bokun_sync.php` every 15 min + verify Bokun webhook is active for instant updates.
-**Done when:** Opening the app in the morning shows last night's bookings immediately.
+**Solution delivered:** Server-side freshness is delivered by the **real-time Bokun webhook** (`bokun_webhook.php`), **not** Hostinger cron — Hostinger cron does **not** reliably fire on this account (jobs added in hPanel never triggered). The webhook applies each booking change instantly via the proven sync path.
+**Done when:** Opening the app in the morning shows last night's bookings immediately. ✅ (webhook keeps the DB current server-side, independent of the app being open)
 - [x] CLI cron entry point added (`bokun_cron.php`) + CLI guard in `bokun_sync.php` (web endpoint stays authenticated) — 2026-06-13
-- [ ] Create the Hostinger cron job in hPanel (every 15 min) — *manual step, see instructions*
-- [ ] Verify Bokun webhook is registered + active in the Bokun dashboard — *manual step*
+- [x] **Sync overhaul (2026-06-22/23)** — completed the following:
+  - **Pagination fix** (`BokunAPI.php` `getBookings`): Bokun's `totalHits` **under-reports** the true count, so the old `((page+1)*pageSize) < totalHits` check stopped early and silently dropped page-4+ bookings (incl. cancelled/rescheduled). Now paginates by **page fullness** (continue while a page returns a full `pageSize`), with the 10-page safety cap.
+  - **Sync window** `DEFAULT_SYNC_DAYS` reduced **120 → 60** so the regular/cron/webhook sync completes reliably (the 120-day pass ran 145–267s and got killed under rate/time limits); `FULL_SYNC_DAYS` 365 kept for occasional deep sync.
+  - **Webhook never worked → now real-time**: `bokun_webhook.php` previously **500'd on every call** (the `bokun_webhook_logs` table never existed and `logWebhook()` ran before the try/catch). Now self-provisions the table, logs non-fatally, always returns 200, reads the **full booking object from the body** (Bokun sends an **empty** `X-Bokun-Topic` header), extracts the affected date(s), and runs `syncBookings(D,D,'webhook',bookingId)` per day through the proven path. Dateless events skip the sync.
+  - **Cron findings**: `bokun_cron.php` had a latent parse error since creation (a `*/15` crontab example inside the docblock closed the comment early) — fixed. Hostinger cron does **not** reliably fire on this account — do not rely on it; the webhook is the server-side mechanism.
+- [ ] ~~Create the Hostinger cron job in hPanel~~ — abandoned (Hostinger cron does not fire on this account)
+- [ ] Verify Bokun webhook is registered + active in the Bokun dashboard — *manual step (webhook confirmed delivering real payloads 2026-06-22)*
 
 ### Task 3: New-booking visibility
 **Fix:** Toast/badge showing "3 new bookings since you last looked" with quick link; highlight newly arrived tours in the list.
