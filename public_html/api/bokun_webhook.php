@@ -4,18 +4,51 @@ require_once 'config.php';
 // Apply rate limiting for webhooks (30 per minute)
 applyRateLimit('webhook');
 
-// Log all webhook calls for debugging
+// Self-provision the webhook log table so payloads are captured even before
+// any migration is run (same pattern tours.php uses for the products table).
+// Non-fatal: a provisioning failure must never abort a webhook request.
+function ensureWebhookLogTable() {
+    global $conn;
+    try {
+        $conn->query("
+            CREATE TABLE IF NOT EXISTS bokun_webhook_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                topic VARCHAR(100),
+                booking_id VARCHAR(255),
+                experience_booking_id VARCHAR(255),
+                payload JSON,
+                processed TINYINT DEFAULT 0,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+    } catch (Throwable $e) {
+        error_log("bokun_webhook: failed to ensure bokun_webhook_logs table: " . $e->getMessage());
+    }
+}
+ensureWebhookLogTable();
+
+// Log all webhook calls for debugging.
+// Non-fatal: any logging failure is swallowed so it can never abort the request.
 function logWebhook($topic, $data, $error = null) {
     global $conn;
-    
-    $stmt = $conn->prepare("INSERT INTO bokun_webhook_logs (topic, booking_id, experience_booking_id, payload, error_message) VALUES (?, ?, ?, ?, ?)");
-    $bookingId = $_SERVER['HTTP_X_BOKUN_BOOKING_ID'] ?? null;
-    $experienceBookingId = $_SERVER['HTTP_X_BOKUN_EXPERIENCEBOOKING_ID'] ?? null;
-    $payload = json_encode($data);
-    
-    $stmt->bind_param("sssss", $topic, $bookingId, $experienceBookingId, $payload, $error);
-    $stmt->execute();
-    $stmt->close();
+
+    try {
+        $stmt = $conn->prepare("INSERT INTO bokun_webhook_logs (topic, booking_id, experience_booking_id, payload, error_message) VALUES (?, ?, ?, ?, ?)");
+        if (!$stmt) {
+            error_log("bokun_webhook: logWebhook prepare failed: " . $conn->error);
+            return;
+        }
+        $bookingId = $_SERVER['HTTP_X_BOKUN_BOOKING_ID'] ?? null;
+        $experienceBookingId = $_SERVER['HTTP_X_BOKUN_EXPERIENCEBOOKING_ID'] ?? null;
+        $payload = json_encode($data);
+
+        $stmt->bind_param("sssss", $topic, $bookingId, $experienceBookingId, $payload, $error);
+        $stmt->execute();
+        $stmt->close();
+    } catch (Throwable $e) {
+        error_log("bokun_webhook: logWebhook failed: " . $e->getMessage());
+    }
 }
 
 // Get webhook topic from headers
@@ -55,10 +88,13 @@ try {
     http_response_code(200);
     echo json_encode(['status' => 'success', 'message' => 'Webhook processed']);
     
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    // Record the failure but still return 200 so Bokun does not enter a retry
+    // storm. The raw payload is already captured by the logWebhook() call above;
+    // this second call annotates it with the handler error for later analysis.
     logWebhook($topic, $data, $e->getMessage());
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Webhook processing failed']);
+    http_response_code(200);
+    echo json_encode(['status' => 'received', 'message' => 'Webhook received (processing deferred)']);
 }
 
 function handleBookingCreated($bookingId, $data) {
