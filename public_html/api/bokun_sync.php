@@ -928,7 +928,10 @@ function backfillParticipantNames() {
 // When this file is included from the CLI cron entry point (bokun_cron.php),
 // php_sapi_name() === 'cli', so we skip auth + routing and let the cron
 // script call syncBookings() directly. HTTP access stays fully authenticated.
-if (php_sapi_name() !== 'cli') {
+// When included as a library (BOKUN_SYNC_LIB defined, e.g. by bokun_webhook.php),
+// we also skip the endpoint so the caller can use syncBookings() directly while
+// direct HTTP access to this file remains fully authenticated.
+if (php_sapi_name() !== 'cli' && !defined('BOKUN_SYNC_LIB')) {
 
 // Require authentication for all sync operations
 require_once __DIR__ . '/Middleware.php';

@@ -30,6 +30,9 @@ ensureWebhookLogTable();
 
 // Log all webhook calls for debugging.
 // Non-fatal: any logging failure is swallowed so it can never abort the request.
+// Returns the inserted log row id (or null on failure) so the caller can later
+// mark it processed. Bokun's X-Bokun-* headers arrive empty, so booking_id falls
+// back to the body's bookingId.
 function logWebhook($topic, $data, $error = null) {
     global $conn;
 
@@ -37,164 +40,148 @@ function logWebhook($topic, $data, $error = null) {
         $stmt = $conn->prepare("INSERT INTO bokun_webhook_logs (topic, booking_id, experience_booking_id, payload, error_message) VALUES (?, ?, ?, ?, ?)");
         if (!$stmt) {
             error_log("bokun_webhook: logWebhook prepare failed: " . $conn->error);
-            return;
+            return null;
         }
-        $bookingId = $_SERVER['HTTP_X_BOKUN_BOOKING_ID'] ?? null;
+        $bookingId = $_SERVER['HTTP_X_BOKUN_BOOKING_ID'] ?? (is_array($data) ? ($data['bookingId'] ?? null) : null);
         $experienceBookingId = $_SERVER['HTTP_X_BOKUN_EXPERIENCEBOOKING_ID'] ?? null;
         $payload = json_encode($data);
+        $bookingId = $bookingId !== null ? (string)$bookingId : null;
 
         $stmt->bind_param("sssss", $topic, $bookingId, $experienceBookingId, $payload, $error);
         $stmt->execute();
+        $insertId = $stmt->insert_id;
         $stmt->close();
+        return $insertId ?: null;
     } catch (Throwable $e) {
         error_log("bokun_webhook: logWebhook failed: " . $e->getMessage());
+        return null;
     }
 }
 
-// Get webhook topic from headers
-$topic = $_SERVER['HTTP_X_BOKUN_TOPIC'] ?? '';
-$bookingId = $_SERVER['HTTP_X_BOKUN_BOOKING_ID'] ?? '';
+// Extract the affected tour date (Europe/Rome 'Y-m-d') from one activityBooking.
+// Prefers startDateTime (epoch milliseconds); falls back to the 'date' field
+// (epoch ms or ISO string) then to parsing 'dateString' ("Tue, June 23 2026 - 11:00 AM").
+function webhookExtractDate($ab) {
+    if (!is_array($ab)) {
+        return null;
+    }
+    $tz = new DateTimeZone('Europe/Rome');
 
-// Get request body
+    if (isset($ab['startDateTime']) && is_numeric($ab['startDateTime'])) {
+        try {
+            $dt = new DateTime('@' . intval($ab['startDateTime'] / 1000));
+            $dt->setTimezone($tz);
+            return $dt->format('Y-m-d');
+        } catch (Throwable $e) { /* fall through */ }
+    }
+
+    if (isset($ab['date'])) {
+        if (is_numeric($ab['date'])) {
+            try {
+                $dt = new DateTime('@' . intval($ab['date'] / 1000));
+                $dt->setTimezone($tz);
+                return $dt->format('Y-m-d');
+            } catch (Throwable $e) { /* fall through */ }
+        } else {
+            try {
+                $dt = new DateTime((string)$ab['date'], $tz);
+                return $dt->format('Y-m-d');
+            } catch (Throwable $e) { /* fall through */ }
+        }
+    }
+
+    if (isset($ab['dateString']) && is_string($ab['dateString'])) {
+        // "Tue, June 23 2026 - 11:00 AM" -> strip weekday prefix and time suffix
+        $clean = preg_replace('/^[A-Za-z]{3,},\s*/', '', $ab['dateString']);
+        $clean = preg_replace('/\s*-\s*\d{1,2}:\d{2}\s*[AP]M.*$/i', '', $clean);
+        try {
+            $dt = new DateTime(trim($clean), $tz);
+            return $dt->format('Y-m-d');
+        } catch (Throwable $e) { /* fall through */ }
+    }
+
+    return null;
+}
+
+// Get request body. Bokun's X-Bokun-* headers arrive empty in practice, so the
+// event is driven entirely from the booking object in the body.
 $rawBody = file_get_contents('php://input');
 $data = json_decode($rawBody, true);
 
-// Log the webhook
-logWebhook($topic, $data);
+// Step zero: always capture the raw webhook first (non-fatal). Store the
+// booking status in the topic column for at-a-glance debugging.
+$topic = is_array($data) ? ($data['status'] ?? null) : null;
+$logId = logWebhook($topic, $data);
 
+// Real-time apply: re-sync just the affected day(s) through the proven
+// syncBookings() path. That single path already handles new bookings,
+// in-place updates/reschedules, cancellations (booking-search includes
+// CANCELLED), product registration, and auto-grouping — so we never need to
+// upsert from the (shape-divergent) webhook body directly.
+$bookingId = is_array($data) ? ($data['bookingId'] ?? null) : null;
+
+// Collect unique affected dates (Europe/Rome) from the booking's activities.
+$dates = [];
+if (is_array($data) && isset($data['activityBookings']) && is_array($data['activityBookings'])) {
+    foreach ($data['activityBookings'] as $ab) {
+        $d = webhookExtractDate($ab);
+        if ($d) {
+            $dates[$d] = true;
+        }
+    }
+}
+$uniqueDates = array_keys($dates);
+
+// If the body has no usable date, fall back to a small window so nothing is
+// silently dropped (today -> +2 days, Europe/Rome).
+$fallbackRange = null;
+if (empty($uniqueDates)) {
+    $today = new DateTime('now', new DateTimeZone('Europe/Rome'));
+    $end = (new DateTime('now', new DateTimeZone('Europe/Rome')))->modify('+2 days');
+    $fallbackRange = [$today->format('Y-m-d'), $end->format('Y-m-d')];
+    error_log("bokun_webhook: no date in body for booking " . ($bookingId ?? 'unknown') . ", falling back to range {$fallbackRange[0]}..{$fallbackRange[1]}");
+}
+
+// Load the sync library WITHOUT triggering its auth/routing block.
+define('BOKUN_SYNC_LIB', true);
+require_once __DIR__ . '/bokun_sync.php';
+
+$syncError = null;
 try {
-    switch($topic) {
-        case 'bookings/create':
-            handleBookingCreated($bookingId, $data);
-            break;
-            
-        case 'bookings/update':
-            handleBookingUpdated($bookingId, $data);
-            break;
-            
-        case 'bookings/cancel':
-            handleBookingCancelled($bookingId, $data);
-            break;
-            
-        case 'experiences/availability_update':
-            handleAvailabilityUpdate($data);
-            break;
-            
-        default:
-            logWebhook($topic, $data, "Unknown webhook topic: $topic");
+    if ($fallbackRange) {
+        syncBookings($fallbackRange[0], $fallbackRange[1], 'webhook', (string)$bookingId);
+    } else {
+        foreach ($uniqueDates as $d) {
+            // Targeted 1-day sync per affected date through the proven path.
+            syncBookings($d, $d, 'webhook', (string)$bookingId);
+        }
     }
-    
-    // Return success response
-    http_response_code(200);
-    echo json_encode(['status' => 'success', 'message' => 'Webhook processed']);
-    
 } catch (Throwable $e) {
-    // Record the failure but still return 200 so Bokun does not enter a retry
-    // storm. The raw payload is already captured by the logWebhook() call above;
-    // this second call annotates it with the handler error for later analysis.
-    logWebhook($topic, $data, $e->getMessage());
-    http_response_code(200);
-    echo json_encode(['status' => 'received', 'message' => 'Webhook received (processing deferred)']);
+    // Never fatal: record the error and still return 200 so Bokun does not
+    // enter a retry storm. The raw payload is already captured above.
+    $syncError = $e->getMessage();
+    error_log("bokun_webhook: sync failed for booking " . ($bookingId ?? 'unknown') . ": " . $syncError);
+    logWebhook($topic, $data, "sync failed: " . $syncError);
 }
 
-function handleBookingCreated($bookingId, $data) {
-    global $conn;
-    
-    // Check if tour already exists
-    $stmt = $conn->prepare("SELECT id FROM tours WHERE bokun_booking_id = ?");
-    $stmt->bind_param("s", $bookingId);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    if ($result->num_rows > 0) {
-        // Tour already exists, skip
-        return;
+// Mark the captured log row processed on success.
+if ($syncError === null && $logId) {
+    try {
+        $stmt = $conn->prepare("UPDATE bokun_webhook_logs SET processed = 1 WHERE id = ?");
+        if ($stmt) {
+            $stmt->bind_param("i", $logId);
+            $stmt->execute();
+            $stmt->close();
+        }
+    } catch (Throwable $e) {
+        error_log("bokun_webhook: failed to mark log $logId processed: " . $e->getMessage());
     }
-    
-    // We need to fetch full booking details from Bokun API
-    // For now, create a placeholder tour that will be enriched later
-    $stmt = $conn->prepare("
-        INSERT INTO tours (
-            title, 
-            date, 
-            time, 
-            duration,
-            bokun_booking_id,
-            external_id,
-            external_source,
-            needs_guide_assignment,
-            guide_id,
-            created_at
-        ) VALUES (
-            'Bokun Booking - Pending Sync',
-            CURDATE(),
-            '09:00',
-            '2 hours',
-            ?,
-            ?,
-            'bokun',
-            1,
-            1,
-            NOW()
-        )
-    ");
-    
-    $stmt->bind_param("ss", $bookingId, $bookingId);
-    $stmt->execute();
-    $stmt->close();
-    
-    // Mark webhook as processed
-    $stmt = $conn->prepare("UPDATE bokun_webhook_logs SET processed = 1 WHERE booking_id = ?");
-    $stmt->bind_param("s", $bookingId);
-    $stmt->execute();
-    $stmt->close();
 }
 
-function handleBookingUpdated($bookingId, $data) {
-    global $conn;
-    
-    // Update existing tour if it exists
-    $stmt = $conn->prepare("
-        UPDATE tours 
-        SET last_sync = NOW(),
-            needs_guide_assignment = CASE 
-                WHEN guide_id IS NULL OR guide_id = 1 THEN 1 
-                ELSE 0 
-            END
-        WHERE bokun_booking_id = ?
-    ");
-    
-    $stmt->bind_param("s", $bookingId);
-    $stmt->execute();
-    $stmt->close();
-}
-
-function handleBookingCancelled($bookingId, $data) {
-    global $conn;
-    
-    // Mark tour as cancelled
-    $stmt = $conn->prepare("
-        UPDATE tours 
-        SET cancelled = 1,
-            last_sync = NOW()
-        WHERE bokun_booking_id = ?
-    ");
-    
-    $stmt->bind_param("s", $bookingId);
-    $stmt->execute();
-    $stmt->close();
-}
-
-function handleAvailabilityUpdate($data) {
-    // Log availability updates for future use
-    // This could trigger re-checking of guide assignments
-    global $conn;
-    
-    $experienceId = $data['experienceId'] ?? '';
-    $dateFrom = $data['dateFrom'] ?? '';
-    $dateTo = $data['dateTo'] ?? '';
-    
-    // You can implement logic here to update local availability
-    // or trigger a full sync for affected dates
-}
+http_response_code(200);
+echo json_encode([
+    'status' => $syncError === null ? 'success' : 'received',
+    'message' => $syncError === null ? 'Webhook processed (real-time sync)' : 'Webhook received (sync deferred)',
+    'synced_dates' => $fallbackRange ? [$fallbackRange[0] . '..' . $fallbackRange[1]] : $uniqueDates
+]);
 ?>
