@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { notifySessionExpired } from './sessionExpiry';
 
 // Use environment variable for API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -19,6 +20,20 @@ axios.interceptors.request.use(
     return config;
   },
   (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// On an expired/invalid session (HTTP 401), trigger the global session-expiry
+// flow (clear token + toast + redirect to /login). This is the same axios
+// singleton used by every service (mysqlDB, ticketsService), so the handler
+// covers all axios API calls app-wide. See sessionExpiry.js.
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      notifySessionExpired();
+    }
     return Promise.reject(error);
   }
 );

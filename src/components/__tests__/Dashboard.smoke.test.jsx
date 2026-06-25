@@ -22,6 +22,7 @@ vi.mock('../../hooks/useBokunAutoSync', () => ({
 }));
 
 import Dashboard from '../Dashboard';
+import { ToastProvider } from '../Toast/ToastProvider';
 
 beforeEach(() => {
   // Dashboard uses a raw authFetch() for the pending-payments count
@@ -34,9 +35,11 @@ beforeEach(() => {
 describe('Dashboard', () => {
   it('renders without throwing', async () => {
     render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      </ToastProvider>
     );
     expect(await screen.findByText('Dashboard')).toBeInTheDocument();
   });

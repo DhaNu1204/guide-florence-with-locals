@@ -16,21 +16,11 @@ import {
 import Card from './UI/Card';
 import Button from './UI/Button';
 import { getTours, getAllGuides, getRecentGuideResponses } from '../services/mysqlDB';
+import { authFetch } from '../services/authFetch';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { useBokunSync } from '../hooks/useBokunAutoSync';
+import { useToast } from './Toast/ToastProvider';
 import AskGuideModal from './AskGuideModal';
-
-// Authenticated fetch wrapper - adds Bearer token from localStorage
-const authFetch = (url, options = {}) => {
-  const token = localStorage.getItem('token');
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    }
-  });
-};
 
 // Format a tour date to YYYY-MM-DD for the Tours deep-link.
 // Prefer the literal date part (tour.date is already 'YYYY-MM-DD') to avoid timezone shifts.
@@ -76,7 +66,7 @@ const Dashboard = () => {
   const [askTour, setAskTour] = useState(null);            // tour being asked about
   const [dashRequested, setDashRequested] = useState({});  // tour_id -> guideName (in-session note)
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const toast = useToast();
 
   useEffect(() => {
     loadDashboardData();
@@ -196,7 +186,7 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
-      setError('Failed to load dashboard data. Please try again.');
+      toast.error('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -279,23 +269,6 @@ const Dashboard = () => {
         <div className="bg-gold-50 border border-gold-200 text-gold-800 px-4 py-3 rounded-tuscan-lg flex items-center text-sm shadow-tuscan-sm">
           <FiAlertCircle className="mr-2 flex-shrink-0 text-gold-600" />
           <span>Sync error: {syncError}</span>
-        </div>
-      )}
-
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-terracotta-50 border border-terracotta-200 text-terracotta-800 px-4 py-3 rounded-tuscan-lg flex items-start shadow-tuscan-sm">
-          <FiAlertCircle className="text-xl mr-3 mt-0.5 flex-shrink-0 text-terracotta-600" />
-          <div className="flex-1">
-            <p className="font-medium">Error</p>
-            <p className="text-sm mt-1 text-terracotta-700">{error}</p>
-          </div>
-          <button
-            onClick={() => setError(null)}
-            className="ml-2 p-2 min-h-[44px] min-w-[44px] text-terracotta-500 hover:text-terracotta-700 hover:bg-terracotta-100 active:bg-terracotta-200 rounded-lg transition-colors touch-manipulation flex items-center justify-center"
-          >
-            <span className="text-xl font-bold">×</span>
-          </button>
         </div>
       )}
 

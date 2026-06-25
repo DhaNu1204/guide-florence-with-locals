@@ -1,19 +1,8 @@
 import axios from 'axios';
+import { authFetch } from './authFetch';
 
 // Use the same API base URL as other services
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-
-// Authenticated fetch wrapper - adds Bearer token from localStorage
-const authFetch = (url, options = {}) => {
-  const token = localStorage.getItem('token');
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    }
-  });
-};
 
 // Storage key for tickets cache
 const STORAGE_KEY = 'tickets_v1';

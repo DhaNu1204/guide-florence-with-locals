@@ -39,13 +39,16 @@ vi.mock('../../services/bokunAutoSync', () => ({
 }));
 
 import Tours from '../Tours';
+import { ToastProvider } from '../../components/Toast/ToastProvider';
 
 describe('Tours page', () => {
   it('renders without throwing', async () => {
     render(
-      <MemoryRouter>
-        <Tours />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <Tours />
+        </MemoryRouter>
+      </ToastProvider>
     );
     // Appears once the page mounts past loading — proves the component body ran
     expect(await screen.findByText('Tours Management')).toBeInTheDocument();
