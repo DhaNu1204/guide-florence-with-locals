@@ -18,13 +18,16 @@ vi.mock('../../services/mysqlDB', () => {
 });
 
 import GuideReports from '../GuideReports';
+import { ToastProvider } from '../../components/Toast/ToastProvider';
 
 describe('GuideReports page', () => {
   it('renders without throwing', async () => {
     render(
-      <MemoryRouter>
-        <GuideReports />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <GuideReports />
+        </MemoryRouter>
+      </ToastProvider>
     );
     expect(await screen.findByText('Guide Reports')).toBeInTheDocument();
   });

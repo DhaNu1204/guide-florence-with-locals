@@ -10,6 +10,7 @@ import AskGuideModal from '../components/AskGuideModal';
 import TourGroup from '../components/TourGroup';
 import TourCardMobile from '../components/TourCardMobile';
 import TourGroupCardMobile from '../components/TourGroupCardMobile';
+import { useToast } from '../components/Toast/ToastProvider';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 
 // Helper functions moved outside component to prevent dependency loops
@@ -265,8 +266,12 @@ const Tours = () => {
   const [filterDate, setFilterDate] = useState(initialDateParam || new Date()); // Default to today (or ?date= deep link)
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
+  const toast = useToast();
+  // Page/action feedback now surfaces as toasts (visible regardless of scroll).
+  // Thin wrappers keep the existing setError/setSuccess call sites unchanged;
+  // clearing calls like setError(null) become harmless no-ops (toasts self-dismiss).
+  const setError = (msg) => { if (msg) toast.error(msg); };
+  const setSuccess = (msg) => { if (msg) toast.success(msg); };
   const [editingNotes, setEditingNotes] = useState({});
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
@@ -1071,54 +1076,6 @@ const Tours = () => {
   return (
     <div className="min-h-screen bg-stone-50 p-3 md:p-6">
       <div className="max-w-7xl mx-auto space-y-4 md:space-y-6">
-        {/* Success Alert */}
-        {success && (
-          <div className="bg-green-50 border-l-4 border-green-500 rounded-lg p-3 md:p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center min-w-0">
-                <div className="w-8 h-8 md:w-10 md:h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
-                  <svg className="h-4 w-4 md:h-5 md:w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-green-700 truncate">{success}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSuccess(null)}
-                className="text-green-500 hover:text-green-700 p-1 flex-shrink-0 ml-2"
-              >
-                <FiX className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Error Alert */}
-        {error && (
-          <div className="bg-terracotta-50 border-l-4 border-terracotta-500 rounded-lg p-3 md:p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center min-w-0">
-                <div className="w-8 h-8 md:w-10 md:h-10 bg-terracotta-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
-                  <svg className="h-4 w-4 md:h-5 md:w-5 text-terracotta-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-terracotta-700 truncate">{error}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setError(null)}
-                className="text-terracotta-500 hover:text-terracotta-700 p-1 flex-shrink-0 ml-2"
-              >
-                <FiX className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Header — responsive */}
         <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
           <div>

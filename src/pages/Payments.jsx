@@ -11,18 +11,8 @@ import {
   generatePendingPaymentsPDF,
   generatePaymentTransactionsPDF
 } from '../utils/pdfGenerator';
-
-// Authenticated fetch wrapper - adds Bearer token from localStorage
-const authFetch = (url, options = {}) => {
-  const token = localStorage.getItem('token');
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    }
-  });
-};
+import { authFetch } from '../services/authFetch';
+import { useToast } from '../components/Toast/ToastProvider';
 
 const Payments = () => {
   const { setPageTitle } = usePageTitle();
@@ -36,7 +26,7 @@ const Payments = () => {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [unpaidTours, setUnpaidTours] = useState([]);
   const [showUnpaidAlert, setShowUnpaidAlert] = useState(false);
-  const [notification, setNotification] = useState(null);
+  const toast = useToast();
 
   // Record Payment tab state
   const [selectedTourIds, setSelectedTourIds] = useState(new Set());
@@ -47,10 +37,13 @@ const Payments = () => {
   const [recordSubmitting, setRecordSubmitting] = useState(false);
   const [guides, setGuides] = useState([]);
 
-  // Helper function to show notifications
+  // Show action feedback as a toast (visible regardless of page scroll).
+  // Keeps the showNotification(message, type) signature so all call sites are
+  // unchanged; 'warning' maps to an info toast.
   const showNotification = (message, type = 'error') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 5000); // Auto-dismiss after 5 seconds
+    if (type === 'success') toast.success(message);
+    else if (type === 'warning') toast.info(message);
+    else toast.error(message);
   };
 
   // Get current Italian date
@@ -552,39 +545,6 @@ const Payments = () => {
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 overflow-x-hidden">
-      {/* Notification */}
-      {notification && (
-        <div className={`p-4 rounded-tuscan-lg flex items-start space-x-3 ${
-          notification.type === 'success'
-            ? 'bg-olive-50 border border-olive-200 text-olive-700'
-            : notification.type === 'warning'
-            ? 'bg-gold-50 border border-gold-200 text-gold-700'
-            : 'bg-terracotta-50 border border-terracotta-200 text-terracotta-700'
-        }`}>
-          <div className="flex-shrink-0">
-            {notification.type === 'success' ? (
-              <FiCheckCircle className="text-xl" />
-            ) : notification.type === 'warning' ? (
-              <FiAlertTriangle className="text-xl" />
-            ) : (
-              <FiAlertCircle className="text-xl" />
-            )}
-          </div>
-          <div className="flex-1">
-            <p className="font-medium">
-              {notification.type === 'success' ? 'Success' :
-               notification.type === 'warning' ? 'Warning' : 'Error'}
-            </p>
-            <p className="text-sm mt-1">{notification.message}</p>
-          </div>
-          <button
-            onClick={() => setNotification(null)}
-            className="flex-shrink-0 text-stone-400 hover:text-stone-600"
-          >
-            <FiX className="text-lg" />
-          </button>
-        </div>
-      )}
       {/* Header with Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>

@@ -14,6 +14,7 @@ import {
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getAllGuides, getGuideTourReport } from '../services/mysqlDB';
+import { useToast } from '../components/Toast/ToastProvider';
 
 // Tuscan PDF palette (mirrors src/utils/pdfGenerator.js)
 const PDF_COLORS = {
@@ -76,7 +77,10 @@ const GuideReports = () => {
   const [rangeEnd, setRangeEnd] = useState('');
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const toast = useToast();
+  // Page/action feedback surfaces as a toast now; thin wrapper keeps the
+  // existing setError call sites unchanged (setError('') becomes a no-op).
+  const setError = (msg) => { if (msg) toast.error(msg); };
   const [report, setReport] = useState(null); // { mode: 'all'|'single', ...data }
 
   useEffect(() => {
@@ -409,11 +413,6 @@ const GuideReports = () => {
           </label>
         </div>
 
-        {error && (
-          <div className="mt-3 flex items-center text-sm text-terracotta-700 bg-terracotta-50 border border-terracotta-200 rounded-tuscan-lg px-3 py-2">
-            <FiAlertCircle className="mr-2 flex-shrink-0" />{error}
-          </div>
-        )}
       </Card>
 
       {/* Results */}

@@ -1,7 +1,9 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider, useToast } from './components/Toast/ToastProvider';
+import { SESSION_EXPIRED_EVENT, resetSessionExpiryGuard } from './services/sessionExpiry';
 import ModernLayout from './components/Layout/ModernLayout';
 import Dashboard from './components/Dashboard';
 import Guides from './pages/Guides';
@@ -17,6 +19,32 @@ import GuideRespond from './pages/GuideRespond';
 import { PageTitleProvider } from './contexts/PageTitleContext';
 import BokunAutoSyncProvider from './components/BokunAutoSyncProvider';
 import './index.css';
+
+// Bridges non-React 401 handling (axios interceptor + authFetch) to React.
+// Listens for the window 'app:session-expired' event, shows a toast, and
+// redirects to /login. Mounted inside Router + ToastProvider (so it has both
+// useNavigate and useToast) and OUTSIDE AuthProvider (so it stays mounted even
+// while AuthProvider is verifying the token).
+function SessionExpiryListener() {
+  const toast = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const handler = () => {
+      if (location.pathname !== '/login') {
+        toast.error('Your session has expired. Please log in again.');
+        navigate('/login', { replace: true });
+      }
+      // Re-arm the dedupe guard so a future session can notify again.
+      setTimeout(() => resetSessionExpiryGuard(), 1500);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handler);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
+  }, [toast, navigate, location.pathname]);
+
+  return null;
+}
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -150,13 +178,16 @@ function App() {
   return (
     <Sentry.ErrorBoundary fallback={ErrorFallback} showDialog>
       <Router>
-        <AuthProvider>
-          <PageTitleProvider>
-            <BokunAutoSyncProvider>
-              <AppRoutes />
-            </BokunAutoSyncProvider>
-          </PageTitleProvider>
-        </AuthProvider>
+        <ToastProvider>
+          <SessionExpiryListener />
+          <AuthProvider>
+            <PageTitleProvider>
+              <BokunAutoSyncProvider>
+                <AppRoutes />
+              </BokunAutoSyncProvider>
+            </PageTitleProvider>
+          </AuthProvider>
+        </ToastProvider>
       </Router>
     </Sentry.ErrorBoundary>
   );
