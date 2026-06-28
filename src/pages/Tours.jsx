@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { FiPlus, FiRefreshCw, FiSave, FiX, FiLayers, FiCheckSquare, FiSquare, FiUsers as FiUsersIcon, FiDownload, FiMessageCircle, FiCopy, FiExternalLink, FiCheck } from 'react-icons/fi';
-import { format, startOfMonth, addMonths, subMonths } from 'date-fns';
+import { format } from 'date-fns';
 import mysqlDB, { tourGroupsAPI, getOpenGuideRequests } from '../services/mysqlDB';
 import bokunAutoSync from '../services/bokunAutoSync';
 import Card from '../components/UI/Card';
@@ -10,6 +10,7 @@ import AskGuideModal from '../components/AskGuideModal';
 import TourGroup from '../components/TourGroup';
 import TourCardMobile from '../components/TourCardMobile';
 import TourGroupCardMobile from '../components/TourGroupCardMobile';
+import DateFilter from '../components/DateFilter';
 import { useToast } from '../components/Toast/ToastProvider';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { getMaxPax, countActivePax } from '../utils/tourCapacity';
@@ -1132,139 +1133,20 @@ const Tours = () => {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">
-                {showDateRange ? 'Date Range' : 'Select Date'}
-              </label>
-              {/* Date input(s) */}
-              {showDateRange ? (
-                <div className="flex gap-2 items-center mb-2">
-                  <input
-                    type="date"
-                    value={rangeStartDate}
-                    onChange={(e) => setRangeStartDate(e.target.value)}
-                    className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
-                  />
-                  <span className="text-stone-400 text-sm flex-shrink-0">to</span>
-                  <input
-                    type="date"
-                    value={rangeEndDate}
-                    min={rangeStartDate || undefined}
-                    onChange={(e) => setRangeEndDate(e.target.value)}
-                    className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
-                  />
-                </div>
-              ) : (
-                <div className="mb-2">
-                  <input
-                    type="date"
-                    value={filterDate ? format(filterDate, 'yyyy-MM-dd') : ''}
-                    onChange={(e) => {
-                      setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
-                      setShowUpcoming(false);
-                      setShowPast(false);
-                      setShowDateRange(false);
-                    }}
-                    className="w-full px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
-                  />
-                  {/* Jump to the 1st of prev/next month (native arrows keep day-of-month) */}
-                  <div className="flex items-center gap-2 flex-wrap mt-2">
-                    <button
-                      onClick={() => {
-                        const base = filterDate || new Date();
-                        setFilterDate(startOfMonth(subMonths(base, 1)));
-                        setShowUpcoming(false);
-                        setShowPast(false);
-                        setShowDateRange(false);
-                      }}
-                      className="px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400"
-                      title="Jump to the 1st of the previous month"
-                    >
-                      ◀ Prev month
-                    </button>
-                    <span className="text-xs font-medium text-stone-500 min-w-[6.5rem] text-center flex-1">
-                      {format(filterDate || new Date(), 'MMMM yyyy')}
-                    </span>
-                    <button
-                      onClick={() => {
-                        const base = filterDate || new Date();
-                        setFilterDate(startOfMonth(addMonths(base, 1)));
-                        setShowUpcoming(false);
-                        setShowPast(false);
-                        setShowDateRange(false);
-                      }}
-                      className="px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400"
-                      title="Jump to the 1st of the next month"
-                    >
-                      Next month ▶
-                    </button>
-                  </div>
-                </div>
-              )}
-              {/* Period buttons — horizontal scrollable on mobile */}
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide mt-2">
-                <button
-                  onClick={() => {
-                    setFilterDate(new Date());
-                    setShowUpcoming(false);
-                    setShowPast(false);
-                    setShowDateRange(false);
-                  }}
-                  className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
-                    !showUpcoming && !showPast && !showDateRange && filterDate && format(filterDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
-                      ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
-                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
-                  }`}
-                >
-                  Today
-                </button>
-                <button
-                  onClick={() => {
-                    setShowUpcoming(true);
-                    setShowPast(false);
-                    setShowDateRange(false);
-                  }}
-                  className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
-                    showUpcoming && !showPast && !showDateRange
-                      ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
-                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
-                  }`}
-                  title="Show tours for the next 60 days"
-                >
-                  Upcoming
-                </button>
-                <button
-                  onClick={() => {
-                    setShowPast(true);
-                    setShowUpcoming(false);
-                    setShowDateRange(false);
-                  }}
-                  className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
-                    showPast && !showDateRange
-                      ? 'bg-amber-600 text-white active:bg-amber-700'
-                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
-                  }`}
-                  title="Show completed tours from past 40 days"
-                >
-                  Past 40 Days
-                </button>
-                <button
-                  onClick={() => {
-                    setShowDateRange(true);
-                    setShowUpcoming(false);
-                    setShowPast(false);
-                  }}
-                  className={`px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
-                    showDateRange
-                      ? 'bg-terracotta-500 text-white active:bg-terracotta-600'
-                      : 'bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400'
-                  }`}
-                  title="Select a custom date range"
-                >
-                  Date Range
-                </button>
-              </div>
-            </div>
+            <DateFilter
+              filterDate={filterDate}
+              setFilterDate={setFilterDate}
+              showUpcoming={showUpcoming}
+              setShowUpcoming={setShowUpcoming}
+              showPast={showPast}
+              setShowPast={setShowPast}
+              showDateRange={showDateRange}
+              setShowDateRange={setShowDateRange}
+              rangeStartDate={rangeStartDate}
+              setRangeStartDate={setRangeStartDate}
+              rangeEndDate={rangeEndDate}
+              setRangeEndDate={setRangeEndDate}
+            />
           </div>
         </Card>
 
