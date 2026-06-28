@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { FiPlus, FiRefreshCw, FiSave, FiX, FiLayers, FiCheckSquare, FiSquare, FiUsers as FiUsersIcon, FiDownload, FiMessageCircle, FiCopy, FiExternalLink, FiCheck } from 'react-icons/fi';
-import { format } from 'date-fns';
+import { format, startOfMonth, addMonths, subMonths } from 'date-fns';
 import mysqlDB, { tourGroupsAPI, getOpenGuideRequests } from '../services/mysqlDB';
 import bokunAutoSync from '../services/bokunAutoSync';
 import Card from '../components/UI/Card';
@@ -1155,17 +1155,51 @@ const Tours = () => {
                   />
                 </div>
               ) : (
-                <input
-                  type="date"
-                  value={filterDate ? format(filterDate, 'yyyy-MM-dd') : ''}
-                  onChange={(e) => {
-                    setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
-                    setShowUpcoming(false);
-                    setShowPast(false);
-                    setShowDateRange(false);
-                  }}
-                  className="w-full px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500 mb-2"
-                />
+                <div className="mb-2">
+                  <input
+                    type="date"
+                    value={filterDate ? format(filterDate, 'yyyy-MM-dd') : ''}
+                    onChange={(e) => {
+                      setFilterDate(e.target.value ? new Date(e.target.value) : new Date());
+                      setShowUpcoming(false);
+                      setShowPast(false);
+                      setShowDateRange(false);
+                    }}
+                    className="w-full px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+                  />
+                  {/* Jump to the 1st of prev/next month (native arrows keep day-of-month) */}
+                  <div className="flex items-center gap-2 flex-wrap mt-2">
+                    <button
+                      onClick={() => {
+                        const base = filterDate || new Date();
+                        setFilterDate(startOfMonth(subMonths(base, 1)));
+                        setShowUpcoming(false);
+                        setShowPast(false);
+                        setShowDateRange(false);
+                      }}
+                      className="px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400"
+                      title="Jump to the 1st of the previous month"
+                    >
+                      ◀ Prev month
+                    </button>
+                    <span className="text-xs font-medium text-stone-500 min-w-[6.5rem] text-center flex-1">
+                      {format(filterDate || new Date(), 'MMMM yyyy')}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const base = filterDate || new Date();
+                        setFilterDate(startOfMonth(addMonths(base, 1)));
+                        setShowUpcoming(false);
+                        setShowPast(false);
+                        setShowDateRange(false);
+                      }}
+                      className="px-3 md:px-4 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation active:scale-[0.98] whitespace-nowrap bg-stone-200 text-stone-700 hover:bg-stone-300 active:bg-stone-400"
+                      title="Jump to the 1st of the next month"
+                    >
+                      Next month ▶
+                    </button>
+                  </div>
+                </div>
               )}
               {/* Period buttons — horizontal scrollable on mobile */}
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide mt-2">
