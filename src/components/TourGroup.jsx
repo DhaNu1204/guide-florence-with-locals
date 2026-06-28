@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import { tourGroupsAPI } from '../services/mysqlDB';
+import { getMaxPax, countActivePax, countActiveBookings } from '../utils/tourCapacity';
 
 const GroupTourNames = ({ tour }) => {
   const names = (() => {
@@ -47,9 +48,12 @@ const TourGroup = ({
   const [savingGuide, setSavingGuide] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
 
-  const totalPax = group.total_pax || group.tours?.reduce((sum, t) => sum + (parseInt(t.participants) || 0), 0) || 0;
-  const bookingCount = group.booking_count || group.tours?.length || 0;
+  // PAX / booking counts EXCLUDE cancelled bookings (cancelled still shown in the
+  // expanded list, struck-through, but never counted toward PAX, the badge, or FULL).
+  const totalPax = group.tours ? countActivePax(group.tours) : (group.total_pax || 0);
+  const bookingCount = group.tours ? countActiveBookings(group.tours) : (group.booking_count || 0);
   const guideName = group.assigned_guide_name || group.guide_name || guides.find(g => g.id == group.guide_id)?.name || null;
+  const maxPax = getMaxPax(group.display_name);
 
   // Collect unique languages from tours
   const languages = [...new Set(
@@ -108,7 +112,9 @@ const TourGroup = ({
       className={`border rounded-tuscan-lg overflow-hidden transition-all duration-200 ${
         isDragOver
           ? 'border-terracotta-400 bg-terracotta-50 shadow-md ring-2 ring-terracotta-200'
-          : 'border-renaissance-200 bg-renaissance-50/30'
+          : guideName
+            ? 'border-green-200 bg-green-50'
+            : 'border-renaissance-200 bg-renaissance-50/30'
       }`}
       draggable={draggable}
       onDragStart={onDragStart}
@@ -158,7 +164,7 @@ const TourGroup = ({
           <span className="text-xs text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded-full">
             {bookingCount} {bookingCount === 1 ? 'booking' : 'bookings'}
           </span>
-          {totalPax >= 9 && (
+          {totalPax >= maxPax && (
             <span className="text-xs text-terracotta-700 bg-terracotta-100 px-1.5 py-0.5 rounded-full font-medium">
               FULL
             </span>

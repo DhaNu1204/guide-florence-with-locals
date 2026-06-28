@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import { tourGroupsAPI } from '../services/mysqlDB';
+import { getMaxPax, countActivePax, countActiveBookings } from '../utils/tourCapacity';
 
 const getChannelColor = (channel) => {
   if (!channel) return 'text-stone-500';
@@ -28,9 +29,11 @@ const TourGroupCardMobile = ({
   const [savingGuide, setSavingGuide] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
 
-  const totalPax = group.total_pax || group.tours?.reduce((sum, t) => sum + (parseInt(t.participants) || 0), 0) || 0;
-  const bookingCount = group.booking_count || group.tours?.length || 0;
+  // PAX / booking counts EXCLUDE cancelled bookings (cancelled still listed when expanded).
+  const totalPax = group.tours ? countActivePax(group.tours) : (group.total_pax || 0);
+  const bookingCount = group.tours ? countActiveBookings(group.tours) : (group.booking_count || 0);
   const guideName = group.assigned_guide_name || group.guide_name || guides.find(g => g.id == group.guide_id)?.name || null;
+  const maxPax = getMaxPax(group.display_name);
   const groupTime = group.group_time ? group.group_time.substring(0, 5) : '';
 
   const languages = [...new Set(
@@ -83,7 +86,9 @@ const TourGroupCardMobile = ({
       className={`border rounded-tuscan-lg overflow-hidden transition-all shadow-tuscan ${
         isSelected
           ? 'border-terracotta-400 ring-2 ring-terracotta-200 bg-terracotta-50/30'
-          : 'border-renaissance-200 bg-renaissance-50/30'
+          : guideName
+            ? 'border-green-200 bg-green-50'
+            : 'border-renaissance-200 bg-renaissance-50/30'
       }`}
       data-group-id={group.id}
       data-type="group"
@@ -139,8 +144,8 @@ const TourGroupCardMobile = ({
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-sm flex-shrink-0">
             <FiUsers size={14} className="text-stone-500" />
-            <span className="font-semibold text-stone-900">{totalPax}/9 PAX</span>
-            {totalPax >= 9 && (
+            <span className="font-semibold text-stone-900">{totalPax}/{maxPax} PAX</span>
+            {totalPax >= maxPax && (
               <span className="text-xs text-terracotta-700 bg-terracotta-100 px-1.5 py-0.5 rounded-full font-medium">
                 FULL
               </span>
