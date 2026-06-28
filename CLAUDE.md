@@ -292,6 +292,35 @@ A `token` query param routes to the **PUBLIC guide branch** (no auth); otherwise
 | Public | GET | `?token=XYZ` | Minimal tour logistics only (date/time/title/language/participants/meeting_point) — **never customer PII** |
 | Public | POST | `?token=XYZ` `{action:'accept'\|'decline'}` | Accept assigns the guide (double-booking + already-taken guards, expires sibling pendings); decline records it |
 
+## Guide WhatsApp Reminders (Jun 2026)
+
+Automatic Twilio WhatsApp reminder to the **assigned guide ~1 hour before each tour** so guides don't forget. **Touches no payment logic.** Built and live (`TWILIO_REMINDERS_ENABLED=true`).
+
+### How it works
+- **`twilio_reminders.php` → `reconcileGuideReminders($conn)`** schedules a **Twilio Scheduled Message** (Messaging Service + `ContentSid`, `ScheduleType=fixed`, `SendAt = tour start − TWILIO_GUIDE_REMINDER_LEAD_MIN`) for every tour that is **guide-assigned, non-cancelled, non-ticket, and starts within the next 7 days**. Tour start is computed in **Europe/Rome**; `SendAt` is sent to Twilio in UTC.
+- On change (tour time moved, guide reassigned, tour cancelled/unassigned) it **cancels and reschedules / cancels** the existing scheduled message so the booked reminder always matches live data. Idempotent — safe to run repeatedly.
+- **`guide_reminders` table** (self-provisioned via `CREATE TABLE IF NOT EXISTS`) tracks one row per tour: `tour_id` (UNIQUE), `guide_id`, `twilio_sid`, `send_at_utc`, `status` ENUM('scheduled','canceled','sent','failed'), `last_error`.
+
+### Why reconcile on every sync (not cron)
+- **Twilio's scheduled-message window is max 7 days out.** So reminders can't all be booked up front — they're **reconciled on EVERY sync**: hooked into the end of `syncBookings()` and into `tours.php` PUT (after a guide is assigned), **both exception-isolated** (a reminder failure can never break booking sync or guide assignment). A tour gets its reminder scheduled once it enters the 7-day window; **Twilio then fires the send at the exact time** — no dependence on Hostinger cron (which doesn't reliably fire on this host).
+
+### Config (`.env`, read via EnvLoader / `config.php`)
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`
+- `TWILIO_MESSAGING_SERVICE_SID` — `MGe678…` (WhatsApp sender `whatsapp:+17088408565` attached)
+- `TWILIO_GUIDE_REMINDER_CONTENT_SID` — `HX04be4d…` (Meta-**approved** UTILITY template)
+- `TWILIO_GUIDE_REMINDER_LEAD_MIN=60`
+- `TWILIO_REMINDERS_ENABLED=true`
+
+The Auth Token is used only for the HTTP Basic auth header — never logged or echoed.
+
+### Template (Italian, approved UTILITY)
+> `Ciao {{1}}, promemoria del tuo tour di oggi: {{2}} alle {{3}}. Grazie!`
+>
+> `{{1}}` = guide first name, `{{2}}` = tour title, `{{3}}` = start time (HH:MM).
+
+### Failures
+- A schedule failure (e.g. an **invalid guide phone number**) is recorded in `guide_reminders.last_error` with `status='failed'` and **swallowed** (never throws to the caller). It's **retried automatically on the next reconcile** once the underlying data is fixed (e.g. the guide's phone corrected in the Guides page). Phone normalization deliberately does **not** guess a country code — Italian mobiles stored without `+39` are treated as unusable until corrected.
+
 ## Group-Aware Payment System (Feb 2026)
 
 ### SQL Pattern
