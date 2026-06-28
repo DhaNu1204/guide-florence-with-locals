@@ -1532,6 +1532,11 @@ const Tours = () => {
                                     )}
 
                                     <div className="flex items-center gap-2 flex-wrap">
+                                      {Number(tour.is_private) === 1 && (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                          Private
+                                        </span>
+                                      )}
                                       {tour.paid && (
                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-olive-100 text-olive-800">
                                           Paid

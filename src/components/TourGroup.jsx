@@ -259,7 +259,14 @@ const TourGroup = ({
                     className="px-4 py-2 text-sm text-stone-900 cursor-pointer hover:text-terracotta-600"
                     onClick={() => onTourClick?.(tour)}
                   >
-                    <div>{tour.customer_name || 'N/A'}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span>{tour.customer_name || 'N/A'}</span>
+                      {Number(tour.is_private) === 1 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          Private
+                        </span>
+                      )}
+                    </div>
                     <GroupTourNames tour={tour} />
                   </td>
                   <td className="px-4 py-2 text-sm text-stone-600">

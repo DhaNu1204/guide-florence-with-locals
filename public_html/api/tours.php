@@ -137,6 +137,13 @@ if ($checkProductIdCol->num_rows === 0) {
     error_log("Product classification: backfilled product_id column, populated products table");
 }
 
+// Ensure is_private flag column exists on tours (returned via t.* below).
+$checkIsPrivateCol = $conn->query("SHOW COLUMNS FROM tours LIKE 'is_private'");
+if ($checkIsPrivateCol && $checkIsPrivateCol->num_rows === 0) {
+    $conn->query("ALTER TABLE tours ADD COLUMN `is_private` TINYINT(1) NOT NULL DEFAULT 0 AFTER `product_id`");
+    $conn->query("ALTER TABLE tours ADD KEY `idx_tours_is_private` (`is_private`)");
+}
+
 // Always ensure known ticket products are classified correctly.
 // Runs after the products table is guaranteed to exist, and after
 // bokun_sync.php may have auto-registered new products as 'tour' via INSERT IGNORE.

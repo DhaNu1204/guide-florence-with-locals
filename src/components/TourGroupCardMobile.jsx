@@ -232,6 +232,11 @@ const TourGroupCardMobile = ({
                 >
                   <span className="text-sm text-stone-900 truncate block">
                     {tour.customer_name || 'N/A'}
+                    {Number(tour.is_private) === 1 && (
+                      <span className="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                        Private
+                      </span>
+                    )}
                   </span>
                 </div>
 
