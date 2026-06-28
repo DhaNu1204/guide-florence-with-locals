@@ -680,6 +680,19 @@ switch ($method) {
                         $tour['payment_status'] = 'unpaid';
                     }
 
+                    // If this update touched the guide assignment, reconcile the
+                    // guide WhatsApp reminders so a newly-assigned within-7-day
+                    // tour schedules promptly. Flag-gated + fully isolated:
+                    // never affects the assignment response. No payment fields.
+                    if (isset($data['guideId']) || isset($data['guide_id'])) {
+                        try {
+                            require_once __DIR__ . '/twilio_reminders.php';
+                            reconcileGuideReminders($conn);
+                        } catch (\Throwable $reminderErr) {
+                            error_log('tours.php: guide reminder reconcile failed (non-fatal): ' . $reminderErr->getMessage());
+                        }
+                    }
+
                     echo json_encode($tour);
                 } else {
                     header("HTTP/1.1 404 Not Found");
