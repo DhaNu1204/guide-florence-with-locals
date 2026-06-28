@@ -373,6 +373,15 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
             }
         }
 
+        // Reconcile guide WhatsApp reminders (flag-gated; no-op when disabled).
+        // Fully isolated: any failure here must never affect booking sync.
+        try {
+            require_once __DIR__ . '/twilio_reminders.php';
+            reconcileGuideReminders($conn);
+        } catch (\Throwable $reminderErr) {
+            error_log('Bokun Sync: guide reminder reconcile failed (non-fatal): ' . $reminderErr->getMessage());
+        }
+
         // Calculate duration and update sync log
         $duration = round(microtime(true) - $startTime, 2);
         $syncedCount = $createdCount + $updatedCount;
