@@ -321,6 +321,58 @@ The Auth Token is used only for the HTTP Basic auth header — never logged or e
 ### Failures
 - A schedule failure (e.g. an **invalid guide phone number**) is recorded in `guide_reminders.last_error` with `status='failed'` and **swallowed** (never throws to the caller). It's **retried automatically on the next reconcile** once the underlying data is fixed (e.g. the guide's phone corrected in the Guides page). Phone normalization deliberately does **not** guess a country code — Italian mobiles stored without `+39` are treated as unusable until corrected.
 
+## Tour Classification (Jun 2026)
+
+`public_html/api/tour_classification.php` is the **single source of truth** for private-tour classification and per-product PAX capacity. Pure logic — no DB access, no side effects, no payment logic — safe to `require_once` anywhere.
+
+### Functions
+- **`isPrivateBooking($productId, $rateId, $rateTitle)`** → bool
+- **`getMaxPaxForTitle($title)`** → 9 for `uffizi` (incl. Uffizi+Accademia combos), 19 for `accademia`/`david`, else 9
+- **`bokunRateInfo($bokunData)`** → `[rateId, rateTitle]` (accepts a decoded array or JSON string)
+
+### Private rules (the constants live in this file)
+```php
+FULLY_PRIVATE_PRODUCTS = [809837, 828971, 850642, 878643, 911547, 945194, 962886, 947299, 1145330, 1233544, 1115569];
+MIXED_PRIVATE_RATES    = [962885 => [2266785], 1130528 => [2244449]];
+```
+- `productId` ∈ FULLY_PRIVATE_PRODUCTS → **private**.
+- `productId` is a MIXED key → private only if `(int)rateId` is in that product's list; if rateId is empty/missing, fall back to `rateTitle` (trimmed, lowercased) containing `private`.
+- else → not private.
+
+### Where the values come from in `bokun_data`
+- **rateId** = `productBookings[0].fields.rateId`  (⚠️ NOT top-level `productBookings[0].rateId`, which doesn't exist)
+- **rateTitle** = `productBookings[0].rateTitle` (free text — has trailing-space/casing variants; trim + lowercase before matching)
+
+### ➜ To add a new private product or rate
+Edit the constants in `tour_classification.php` (add the product id to `FULLY_PRIVATE_PRODUCTS`, or add/extend the `MIXED_PRIVATE_RATES` rate-id list), then **re-run a backfill + regroup** so existing rows pick it up: a one-off CLI that loops `tours.bokun_data`, recomputes `is_private` via the helper, then calls `autoGroupAfterSync($conn, start, end)`. New bookings are classified automatically on the next sync.
+
+## Tour Grouping (Jun 2026 — product-aware)
+
+`autoGroupAfterSync($conn, $startDate, $endDate)` in `bokun_sync.php` (runs at the end of every `syncBookings`):
+
+- **Group key = `product_id | date | HH:MM`** (was normalized title) — same product at the same departure groups together even when sold under different channel titles (e.g. 962885's "Uffizi & Accademia Walking Tour…" + "Uffizi, David Tour & Gelato…").
+- **Excluded from auto-grouping** (left standalone, `group_id` NULL): `cancelled = 1`, `is_private = 1`, or `product_id IS NULL`. **Private tours are never auto-grouped.**
+- **Rebuild model**: detaches all auto-group tours in range (manual merges, `is_manual_merge = 1`, are **untouched**), drops orphaned auto groups, then regroups from the candidates. Cancelled/private tours get `group_id` cleared.
+- **`display_name`** = the **most-frequent title** among the group's bookings (tie → the title with most PAX), via `pickDisplayTitle()`.
+- **Per-product capacity**: `getMaxPaxForTitle(display_name)` (Tour Classification) — sub-groups split when active PAX would exceed it; stored on `tour_groups.max_pax`.
+
+### `tours.is_private` column
+- `TINYINT(1) NOT NULL DEFAULT 0` + `idx_tours_is_private`. **Self-provisioned** by `ensureIsPrivateColumn($conn)` in `bokun_sync.php` and by `tours.php` (same `SHOW COLUMNS` guard pattern as `product_id`).
+- Set on **every** insert/update in `bokun_sync.php` via `isPrivateBooking()`. Returned to the frontend through the existing `SELECT t.*` (no SELECT change).
+- **Frontend**: purple **Private** badge (`bg-purple-100 text-purple-800`) on Tours rows + `TourCardMobile` (private tours render standalone with the normal guide-assign UI + Ask button). Cancelled bookings are excluded from PAX/booking/FULL counts (`src/utils/tourCapacity.js` — `getMaxPax`, `countActivePax`, `countActiveBookings`). Assigned + non-cancelled tours get a light-green background (priority: cancelled red > assigned green > default).
+
+## Tours date filter (Jun 2026)
+
+`src/components/DateFilter.jsx` — a themed in-app calendar replaces the native `<input type="date">` and the loose period buttons; `Tours.jsx` just renders `<DateFilter {...state/setters} />` (all existing filter state reused: `filterDate`, `showUpcoming`, `showPast`, `showDateRange`, `rangeStartDate`, `rangeEndDate`).
+- **Trigger** button: calendar icon + selected date `EEE, d MMM yyyy`; "Pick a date" when in Upcoming/Past/Range mode; terracotta border/ring when open.
+- **Popover calendar**: date-fns 6-row grid (`startOfMonth/endOfMonth/startOfWeek/endOfWeek/eachDayOfInterval`); selected day = terracotta filled, today = inset terracotta ring, out-of-month muted, hover stone. Outside-click + Escape close.
+- **Month arrows land on the 1st** (`startOfMonth(addMonths/subMonths(filterDate||today, 1))`) and keep the popover open (owner's preferred behavior).
+- **Segmented control**: Today / Upcoming / Past 40 Days / Date Range (active segment terracotta), wired to the same handlers; Range mode shows the two date inputs (`end >= start`).
+
+## Guide phone validation (Jun 2026)
+
+The Add/Edit Guide form (`src/pages/Guides.jsx`) requires an **international** phone so the WhatsApp tour reminder can actually send. `isValidGuidePhone(phone)` strips spaces/dashes/dots/parens then requires `/^(\+|00)\d{8,15}$/` (must start with `+` or `00` country code, then 8–15 digits; empty = invalid). On an invalid number the form shows an inline terracotta warning + a toast and **blocks save**. Bare local numbers (e.g. `3392863290`) and emails in the phone field are rejected. Pairs with the reminder backend, which deliberately won't guess a country code.
+
 ## Group-Aware Payment System (Feb 2026)
 
 ### SQL Pattern
