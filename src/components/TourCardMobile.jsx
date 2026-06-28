@@ -87,7 +87,9 @@ const TourCardMobile = ({
           ? 'border-terracotta-400 ring-2 ring-terracotta-200 bg-terracotta-50/30'
           : tour.cancelled
             ? 'border-stone-200 bg-red-50'
-            : 'border-stone-200 bg-white'
+            : tour.guide_id
+              ? 'border-green-200 bg-green-50'
+              : 'border-stone-200 bg-white'
       }`}
       data-tour-id={tour.id}
       data-type="tour"

@@ -12,6 +12,7 @@ import TourCardMobile from '../components/TourCardMobile';
 import TourGroupCardMobile from '../components/TourGroupCardMobile';
 import { useToast } from '../components/Toast/ToastProvider';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
+import { getMaxPax, countActivePax } from '../utils/tourCapacity';
 
 // Helper functions moved outside component to prevent dependency loops
 const isToday = (tourDate, tourTime) => {
@@ -564,10 +565,10 @@ const Tours = () => {
         periodGroup.items.forEach(item => {
           if (item._isGroup) {
             itemCount += 1; // Group = 1 tour for counting
-            totalParticipants += item.group.total_pax || 0;
+            totalParticipants += countActivePax(item.group.tours); // exclude cancelled bookings
           } else {
             itemCount += 1;
-            totalParticipants += getParticipantCount(item);
+            if (!item.cancelled) totalParticipants += getParticipantCount(item); // exclude cancelled
           }
         });
       });
@@ -734,6 +735,17 @@ const Tours = () => {
     }
   };
 
+  // Resolve a tour object by id from either the ungrouped list or any group's tours.
+  const findTourById = (tid) => {
+    const t = tours.find(t => t.id === tid);
+    if (t) return t;
+    for (const g of tourGroups) {
+      const gt = (g.tours || []).find(t => t.id === tid);
+      if (gt) return gt;
+    }
+    return null;
+  };
+
   // === Drag-and-Drop Handlers ===
   const handleDragStart = (e, id, type) => {
     // type: 'tour' or 'group'
@@ -812,21 +824,13 @@ const Tours = () => {
 
     if (tourIdsToMerge.length < 2) return;
 
-    // Validate PAX <= 9
-    const totalPax = tourIdsToMerge.reduce((sum, tid) => {
-      // Check in tours list
-      const tour = tours.find(t => t.id === tid);
-      if (tour) return sum + (parseInt(tour.participants) || getParticipantCount(tour));
-      // Check in group tours
-      for (const g of tourGroups) {
-        const gt = (g.tours || []).find(t => t.id === tid);
-        if (gt) return sum + (parseInt(gt.participants) || 1);
-      }
-      return sum + 1;
-    }, 0);
+    // Validate PAX against the capacity for this tour type (exclude cancelled bookings).
+    const mergeTours = tourIdsToMerge.map(findTourById).filter(Boolean);
+    const totalPax = mergeTours.reduce((sum, t) => t.cancelled ? sum : sum + (parseInt(t.participants) || getParticipantCount(t)), 0);
+    const maxPax = mergeTours.length ? Math.min(...mergeTours.map(t => getMaxPax(t.title))) : 9;
 
-    if (totalPax > 9) {
-      setError(`Cannot merge: total PAX (${totalPax}) exceeds maximum of 9`);
+    if (totalPax > maxPax) {
+      setError(`Cannot merge: total PAX (${totalPax}) exceeds maximum of ${maxPax}`);
       setTimeout(() => setError(null), 5000);
       return;
     }
@@ -918,19 +922,13 @@ const Tours = () => {
       return;
     }
 
-    // Validate PAX <= 9
-    const totalPax = tourIdsToMerge.reduce((sum, tid) => {
-      const tour = tours.find(t => t.id === tid);
-      if (tour) return sum + (parseInt(tour.participants) || getParticipantCount(tour));
-      for (const g of tourGroups) {
-        const gt = (g.tours || []).find(t => t.id === tid);
-        if (gt) return sum + (parseInt(gt.participants) || 1);
-      }
-      return sum + 1;
-    }, 0);
+    // Validate PAX against the capacity for this tour type (exclude cancelled bookings).
+    const mergeTours = tourIdsToMerge.map(findTourById).filter(Boolean);
+    const totalPax = mergeTours.reduce((sum, t) => t.cancelled ? sum : sum + (parseInt(t.participants) || getParticipantCount(t)), 0);
+    const maxPax = mergeTours.length ? Math.min(...mergeTours.map(t => getMaxPax(t.title))) : 9;
 
-    if (totalPax > 9) {
-      setError(`Cannot merge: total PAX (${totalPax}) exceeds maximum of 9`);
+    if (totalPax > maxPax) {
+      setError(`Cannot merge: total PAX (${totalPax}) exceeds maximum of ${maxPax}`);
       setTimeout(() => setError(null), 5000);
       return;
     }
@@ -1251,8 +1249,8 @@ const Tours = () => {
               const isTodayDate = format(new Date(), 'yyyy-MM-dd') === dateGroup.date;
               const dateParticipants = dateGroup.periods.reduce((total, periodGroup) =>
                 total + periodGroup.items.reduce((sum, item) => {
-                  if (item._isGroup) return sum + (item.group.total_pax || 0);
-                  return sum + getParticipantCount(item);
+                  if (item._isGroup) return sum + countActivePax(item.group.tours);
+                  return sum + (item.cancelled ? 0 : getParticipantCount(item));
                 }, 0), 0
               );
               const dateTourCount = dateGroup.periods.reduce((total, periodGroup) =>
@@ -1293,8 +1291,8 @@ const Tours = () => {
                           </h4>
                           <div className="text-xs text-stone-600">
                             {periodGroup.items.length} tours · {periodGroup.items.reduce((sum, item) => {
-                              if (item._isGroup) return sum + (item.group.total_pax || 0);
-                              return sum + getParticipantCount(item);
+                              if (item._isGroup) return sum + countActivePax(item.group.tours);
+                              return sum + (item.cancelled ? 0 : getParticipantCount(item));
                             }, 0)} PAX
                           </div>
                         </div>
@@ -1364,12 +1362,16 @@ const Tours = () => {
                           return (
                             <tr
                               key={tour.id}
-                              className={`hover:bg-stone-50 cursor-pointer transition-all ${
-                                isDraggedOver ? 'bg-terracotta-50 ring-2 ring-terracotta-200' : ''
+                              className={`cursor-pointer transition-all ${
+                                isDraggedOver
+                                  ? 'bg-terracotta-50 ring-2 ring-terracotta-200'
+                                  : tour.cancelled
+                                    ? 'bg-red-50'
+                                    : tour.guide_id
+                                      ? 'bg-green-50 hover:bg-green-100'
+                                      : 'hover:bg-stone-50'
                               } ${
                                 dragState.draggedId === tour.id && dragState.draggedType === 'tour' ? 'opacity-50' : ''
-                              } ${
-                                tour.cancelled ? 'bg-red-50' : ''
                               }`}
                               onClick={() => handleRowClick(tour)}
                               draggable={true}
@@ -1572,8 +1574,8 @@ const Tours = () => {
                         </span>
                         <span className="text-xs text-stone-400">
                           {periodGroup.items.length} · {periodGroup.items.reduce((sum, item) => {
-                            if (item._isGroup) return sum + (item.group.total_pax || 0);
-                            return sum + getParticipantCount(item);
+                            if (item._isGroup) return sum + countActivePax(item.group.tours);
+                            return sum + (item.cancelled ? 0 : getParticipantCount(item));
                           }, 0)} PAX
                         </span>
                         <div className="h-px flex-1 bg-stone-300" />
