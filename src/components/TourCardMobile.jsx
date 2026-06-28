@@ -226,8 +226,13 @@ const TourCardMobile = ({
         )}
 
         {/* Status badges */}
-        {(tour.paid || tour.cancelled || tour.rescheduled) && (
+        {(Number(tour.is_private) === 1 || tour.paid || tour.cancelled || tour.rescheduled) && (
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            {Number(tour.is_private) === 1 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                Private
+              </span>
+            )}
             {tour.paid && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-olive-100 text-olive-800">
                 Paid
