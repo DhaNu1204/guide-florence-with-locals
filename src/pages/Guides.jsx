@@ -10,6 +10,15 @@ import Input from '../components/UI/Input';
 import { Select } from '../components/UI/Input';
 import { useToast } from '../components/Toast/ToastProvider';
 
+// Guide phones must be E.164 international format so Twilio can send the WhatsApp
+// tour reminder. Strip common separators, then require a "+" or "00" country-code
+// prefix followed by 8–15 digits. Empty is invalid (phone is required).
+const isValidGuidePhone = (phone) => {
+  if (!phone) return false;
+  const cleaned = String(phone).replace(/[\s\-.()]/g, '');
+  return /^(\+|00)\d{8,15}$/.test(cleaned);
+};
+
 // Fallback to local storage instead of remote API
 const Guides = () => {
   const { setPageTitle } = usePageTitle();
@@ -22,6 +31,7 @@ const Guides = () => {
   const setSuccess = (msg) => { if (msg) toast.success(msg); };
   const [showAddForm, setShowAddForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, guideId: null, guideName: '' });
 
   // Per-operation loading states
@@ -137,7 +147,19 @@ const Guides = () => {
   
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.phone || !formData.email || formData.languages.length === 0) return;
+    setAttemptedSubmit(true);
+
+    const phoneValid = isValidGuidePhone(formData.phone);
+    if (!formData.name || !formData.email || formData.languages.length === 0 || !phoneValid) {
+      // Keep the form open and surface why the phone was rejected (inline warning
+      // is always rendered; the toast makes the blocked submit obvious).
+      if (!phoneValid) {
+        toast.error(formData.phone
+          ? "Use international format with country code — e.g. +39 333 123 4567. Without it, the WhatsApp tour reminder can't be sent."
+          : 'Phone number is required (international format, e.g. +39 333 123 4567).');
+      }
+      return;
+    }
 
     // Set the saving state - use formData.id for edits, or 'new' for new guides
     const guideIdToSave = isEditing ? formData.id : 'new';
@@ -163,6 +185,7 @@ const Guides = () => {
       setFormData({ id: null, name: '', phone: '', email: '', languages: [] });
       setShowAddForm(false);
       setIsEditing(false);
+      setAttemptedSubmit(false);
       setError(null);
 
       // Show success message
@@ -192,12 +215,14 @@ const Guides = () => {
     });
     setIsEditing(true);
     setShowAddForm(true);
+    setAttemptedSubmit(false);
   };
-  
+
   const cancelForm = () => {
     setFormData({ id: null, name: '', phone: '', email: '', languages: [] });
     setShowAddForm(false);
     setIsEditing(false);
+    setAttemptedSubmit(false);
   };
   
   const handleDelete = async () => {
@@ -313,17 +338,27 @@ const Guides = () => {
                 required
               />
               
-              <Input
-                label="Phone Number"
-                name="phone"
-                type="tel"
-                value={formData.phone}
-                onChange={handleChange}
-                icon={FiPhone}
-                placeholder="+39 055 123 4567"
-                required
-              />
-              
+              <div>
+                <Input
+                  label="Phone Number"
+                  name="phone"
+                  type="tel"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  icon={FiPhone}
+                  placeholder="+39 055 123 4567"
+                  required
+                />
+                {formData.phone && !isValidGuidePhone(formData.phone) && (
+                  <p className="text-sm text-terracotta-600 mt-1">
+                    Use international format with country code — e.g. +39 333 123 4567. Without it, the WhatsApp tour reminder can't be sent.
+                  </p>
+                )}
+                {!formData.phone && attemptedSubmit && (
+                  <p className="text-sm text-terracotta-600 mt-1">Phone number is required</p>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-2">
                   Languages <span className="text-terracotta-500">*</span>
