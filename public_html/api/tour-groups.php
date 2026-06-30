@@ -751,6 +751,20 @@ function updateGroup($conn, $groupId, $data) {
         return;
     }
 
+    // The group's guide may have changed and was propagated to tours.guide_id
+    // (propagateGuideToTours, inside the committed transaction above). Reconcile
+    // the guide WhatsApp reminders so a group-level assignment schedules promptly
+    // instead of waiting for the next Bokun sync. Flag-gated + fully isolated: a
+    // reminder failure can never affect this group-update response. No payments.
+    if (isset($data['guide_id'])) {
+        try {
+            require_once __DIR__ . '/twilio_reminders.php';
+            reconcileGuideReminders($conn);
+        } catch (\Throwable $reminderErr) {
+            error_log('tour-groups.php: guide reminder reconcile failed (non-fatal): ' . $reminderErr->getMessage());
+        }
+    }
+
     $group = fetchGroupWithTours($conn, $groupId);
     echo json_encode(['success' => true, 'data' => $group]);
 }
