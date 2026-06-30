@@ -238,6 +238,57 @@ function ensureGuideRemindersTable($conn) {
 }
 
 /**
+ * Pure retention/action decision for a single departure's reminder. No DB, no
+ * Twilio, no side effects - so it is unit-testable.
+ *
+ * Retention is decided ONLY by $wanted: a wanted departure is ALWAYS kept (the
+ * removal pass must never cancel it), even when it is inside Twilio's 15-min
+ * scheduling floor and we cannot (re)create the message this pass. $creatable
+ * (sendAt >= now+15min) gates CREATION only, never retention. This is the fix
+ * for reminders being self-cancelled ~12 min before SendAt.
+ *
+ * @param bool        $wanted       tour still deserves a reminder (valid phone,
+ *                                  future start, within the 7-day window)
+ * @param bool        $creatable    sendAt is >= 15 min out (Twilio's floor)
+ * @param string|null $existsStatus existing row status: null|scheduled|canceled|failed|sent
+ * @param bool        $guideMatches existing row's guide == current guide
+ * @param bool        $sendAtMatch  existing row's send_at_utc == desired send_at
+ * @return array{kept:bool,action:string} action in:
+ *         create|recreate|reschedule|cancel_stale|keep|leave|skip|none
+ */
+function reminderPlan($wanted, $creatable, $existsStatus, $guideMatches, $sendAtMatch) {
+    if (!$wanted) {
+        // Not retained -> the removal pass cancels any existing scheduled message.
+        return ['kept' => false, 'action' => 'none'];
+    }
+
+    // Wanted -> ALWAYS retained, regardless of $creatable.
+    if ($existsStatus === null) {
+        return ['kept' => true, 'action' => $creatable ? 'create' : 'skip'];
+    }
+
+    if ($existsStatus === 'scheduled') {
+        if ($guideMatches && $sendAtMatch) {
+            return ['kept' => true, 'action' => 'keep'];
+        }
+        if ($creatable) {
+            return ['kept' => true, 'action' => 'reschedule'];
+        }
+        // Inside the floor and something changed. If the SendAt is still correct
+        // (only the guide name drifted), let the booked message fire; otherwise
+        // the time is wrong and we cannot rebook -> cancel the stale message.
+        return ['kept' => true, 'action' => $sendAtMatch ? 'keep' : 'cancel_stale'];
+    }
+
+    if ($existsStatus === 'canceled' || $existsStatus === 'failed') {
+        return ['kept' => true, 'action' => $creatable ? 'recreate' : 'skip'];
+    }
+
+    // 'sent'
+    return ['kept' => true, 'action' => 'leave'];
+}
+
+/**
  * Core reconciliation. Brings Twilio scheduled reminders in line with the live
  * tour/guide data. Idempotent and safe to run on every sync.
  *
@@ -259,7 +310,7 @@ function reconcileGuideReminders($conn) {
         return ['skipped' => 'unconfigured'];
     }
 
-    $stats = ['scheduled' => 0, 'rescheduled' => 0, 'canceled' => 0, 'failed' => 0, 'skipped' => 0, 'matched' => 0];
+    $stats = ['scheduled' => 0, 'rescheduled' => 0, 'canceled' => 0, 'failed' => 0, 'skipped' => 0, 'matched' => 0, 'sent' => 0];
 
     try {
         ensureGuideRemindersTable($conn);
@@ -279,7 +330,12 @@ function reconcileGuideReminders($conn) {
         $today    = (new DateTimeImmutable('now', $rome))->format('Y-m-d');
         $bandEnd  = (new DateTimeImmutable('now', $rome))->add(new DateInterval('P8D'))->format('Y-m-d');
 
-        $sql = "SELECT t.id, t.guide_id, t.title, t.date, t.time,
+        // One reminder per DEPARTURE, not per booking: a grouped departure has
+        // many tours rows (one per booking) sharing group_id + guide + date/time.
+        // Collapse each departure to a single representative row (the lowest
+        // active tour id in the group) so the guide gets ONE WhatsApp, not one
+        // per booking. Standalone tours (group_id NULL) are their own departure.
+        $sql = "SELECT t.id, t.guide_id, t.title, t.date, t.time, t.group_id,
                        g.name AS guide_name, g.phone AS guide_phone
                 FROM tours t
                 JOIN guides g ON g.id = t.guide_id
@@ -290,6 +346,12 @@ function reconcileGuideReminders($conn) {
                         SELECT 1 FROM products pr
                         WHERE pr.bokun_product_id = t.product_id
                           AND pr.product_type = 'ticket'
+                  )
+                  AND t.id = (
+                        SELECT MIN(t2.id) FROM tours t2
+                        WHERE t2.cancelled = 0
+                          AND t2.guide_id IS NOT NULL
+                          AND IFNULL(t2.group_id, -t2.id) = IFNULL(t.group_id, -t.id)
                   )";
         $stmt = $conn->prepare($sql);
         if (!$stmt) {
@@ -320,28 +382,43 @@ function reconcileGuideReminders($conn) {
                 continue;
             }
 
-            $sendAt    = $start->sub($leadSpec)->setTimezone($utc);
-            $startUtc  = $start->setTimezone($utc);
+            $sendAt   = $start->sub($leadSpec)->setTimezone($utc);
+            $startUtc = $start->setTimezone($utc);
+            $to       = normalizeWhatsapp($row['guide_phone']);
 
-            // Eligibility: schedulable now (>=15m out) and tour starts within 7 days.
-            $eligible = ($sendAt >= $minSendAt) && ($startUtc <= $maxStart);
+            // WANTED: this departure still deserves a reminder - it has a usable
+            // WhatsApp number and the tour starts in the future, within the 7-day
+            // window. (Guide present / not cancelled / not a ticket are already
+            // enforced by the candidate query.) WANTED is the ONLY thing that
+            // decides retention: a WANTED tour is never cancelled by the removal
+            // pass, even when we are inside the 15-min floor and cannot (re)create.
+            $wanted = ($to !== null) && ($startUtc > $now) && ($startUtc <= $maxStart);
 
-            // A usable WhatsApp number is required to schedule.
-            $to = normalizeWhatsapp($row['guide_phone']);
-            if (!$eligible || $to === null) {
-                // Not schedulable this round - leave any existing row for the
-                // removal pass to cancel if needed.
-                continue;
-            }
+            // CREATABLE: Twilio only accepts a NEW scheduled message >= 15 min out.
+            // This gates CREATION only - never retention.
+            $creatable = ($sendAt >= $minSendAt);
 
             $desiredSendDb = $sendAt->format('Y-m-d H:i:s');
 
-            // Existing reminder for this tour?
+            // Existing reminder for this representative tour?
             $look = $conn->prepare("SELECT id, guide_id, twilio_sid, send_at_utc, status
                                     FROM guide_reminders WHERE tour_id = ? LIMIT 1");
             $look->bind_param('i', $tourId);
             $look->execute();
             $existing = $look->get_result()->fetch_assoc();
+
+            $exStatus     = $existing ? (string) $existing['status'] : null;
+            $exGuide      = ($existing && $existing['guide_id'] !== null) ? (int) $existing['guide_id'] : null;
+            $exSendAt     = $existing ? (string) $existing['send_at_utc'] : '';
+            $exSid        = $existing ? (string) $existing['twilio_sid'] : '';
+            $guideMatches = ($exGuide === $guideId);
+            $sendAtMatch  = ($exSendAt === $desiredSendDb);
+
+            // Pure decision: what to do + whether to retain (see reminderPlan()).
+            $plan = reminderPlan($wanted, $creatable, $exStatus, $guideMatches, $sendAtMatch);
+            if ($plan['kept']) {
+                $keptTourIds[] = $tourId;
+            }
 
             $tourForSchedule = [
                 'guide_phone' => $row['guide_phone'],
@@ -351,75 +428,91 @@ function reconcileGuideReminders($conn) {
                 'send_at_iso' => $sendAt->format('Y-m-d\TH:i:s\Z'),
             ];
 
-            if (!$existing) {
-                // No row -> schedule + insert.
-                try {
-                    $r = twScheduleReminder($conn, $tourForSchedule);
-                    $ins = $conn->prepare("INSERT INTO guide_reminders
-                        (tour_id, guide_id, twilio_sid, send_at_utc, status, last_error)
-                        VALUES (?, ?, ?, ?, 'scheduled', NULL)");
-                    $ins->bind_param('iiss', $tourId, $guideId, $r['sid'], $desiredSendDb);
-                    $ins->execute();
-                    $keptTourIds[] = $tourId;
-                    $stats['scheduled']++;
-                } catch (\Throwable $e) {
-                    recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
-                    $stats['failed']++;
-                }
-                continue;
-            }
+            switch ($plan['action']) {
+                case 'create':
+                    try {
+                        $r = twScheduleReminder($conn, $tourForSchedule);
+                        $ins = $conn->prepare("INSERT INTO guide_reminders
+                            (tour_id, guide_id, twilio_sid, send_at_utc, status, last_error)
+                            VALUES (?, ?, ?, ?, 'scheduled', NULL)");
+                        $ins->bind_param('iiss', $tourId, $guideId, $r['sid'], $desiredSendDb);
+                        $ins->execute();
+                        $stats['scheduled']++;
+                    } catch (\Throwable $e) {
+                        recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
+                        $stats['failed']++;
+                    }
+                    break;
 
-            $exStatus  = (string) $existing['status'];
-            $exGuide   = ($existing['guide_id'] === null) ? null : (int) $existing['guide_id'];
-            $exSendAt  = (string) $existing['send_at_utc'];
-            $exSid     = (string) $existing['twilio_sid'];
+                case 'recreate':
+                    // A previously canceled/failed reminder became eligible again.
+                    try {
+                        $r = twScheduleReminder($conn, $tourForSchedule);
+                        $upd = $conn->prepare("UPDATE guide_reminders
+                            SET guide_id = ?, twilio_sid = ?, send_at_utc = ?, status = 'scheduled', last_error = NULL
+                            WHERE tour_id = ?");
+                        $upd->bind_param('issi', $guideId, $r['sid'], $desiredSendDb, $tourId);
+                        $upd->execute();
+                        $stats['scheduled']++;
+                    } catch (\Throwable $e) {
+                        recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
+                        $stats['failed']++;
+                    }
+                    break;
 
-            if ($exStatus === 'scheduled') {
-                $matches = ($exGuide === $guideId) && ($exSendAt === $desiredSendDb);
-                if ($matches) {
-                    $keptTourIds[] = $tourId;
+                case 'reschedule':
+                    // Tour moved or guide changed and we can rebook: book the new
+                    // message first, then cancel the stale one.
+                    try {
+                        $r = twScheduleReminder($conn, $tourForSchedule);
+                        twCancelReminder($exSid);
+                        $upd = $conn->prepare("UPDATE guide_reminders
+                            SET guide_id = ?, twilio_sid = ?, send_at_utc = ?, status = 'scheduled', last_error = NULL
+                            WHERE tour_id = ?");
+                        $upd->bind_param('issi', $guideId, $r['sid'], $desiredSendDb, $tourId);
+                        $upd->execute();
+                        $stats['rescheduled']++;
+                    } catch (\Throwable $e) {
+                        recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
+                        $stats['failed']++;
+                    }
+                    break;
+
+                case 'cancel_stale':
+                    // Wanted, but the booked message is for the wrong time and it is
+                    // too late to rebook (inside the 15-min floor) -> cancel the
+                    // stale message so the guide is not pinged at the wrong moment.
+                    twCancelReminder($exSid);
+                    $mark = $conn->prepare("UPDATE guide_reminders SET status = 'canceled' WHERE tour_id = ?");
+                    $mark->bind_param('i', $tourId);
+                    $mark->execute();
+                    $stats['canceled']++;
+                    break;
+
+                case 'keep':
+                    // Correctly booked already (or only a cosmetic guide-name drift
+                    // we cannot rebook) -> leave it for Twilio to fire at SendAt.
                     $stats['matched']++;
-                    continue;
-                }
-                // Tour moved or guide changed -> cancel old, schedule new, update row.
-                try {
-                    $r = twScheduleReminder($conn, $tourForSchedule);
-                    twCancelReminder($exSid); // best-effort, after the new one is booked
-                    $upd = $conn->prepare("UPDATE guide_reminders
-                        SET guide_id = ?, twilio_sid = ?, send_at_utc = ?, status = 'scheduled', last_error = NULL
-                        WHERE tour_id = ?");
-                    $upd->bind_param('issi', $guideId, $r['sid'], $desiredSendDb, $tourId);
-                    $upd->execute();
-                    $keptTourIds[] = $tourId;
-                    $stats['rescheduled']++;
-                } catch (\Throwable $e) {
-                    recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
-                    $stats['failed']++;
-                }
-                continue;
-            }
+                    break;
 
-            if ($exStatus === 'canceled' || $exStatus === 'failed') {
-                // Became eligible again (e.g. re-assigned) -> schedule fresh.
-                try {
-                    $r = twScheduleReminder($conn, $tourForSchedule);
-                    $upd = $conn->prepare("UPDATE guide_reminders
-                        SET guide_id = ?, twilio_sid = ?, send_at_utc = ?, status = 'scheduled', last_error = NULL
-                        WHERE tour_id = ?");
-                    $upd->bind_param('issi', $guideId, $r['sid'], $desiredSendDb, $tourId);
-                    $upd->execute();
-                    $keptTourIds[] = $tourId;
-                    $stats['scheduled']++;
-                } catch (\Throwable $e) {
-                    recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
-                    $stats['failed']++;
-                }
-                continue;
-            }
+                case 'leave':
+                    // Already 'sent'.
+                    $stats['sent']++;
+                    break;
 
-            // status 'sent' -> already delivered; leave it alone, but keep it so
-            // the removal pass doesn't try to act on it.
-            $keptTourIds[] = $tourId;
+                case 'skip':
+                    // Wanted but not creatable and nothing exists to keep, or a
+                    // canceled/failed row we cannot rebook yet. Nothing to do; the
+                    // tour is still retained so the removal pass leaves it alone.
+                    $stats['skipped']++;
+                    break;
+
+                case 'none':
+                default:
+                    // Not wanted -> not retained; the removal pass below cancels
+                    // any existing scheduled message for this tour.
+                    break;
+            }
         }
 
         // ---- Removal pass: cancel scheduled reminders that are no longer wanted.
