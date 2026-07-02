@@ -16,8 +16,8 @@ import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { getMaxPax, countActivePax, tourCategory } from '../utils/tourCapacity';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
-const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Private Uffizi', 'Private Accademia', 'Private (other)', 'Other'];
-const PRIVATE_CATEGORIES = new Set(['Private Uffizi', 'Private Accademia', 'Private (other)']);
+const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
+const PRIVATE_CATEGORIES = new Set(['Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)']);
 
 // Helper functions moved outside component to prevent dependency loops
 const isToday = (tourDate, tourTime) => {
@@ -638,9 +638,8 @@ const Tours = () => {
             const cat = tourCategory(item.title);
             let key = cat;
             if (item.is_private) {
-              key = cat === 'Uffizi' ? 'Private Uffizi'
-                : cat === 'Accademia' ? 'Private Accademia'
-                : 'Private (other)';
+              // Private mirrors the shared categories exactly; only 'Other' -> 'Private (other)'.
+              key = cat === 'Other' ? 'Private (other)' : `Private ${cat}`;
             }
             add(key, getParticipantCount(item));
             if (!item.guide_id) needGuide += 1;
@@ -1719,7 +1718,9 @@ const Tours = () => {
                     </div>
                     {categorySummary.needGuide > 0 && (
                       <div className="text-sm font-medium text-terracotta-700">
-                        {categorySummary.needGuide} {categorySummary.needGuide === 1 ? 'tour' : 'tours'} still need a guide
+                        {categorySummary.needGuide === 1
+                          ? '1 tour still needs a guide'
+                          : `${categorySummary.needGuide} tours still need a guide`}
                       </div>
                     )}
                     <Button
