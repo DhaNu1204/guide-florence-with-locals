@@ -13,7 +13,11 @@ import TourGroupCardMobile from '../components/TourGroupCardMobile';
 import DateFilter from '../components/DateFilter';
 import { useToast } from '../components/Toast/ToastProvider';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
-import { getMaxPax, countActivePax } from '../utils/tourCapacity';
+import { getMaxPax, countActivePax, tourCategory } from '../utils/tourCapacity';
+
+// Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
+const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Private Uffizi', 'Private Accademia', 'Private (other)', 'Other'];
+const PRIVATE_CATEGORIES = new Set(['Private Uffizi', 'Private Accademia', 'Private (other)']);
 
 // Helper functions moved outside component to prevent dependency loops
 const isToday = (tourDate, tourTime) => {
@@ -57,6 +61,38 @@ const getParticipantCount = (tour) => {
     return parseInt(tour.participants) || 1;
   }
 };
+
+// Count stats for a list of items (each item is a group {_isGroup} or a standalone tour).
+//   activeTours    = groups + standalone non-cancelled tours
+//   cancelledCount = standalone cancelled tours
+//   pax            = active PAX (groups exclude cancelled bookings; cancelled standalone = 0)
+const computeItemStats = (items) => {
+  let activeTours = 0;
+  let cancelledCount = 0;
+  let pax = 0;
+  (items || []).forEach((item) => {
+    if (item._isGroup) {
+      activeTours += 1;
+      pax += countActivePax(item.group.tours);
+    } else if (item.cancelled) {
+      cancelledCount += 1;
+    } else {
+      activeTours += 1;
+      pax += getParticipantCount(item);
+    }
+  });
+  return { activeTours, cancelledCount, pax };
+};
+
+// Renders "{activeTours} tours · {pax} PAX" with a muted "· {N} cancelled" only when N > 0.
+const CountLabel = ({ activeTours, cancelledCount, pax }) => (
+  <>
+    {activeTours} tours · {pax} PAX
+    {cancelledCount > 0 && (
+      <span className="text-stone-400"> · {cancelledCount} cancelled</span>
+    )}
+  </>
+);
 
 // Helper: parse participant_names JSON into array
 const getParticipantNames = (tour) => {
@@ -558,27 +594,62 @@ const Tours = () => {
   // Calculate total tours and participants from grouped data
   // Groups count as 1 tour in the summary
   const totalData = useMemo(() => {
-    let itemCount = 0;
+    let totalTours = 0;
+    let totalCancelled = 0;
     let totalParticipants = 0;
 
     groupedTours.forEach(group => {
       group.periods.forEach(periodGroup => {
+        const { activeTours, cancelledCount, pax } = computeItemStats(periodGroup.items);
+        totalTours += activeTours; // group or standalone non-cancelled tour
+        totalCancelled += cancelledCount;
+        totalParticipants += pax;
+      });
+    });
+
+    return {
+      totalTours,
+      totalCancelled,
+      totalParticipants
+    };
+  }, [groupedTours]);
+
+  // Category breakdown over the currently displayed (filtered) tours — counts each
+  // ACTIVE departure once. Groups are always shared/non-private. Also tallies how
+  // many active departures still have no guide.
+  const categorySummary = useMemo(() => {
+    const buckets = {}; // key -> { tours, pax }
+    let needGuide = 0;
+    const add = (key, pax) => {
+      if (!buckets[key]) buckets[key] = { tours: 0, pax: 0 };
+      buckets[key].tours += 1;
+      buckets[key].pax += pax;
+    };
+
+    groupedTours.forEach(dateGroup => {
+      dateGroup.periods.forEach(periodGroup => {
         periodGroup.items.forEach(item => {
           if (item._isGroup) {
-            itemCount += 1; // Group = 1 tour for counting
-            totalParticipants += countActivePax(item.group.tours); // exclude cancelled bookings
+            const g = item.group;
+            add(tourCategory(g.display_name), countActivePax(g.tours));
+            if (!g.guide_id) needGuide += 1;
           } else {
-            itemCount += 1;
-            if (!item.cancelled) totalParticipants += getParticipantCount(item); // exclude cancelled
+            if (item.cancelled) return; // skip cancelled standalone tours entirely
+            const cat = tourCategory(item.title);
+            let key = cat;
+            if (item.is_private) {
+              key = cat === 'Uffizi' ? 'Private Uffizi'
+                : cat === 'Accademia' ? 'Private Accademia'
+                : 'Private (other)';
+            }
+            add(key, getParticipantCount(item));
+            if (!item.guide_id) needGuide += 1;
           }
         });
       });
     });
 
-    return {
-      totalTours: itemCount,
-      totalParticipants
-    };
+    return { buckets, needGuide };
   }, [groupedTours]);
 
   // Handle notes editing
@@ -1163,14 +1234,8 @@ const Tours = () => {
             groupedTours.map((dateGroup) => {
               const dateObj = new Date(dateGroup.date);
               const isTodayDate = format(new Date(), 'yyyy-MM-dd') === dateGroup.date;
-              const dateParticipants = dateGroup.periods.reduce((total, periodGroup) =>
-                total + periodGroup.items.reduce((sum, item) => {
-                  if (item._isGroup) return sum + countActivePax(item.group.tours);
-                  return sum + (item.cancelled ? 0 : getParticipantCount(item));
-                }, 0), 0
-              );
-              const dateTourCount = dateGroup.periods.reduce((total, periodGroup) =>
-                total + periodGroup.items.length, 0
+              const dateStats = computeItemStats(
+                dateGroup.periods.flatMap(periodGroup => periodGroup.items)
               );
 
               return (
@@ -1189,7 +1254,7 @@ const Tours = () => {
                         )}
                       </div>
                       <div className="text-xs md:text-sm text-stone-600">
-                        {dateTourCount} tours · {dateParticipants} PAX
+                        <CountLabel {...dateStats} />
                       </div>
                     </div>
                   </div>
@@ -1206,10 +1271,7 @@ const Tours = () => {
                             {periodGroup.period}
                           </h4>
                           <div className="text-xs text-stone-600">
-                            {periodGroup.items.length} tours · {periodGroup.items.reduce((sum, item) => {
-                              if (item._isGroup) return sum + countActivePax(item.group.tours);
-                              return sum + (item.cancelled ? 0 : getParticipantCount(item));
-                            }, 0)} PAX
+                            <CountLabel {...computeItemStats(periodGroup.items)} />
                           </div>
                         </div>
                       </div>
@@ -1493,12 +1555,15 @@ const Tours = () => {
                         <span className="text-xs font-semibold text-stone-500 uppercase whitespace-nowrap">
                           {periodGroup.period.split(' (')[0]}
                         </span>
-                        <span className="text-xs text-stone-400">
-                          {periodGroup.items.length} · {periodGroup.items.reduce((sum, item) => {
-                            if (item._isGroup) return sum + countActivePax(item.group.tours);
-                            return sum + (item.cancelled ? 0 : getParticipantCount(item));
-                          }, 0)} PAX
-                        </span>
+                        {(() => {
+                          const s = computeItemStats(periodGroup.items);
+                          return (
+                            <span className="text-xs text-stone-400">
+                              {s.activeTours} · {s.pax} PAX
+                              {s.cancelledCount > 0 && ` · ${s.cancelledCount} cancelled`}
+                            </span>
+                          );
+                        })()}
                         <div className="h-px flex-1 bg-stone-300" />
                       </div>
 
@@ -1646,8 +1711,17 @@ const Tours = () => {
                   <h3 className="text-base md:text-lg font-semibold text-stone-900">Summary</h3>
                   <div className="flex flex-col md:flex-row items-center gap-2">
                     <div className="text-sm text-stone-600">
-                      Total: {totalData.totalTours} tours · {totalData.totalParticipants} PAX
+                      Total: <CountLabel
+                        activeTours={totalData.totalTours}
+                        cancelledCount={totalData.totalCancelled}
+                        pax={totalData.totalParticipants}
+                      />
                     </div>
+                    {categorySummary.needGuide > 0 && (
+                      <div className="text-sm font-medium text-terracotta-700">
+                        {categorySummary.needGuide} {categorySummary.needGuide === 1 ? 'tour' : 'tours'} still need a guide
+                      </div>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1659,6 +1733,41 @@ const Tours = () => {
                     </Button>
                   </div>
                 </div>
+
+                {/* Category breakdown — each active departure counted once */}
+                {(() => {
+                  const visible = CATEGORY_ORDER.filter(cat => categorySummary.buckets[cat]);
+                  if (visible.length === 0) return null;
+                  return (
+                    <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {visible.map(cat => {
+                        const b = categorySummary.buckets[cat];
+                        const isPrivate = PRIVATE_CATEGORIES.has(cat);
+                        return (
+                          <div
+                            key={cat}
+                            className={`rounded-tuscan border p-3 ${
+                              isPrivate
+                                ? 'bg-purple-50 border-purple-200 text-purple-800'
+                                : 'bg-white border-stone-200'
+                            }`}
+                          >
+                            <div className={`text-xs font-medium ${isPrivate ? 'text-purple-700' : 'text-stone-500'}`}>
+                              {cat}
+                            </div>
+                            <div className={`mt-0.5 text-2xl font-bold leading-none ${isPrivate ? 'text-purple-800' : 'text-stone-900'}`}>
+                              {b.tours}
+                              <span className="ml-1 text-sm font-normal">{b.tours === 1 ? 'tour' : 'tours'}</span>
+                            </div>
+                            <div className={`mt-1 text-xs ${isPrivate ? 'text-purple-700' : 'text-stone-600'}`}>
+                              {b.pax} PAX
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </Card>
           )}
