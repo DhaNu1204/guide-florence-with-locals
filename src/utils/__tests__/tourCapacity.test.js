@@ -96,6 +96,33 @@ describe('getPaxBreakdown', () => {
   it('falls back on malformed bokun_data', () => {
     expect(getPaxBreakdown({ bokun_data: 'not-json', participants: 3 })).toEqual({ adults: 3, children: 0, infants: 0, total: 3 });
   });
+
+  it('PREFERS server-computed pax_* fields over bokun_data', () => {
+    // Grouped member rows arrive without bokun_data but WITH pax_* from the server.
+    const tour = { pax_adults: 6, pax_children: 2, pax_infants: 0 };
+    expect(getPaxBreakdown(tour)).toEqual({ adults: 6, children: 2, infants: 0, total: 8 });
+  });
+
+  it('uses server pax_* even when bokun_data is also present', () => {
+    const tour = {
+      pax_adults: 2, pax_children: 2, pax_infants: 0,
+      bokun_data: JSON.stringify({ productBookings: [{ fields: { priceCategoryBookings: [{ quantity: 9, pricingCategory: { ticketCategory: 'ADULT' } }] } }] }),
+    };
+    expect(getPaxBreakdown(tour)).toEqual({ adults: 2, children: 2, infants: 0, total: 4 });
+  });
+
+  it('treats partial server fields as authoritative (missing ones = 0)', () => {
+    // Only pax_children present (an all-children edge) — the others default to 0.
+    expect(getPaxBreakdown({ pax_children: 3 })).toEqual({ adults: 0, children: 3, infants: 0, total: 3 });
+  });
+
+  it('ignores server fields when none are present (falls to bokun_data)', () => {
+    const tour = wrapPcb([
+      { quantity: 2, pricingCategory: { ticketCategory: 'ADULT' } },
+      { quantity: 2, pricingCategory: { ticketCategory: 'CHILD' } },
+    ]);
+    expect(getPaxBreakdown(tour)).toEqual({ adults: 2, children: 2, infants: 0, total: 4 });
+  });
 });
 
 describe('aggregateBreakdown', () => {

@@ -2,6 +2,7 @@
 // Include database configuration (handles CORS, security headers, and DB connection)
 require_once 'config.php';
 require_once 'Middleware.php';
+require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
 
 // Require authentication for all tour operations
 Middleware::requireAuth($conn);
@@ -340,6 +341,14 @@ switch ($method) {
                 // Remove redundant group columns from top-level row
                 unset($row['group_display_name'], $row['group_total_pax'], $row['group_max_pax'],
                       $row['group_is_manual_merge'], $row['group_guide_id'], $row['group_guide_name']);
+
+                // Server-computed participant breakdown so the frontend never depends on
+                // bokun_data being parseable per row (esp. grouped rows, which come from
+                // tour-groups.php without bokun_data). Mirrors getPaxBreakdown() in JS.
+                $pax = computePaxBreakdown($row['bokun_data'] ?? null, $row['participants'] ?? 0);
+                $row['pax_adults'] = $pax['adults'];
+                $row['pax_children'] = $pax['children'];
+                $row['pax_infants'] = $pax['infants'];
 
                 $tours[] = $row;
             }

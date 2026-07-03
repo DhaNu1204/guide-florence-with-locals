@@ -156,31 +156,31 @@ const ParticipantsSection = ({ details }) => {
   return (
     <section>
       <div className="flex items-center mb-3">
-        <FiUsers className="text-olive-600 text-xl mr-2" />
-        <h3 className="text-lg font-semibold text-stone-900">
+        <FiUsers className="text-olive-600 text-lg mr-2" />
+        <h3 className="text-base font-semibold text-stone-900">
           Participants ({details.participants.total})
         </h3>
       </div>
-      <div className="bg-stone-50 rounded-tuscan-lg p-4">
-        {/* Count badges */}
-        <div className="grid grid-cols-3 gap-4 mb-3">
-          <div className="text-center p-3 bg-white rounded-tuscan-lg shadow-tuscan-sm">
-            <p className="text-sm text-stone-600">Adults</p>
-            <p className="text-2xl font-bold text-stone-900">{details.participants.adults}</p>
-          </div>
-          <div className="text-center p-3 bg-white rounded-tuscan-lg shadow-tuscan-sm">
-            <p className="text-sm text-stone-600">Children</p>
-            <p className="text-2xl font-bold text-stone-900">{details.participants.children}</p>
-          </div>
-          <div className="text-center p-3 bg-terracotta-50 rounded-tuscan-lg shadow-tuscan-sm">
-            <p className="text-sm text-terracotta-600">Total</p>
-            <p className="text-2xl font-bold text-terracotta-700">{details.participants.total}</p>
-          </div>
+      <div className="bg-stone-50 rounded-tuscan-lg p-3">
+        {/* Count row — compact inline chips instead of oversized cards */}
+        <div className="flex items-center flex-wrap gap-2 text-sm">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white rounded-tuscan shadow-tuscan-sm">
+            <span className="text-stone-500">Adults</span>
+            <span className="font-bold text-stone-900">{details.participants.adults}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white rounded-tuscan shadow-tuscan-sm">
+            <span className="text-stone-500">Children</span>
+            <span className="font-bold text-stone-900">{details.participants.children}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-terracotta-50 rounded-tuscan shadow-tuscan-sm sm:ml-auto">
+            <span className="text-terracotta-600">Total</span>
+            <span className="font-bold text-terracotta-700">{details.participants.total}</span>
+          </span>
         </div>
 
         {/* Participant names list */}
         {hasNames ? (
-          <div className="mt-3 pt-3 border-t border-stone-200">
+          <div className="mt-2 pt-2 border-t border-stone-200">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-stone-600">Names</span>
               <button
@@ -367,9 +367,9 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
           {/* Header */}
           <div className={`
             flex items-center justify-between border-b border-stone-200 bg-gradient-to-r from-terracotta-500 to-terracotta-700
-            ${isMobile ? 'p-4' : 'p-6'}
+            ${isMobile ? 'px-4 py-2.5' : 'px-6 py-3'}
           `}>
-            <h2 className={`font-bold text-white flex items-center ${isMobile ? 'text-lg' : 'text-2xl'}`}>
+            <h2 className={`font-bold text-white flex items-center ${isMobile ? 'text-base' : 'text-lg'}`}>
               <FiFileText className={isMobile ? 'mr-2' : 'mr-3'} />
               Booking Details
             </h2>
@@ -385,18 +385,18 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
           <div className={`
             overflow-y-auto overscroll-contain
             ${isMobile
-              ? 'p-4 max-h-[calc(90vh-180px)]'
-              : 'p-6 max-h-[calc(100vh-200px)]'
+              ? 'p-3 max-h-[calc(90vh-150px)]'
+              : 'p-4 max-h-[calc(100vh-160px)]'
             }
           `}>
-            <div className={isMobile ? 'space-y-4' : 'space-y-6'}>
+            <div className={isMobile ? 'space-y-3' : 'space-y-4'}>
               {/* Tour Information */}
               <section>
-                <div className="flex items-center mb-3">
-                  <FiCalendar className="text-terracotta-600 text-xl mr-2" />
-                  <h3 className="text-lg font-semibold text-stone-900">Tour Information</h3>
+                <div className="flex items-center mb-2">
+                  <FiCalendar className="text-terracotta-600 text-lg mr-2" />
+                  <h3 className="text-base font-semibold text-stone-900">Tour Information</h3>
                 </div>
-                <div className="bg-stone-50 rounded-tuscan-lg p-4 space-y-2">
+                <div className="bg-stone-50 rounded-tuscan-lg p-3 space-y-2">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <span className="text-sm font-medium text-stone-600">Museum:</span>
@@ -426,11 +426,11 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
 
               {/* Main Contact */}
               <section>
-                <div className="flex items-center mb-3">
-                  <FiUser className="text-renaissance-600 text-xl mr-2" />
-                  <h3 className="text-lg font-semibold text-stone-900">Main Contact</h3>
+                <div className="flex items-center mb-2">
+                  <FiUser className="text-renaissance-600 text-lg mr-2" />
+                  <h3 className="text-base font-semibold text-stone-900">Main Contact</h3>
                 </div>
-                <div className="bg-stone-50 rounded-tuscan-lg p-4 space-y-3">
+                <div className="bg-stone-50 rounded-tuscan-lg p-3 space-y-3">
                   <div>
                     <span className="text-sm font-medium text-stone-600">Name:</span>
                     <p className="text-stone-900 font-medium">
@@ -463,11 +463,11 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
 
               {/* Booking Details */}
               <section>
-                <div className="flex items-center mb-3">
-                  <FiTag className="text-gold-600 text-xl mr-2" />
-                  <h3 className="text-lg font-semibold text-stone-900">Booking Details</h3>
+                <div className="flex items-center mb-2">
+                  <FiTag className="text-gold-600 text-lg mr-2" />
+                  <h3 className="text-base font-semibold text-stone-900">Booking Details</h3>
                 </div>
-                <div className="bg-stone-50 rounded-tuscan-lg p-4 space-y-3">
+                <div className="bg-stone-50 rounded-tuscan-lg p-3 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <span className="text-sm font-medium text-stone-600">Channel:</span>
@@ -498,11 +498,11 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
               {/* Special Requests */}
               {details.specialRequests && (
                 <section>
-                  <div className="flex items-center mb-3">
-                    <FiFileText className="text-gold-600 text-xl mr-2" />
-                    <h3 className="text-lg font-semibold text-stone-900">Special Requests</h3>
+                  <div className="flex items-center mb-2">
+                    <FiFileText className="text-gold-600 text-lg mr-2" />
+                    <h3 className="text-base font-semibold text-stone-900">Special Requests</h3>
                   </div>
-                  <div className="bg-gold-50 border border-gold-200 rounded-tuscan-lg p-4">
+                  <div className="bg-gold-50 border border-gold-200 rounded-tuscan-lg p-3">
                     <p className="text-stone-900 whitespace-pre-wrap">{details.specialRequests}</p>
                   </div>
                 </section>
@@ -510,11 +510,11 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
 
               {/* Internal Notes */}
               <section>
-                <div className="flex items-center mb-3">
-                  <FiFileText className="text-renaissance-600 text-xl mr-2" />
-                  <h3 className="text-lg font-semibold text-stone-900">Internal Notes</h3>
+                <div className="flex items-center mb-2">
+                  <FiFileText className="text-renaissance-600 text-lg mr-2" />
+                  <h3 className="text-base font-semibold text-stone-900">Internal Notes</h3>
                 </div>
-                <div className="bg-stone-50 rounded-tuscan-lg p-4">
+                <div className="bg-stone-50 rounded-tuscan-lg p-3">
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -538,7 +538,7 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
           {/* Footer */}
           <div className={`
             flex justify-end border-t border-stone-200 bg-stone-50
-            ${isMobile ? 'p-4 pb-safe' : 'p-6'}
+            ${isMobile ? 'px-4 py-3 pb-safe' : 'px-6 py-3'}
           `}>
             <button
               onClick={onClose}

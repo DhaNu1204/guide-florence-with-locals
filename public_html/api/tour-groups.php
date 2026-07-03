@@ -17,6 +17,7 @@
 
 require_once 'config.php';
 require_once 'Middleware.php';
+require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
 
 // Require authentication for all tour group operations
 Middleware::requireAuth($conn);
@@ -281,7 +282,7 @@ function getGroupTours($conn, $groupId) {
     $stmt = $conn->prepare("
         SELECT t.id, t.title, t.date, t.time, t.customer_name, t.customer_email,
                t.participants, t.booking_channel, t.bokun_confirmation_code,
-               t.cancelled, t.payment_status, t.guide_id, g.name as guide_name
+               t.cancelled, t.payment_status, t.guide_id, t.bokun_data, g.name as guide_name
         FROM tours t
         LEFT JOIN guides g ON t.guide_id = g.id
         WHERE t.group_id = ?
@@ -297,6 +298,15 @@ function getGroupTours($conn, $groupId) {
         $row['participants'] = intval($row['participants']);
         $row['cancelled'] = (bool)$row['cancelled'];
         if ($row['guide_id']) $row['guide_id'] = intval($row['guide_id']);
+
+        // Server-computed participant breakdown so grouped member rows show adults/children/
+        // infants (bokun_data is parsed here, then dropped to keep the payload small).
+        $pax = computePaxBreakdown($row['bokun_data'] ?? null, $row['participants']);
+        $row['pax_adults'] = $pax['adults'];
+        $row['pax_children'] = $pax['children'];
+        $row['pax_infants'] = $pax['infants'];
+        unset($row['bokun_data']);
+
         $tours[] = $row;
     }
     $stmt->close();

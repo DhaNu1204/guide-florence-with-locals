@@ -30,6 +30,16 @@ export const countActiveBookings = (tours) =>
 // the JSON's totalParticipants, else the tours.participants column.
 // Returns { adults, children, infants, total }.
 export const getPaxBreakdown = (tour) => {
+  // PREFER server-computed fields. tours.php and tour-groups.php both return pax_adults/
+  // pax_children/pax_infants, so standalone rows, grouped member rows, group headers and
+  // mobile all agree — and grouped rows work even though they carry no bokun_data.
+  if (tour && (tour.pax_adults != null || tour.pax_children != null || tour.pax_infants != null)) {
+    const adults = parseInt(tour.pax_adults) || 0;
+    const children = parseInt(tour.pax_children) || 0;
+    const infants = parseInt(tour.pax_infants) || 0;
+    return { adults, children, infants, total: adults + children + infants };
+  }
+
   let pcb = null;
   let totalParticipants = null;
   try {
