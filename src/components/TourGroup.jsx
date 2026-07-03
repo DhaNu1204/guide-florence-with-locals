@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import { tourGroupsAPI } from '../services/mysqlDB';
-import { getMaxPax, countActivePax, countActiveBookings } from '../utils/tourCapacity';
+import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown } from '../utils/tourCapacity';
 
 const GroupTourNames = ({ tour }) => {
   const names = (() => {
@@ -161,6 +161,10 @@ const TourGroup = ({
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <FiUsers size={14} className="text-stone-500" />
           <span className="text-sm font-semibold text-stone-900">{totalPax} PAX</span>
+          {(() => {
+            const s = formatBreakdown(aggregateBreakdown(group.tours || []));
+            return s ? <span className="text-xs text-stone-500">· {s}</span> : null;
+          })()}
           <span className="text-xs text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded-full">
             {bookingCount} {bookingCount === 1 ? 'booking' : 'bookings'}
           </span>
@@ -274,6 +278,10 @@ const TourGroup = ({
                   </td>
                   <td className="px-4 py-2 text-sm text-stone-900 font-medium">
                     {tour.participants || 1}
+                    {(() => {
+                      const s = formatBreakdown(getPaxBreakdown(tour));
+                      return s ? <span className="text-xs font-normal text-stone-500 ml-1">({s})</span> : null;
+                    })()}
                   </td>
                   <td className="px-4 py-2 text-xs text-stone-500 font-mono">
                     {tour.bokun_confirmation_code || '-'}

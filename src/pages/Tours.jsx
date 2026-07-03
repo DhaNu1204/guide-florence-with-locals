@@ -13,7 +13,7 @@ import TourGroupCardMobile from '../components/TourGroupCardMobile';
 import DateFilter from '../components/DateFilter';
 import { useToast } from '../components/Toast/ToastProvider';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
-import { getMaxPax, countActivePax, tourCategory } from '../utils/tourCapacity';
+import { getMaxPax, countActivePax, tourCategory, getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -1391,6 +1391,10 @@ const Tours = () => {
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
                                 {getParticipantCount(tour)} PAX
+                                {(() => {
+                                  const s = formatBreakdown(getPaxBreakdown(tour));
+                                  return s ? <span className="text-xs text-stone-500 ml-1">({s})</span> : null;
+                                })()}
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">

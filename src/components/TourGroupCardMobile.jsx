@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import { tourGroupsAPI } from '../services/mysqlDB';
-import { getMaxPax, countActivePax, countActiveBookings } from '../utils/tourCapacity';
+import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown } from '../utils/tourCapacity';
 
 const getChannelColor = (channel) => {
   if (!channel) return 'text-stone-500';
@@ -145,6 +145,10 @@ const TourGroupCardMobile = ({
           <div className="flex items-center gap-1 text-sm flex-shrink-0">
             <FiUsers size={14} className="text-stone-500" />
             <span className="font-semibold text-stone-900">{totalPax}/{maxPax} PAX</span>
+            {(() => {
+              const s = formatBreakdown(aggregateBreakdown(group.tours || []));
+              return s ? <span className="text-xs text-stone-500">· {s}</span> : null;
+            })()}
             {totalPax >= maxPax && (
               <span className="text-xs text-terracotta-700 bg-terracotta-100 px-1.5 py-0.5 rounded-full font-medium">
                 FULL
@@ -243,6 +247,10 @@ const TourGroupCardMobile = ({
                 {/* PAX */}
                 <span className="text-sm font-medium text-stone-700 flex-shrink-0">
                   {tour.participants || 1} PAX
+                  {(() => {
+                    const s = formatBreakdown(getPaxBreakdown(tour));
+                    return s ? <span className="text-xs font-normal text-stone-500 ml-1">({s})</span> : null;
+                  })()}
                 </span>
 
                 {/* Channel */}

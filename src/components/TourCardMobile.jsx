@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FiSave, FiX, FiUsers, FiChevronDown } from 'react-icons/fi';
+import { getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 
 const getChannelColor = (channel) => {
   if (!channel) return 'bg-stone-100 text-stone-600';
@@ -147,6 +148,10 @@ const TourCardMobile = ({
         <div className="flex items-center gap-1 text-sm text-stone-700 flex-shrink-0">
           <FiUsers size={14} className="text-stone-500" />
           <span className="font-medium">{participantCount} PAX</span>
+          {(() => {
+            const s = formatBreakdown(getPaxBreakdown(tour));
+            return s ? <span className="text-xs text-stone-500 ml-1">({s})</span> : null;
+          })()}
         </div>
         <span className="text-stone-300">·</span>
 
