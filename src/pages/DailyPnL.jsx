@@ -21,6 +21,15 @@ const shiftDate = (dateStr, days) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// Monday of the week containing dateStr
+const mondayOf = (dateStr) => {
+  const d = new Date(dateStr + 'T12:00:00');
+  return shiftDate(dateStr, -((d.getDay() + 6) % 7));
+};
+
+const shortDate = (dateStr) =>
+  new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
 const COST_FIELDS = [
   { key: 'ticket_cost', label: 'Tickets' },
   { key: 'guide_cost', label: 'Guide' },
@@ -365,8 +374,9 @@ function SettingsModal({ settings, onClose, onSaved }) {
 // Main page
 // ---------------------------------------------------------------------------
 export default function DailyPnL() {
-  const [view, setView] = useState('day'); // 'day' | 'month'
+  const [view, setView] = useState('day'); // 'day' | 'week' | 'month'
   const [date, setDate] = useState(todayStr());
+  const [weekStart, setWeekStart] = useState(mondayOf(todayStr())); // Monday
   const [month, setMonth] = useState(todayStr().slice(0, 7)); // YYYY-MM
   const [dayData, setDayData] = useState(null);
   const [monthData, setMonthData] = useState(null);
@@ -391,13 +401,10 @@ export default function DailyPnL() {
     }
   }, []);
 
-  const loadMonth = useCallback(async (m) => {
+  const loadRange = useCallback(async (start, end) => {
     setLoading(true);
     setError(null);
     try {
-      const start = `${m}-01`;
-      const endD = new Date(parseInt(m.slice(0, 4), 10), parseInt(m.slice(5, 7), 10), 0);
-      const end = `${m}-${String(endD.getDate()).padStart(2, '0')}`;
       const res = await getPnlRange(start, end);
       setMonthData(res.data);
       if (res.data?.settings) setSettings(res.data.settings);
@@ -410,10 +417,16 @@ export default function DailyPnL() {
     }
   }, []);
 
+  const loadMonth = useCallback((m) => {
+    const endD = new Date(parseInt(m.slice(0, 4), 10), parseInt(m.slice(5, 7), 10), 0);
+    return loadRange(`${m}-01`, `${m}-${String(endD.getDate()).padStart(2, '0')}`);
+  }, [loadRange]);
+
   useEffect(() => {
     if (view === 'day') loadDay(date);
+    else if (view === 'week') loadRange(weekStart, shiftDate(weekStart, 6));
     else loadMonth(month);
-  }, [view, date, month, loadDay, loadMonth]);
+  }, [view, date, weekStart, month, loadDay, loadRange, loadMonth]);
 
   const handleCostSave = async (row, field, value) => {
     try {
@@ -433,19 +446,36 @@ export default function DailyPnL() {
       {/* Header controls */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <div className="flex rounded-lg overflow-hidden border border-stone-300">
-          <button
-            onClick={() => setView('day')}
-            className={`px-4 py-2 text-sm font-medium ${view === 'day' ? 'bg-terracotta-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
-          >
-            Day
-          </button>
-          <button
-            onClick={() => setView('month')}
-            className={`px-4 py-2 text-sm font-medium ${view === 'month' ? 'bg-terracotta-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
-          >
-            Month
-          </button>
+          {['day', 'week', 'month'].map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-4 py-2 text-sm font-medium capitalize ${view === v ? 'bg-terracotta-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
+            >
+              {v}
+            </button>
+          ))}
         </div>
+
+        {view === 'week' && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => setWeekStart(shiftDate(weekStart, -7))} className="p-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50">
+              <FiChevronLeft />
+            </button>
+            <span className="px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg whitespace-nowrap">
+              {shortDate(weekStart)} – {shortDate(shiftDate(weekStart, 6))}
+            </span>
+            <button onClick={() => setWeekStart(shiftDate(weekStart, 7))} className="p-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50">
+              <FiChevronRight />
+            </button>
+            <button
+              onClick={() => setWeekStart(mondayOf(todayStr()))}
+              className="ml-1 px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-600 hover:bg-stone-50"
+            >
+              This week
+            </button>
+          </div>
+        )}
 
         {view === 'day' ? (
           <div className="flex items-center gap-1">
@@ -468,14 +498,14 @@ export default function DailyPnL() {
               Today
             </button>
           </div>
-        ) : (
+        ) : view === 'month' ? (
           <input
             type="month"
             value={month}
             onChange={(e) => e.target.value && setMonth(e.target.value)}
             className="px-3 py-2 border border-stone-300 rounded-lg text-sm bg-white"
           />
-        )}
+        ) : null}
 
         <div className="flex-1" />
         <button
@@ -510,7 +540,7 @@ export default function DailyPnL() {
           <div className={`rounded-xl shadow-tuscan p-4 ${profit >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
             <p className="text-xs text-stone-500 uppercase tracking-wide flex items-center gap-1">
               {profit >= 0 ? <FiTrendingUp className="text-green-600" /> : <FiTrendingDown className="text-red-600" />}
-              {view === 'day' ? 'Day Profit' : 'Month Profit (tours)'}
+              {view === 'day' ? 'Day Profit' : view === 'week' ? 'Week Profit' : 'Month Profit (tours)'}
             </p>
             <p className={`text-xl font-bold mt-1 ${profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
               {profit >= 0 ? '+' : ''}{eur(profit)}
@@ -542,7 +572,14 @@ export default function DailyPnL() {
       ) : view === 'day' ? (
         <DayTable data={dayData} onCostSave={handleCostSave} />
       ) : (
-        <MonthTable data={monthData} onOpenDay={(d) => { setDate(d); setView('day'); }} />
+        <>
+          <CategoryTiles cats={monthData?.by_category} />
+          <MonthTable
+            data={monthData}
+            onOpenDay={(d) => { setDate(d); setView('day'); }}
+            showOverhead={view === 'month'}
+          />
+        </>
       )}
 
       {showSettings && settings && (
@@ -555,6 +592,36 @@ export default function DailyPnL() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Profit by product line (week/month views)
+// ---------------------------------------------------------------------------
+function CategoryTiles({ cats }) {
+  if (!cats || cats.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <h2 className="text-sm font-semibold text-stone-600 mb-2">Profit by product</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        {cats.map((c) => (
+          <div key={c.category} className="bg-white rounded-lg shadow-tuscan p-3">
+            <div className="flex items-center justify-between gap-1">
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                c.category === 'Tickets' ? 'bg-purple-100 text-purple-800' : (CATEGORY_BADGE[c.category] || CATEGORY_BADGE.Other)
+              }`}>
+                {c.category}
+              </span>
+              <span className="text-[11px] text-stone-400 whitespace-nowrap">{c.units}× · {c.pax} PAX</span>
+            </div>
+            <p className={`text-base font-bold mt-1 ${c.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {c.profit >= 0 ? '+' : ''}{eur(c.profit)}
+            </p>
+            <p className="text-[11px] text-stone-400">in {eur(c.net)} · out {eur(c.cost)}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -656,12 +723,12 @@ function DayTable({ data, onCostSave }) {
 // ---------------------------------------------------------------------------
 // Month summary table
 // ---------------------------------------------------------------------------
-function MonthTable({ data, onOpenDay }) {
+function MonthTable({ data, onOpenDay, showOverhead = true }) {
   if (!data || !data.days || data.days.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-tuscan p-10 text-center text-stone-500">
         <FiCalendar className="mx-auto mb-2 text-stone-300" size={28} />
-        No bookings in this month.
+        No bookings in this period.
       </div>
     );
   }
@@ -734,13 +801,15 @@ function MonthTable({ data, onOpenDay }) {
                 {data.totals.profit >= 0 ? '+' : ''}{eur(data.totals.profit)}
               </td>
             </tr>
-            <tr className="text-stone-600 font-normal text-xs">
-              <td className="px-3 py-2" colSpan={7}>Monthly overhead (staff, office, other fixed — from Settings)</td>
-              <td className="px-2 py-2 text-right">{eur(data.monthly_overhead)}</td>
-              <td className={`px-3 py-2 text-right font-semibold text-sm ${data.profit_after_overhead >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                {data.profit_after_overhead >= 0 ? '+' : ''}{eur(data.profit_after_overhead)}
-              </td>
-            </tr>
+            {showOverhead && (
+              <tr className="text-stone-600 font-normal text-xs">
+                <td className="px-3 py-2" colSpan={7}>Monthly overhead (staff, office, other fixed — from Settings)</td>
+                <td className="px-2 py-2 text-right">{eur(data.monthly_overhead)}</td>
+                <td className={`px-3 py-2 text-right font-semibold text-sm ${data.profit_after_overhead >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                  {data.profit_after_overhead >= 0 ? '+' : ''}{eur(data.profit_after_overhead)}
+                </td>
+              </tr>
+            )}
           </tfoot>
         </table>
       </div>

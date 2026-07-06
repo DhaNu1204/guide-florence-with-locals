@@ -646,6 +646,32 @@ try {
                 $settings['staff_monthly'] + $settings['office_monthly'] + $settings['other_monthly'], 2
             );
             $grand = pnlTotals($rows);
+
+            // Profit by product line (guided categories + Tickets bucket)
+            $byCat = [];
+            foreach ($rows as $r) {
+                if ($r['bookings'] === 0) continue;
+                $cat = $r['is_ticket'] ? 'Tickets' : $r['category'];
+                if (!isset($byCat[$cat])) {
+                    $byCat[$cat] = ['category' => $cat, 'units' => 0, 'pax' => 0,
+                                    'net' => 0.0, 'cost' => 0.0, 'profit' => 0.0];
+                }
+                $byCat[$cat]['units']++;
+                $byCat[$cat]['pax']    += $r['pax']['total'];
+                $byCat[$cat]['net']    += $r['revenue']['net'];
+                $byCat[$cat]['cost']   += $r['costs']['total'];
+                $byCat[$cat]['profit'] += $r['profit'];
+            }
+            $catOrder = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Borghese', 'Mixed', 'Other', 'Tickets'];
+            $byCategory = [];
+            foreach ($catOrder as $c) {
+                if (isset($byCat[$c])) {
+                    foreach (['net', 'cost', 'profit'] as $f) {
+                        $byCat[$c][$f] = round($byCat[$c][$f], 2);
+                    }
+                    $byCategory[] = $byCat[$c];
+                }
+            }
             echo json_encode([
                 'success' => true,
                 'data' => [
@@ -653,6 +679,7 @@ try {
                     'end'                   => $end,
                     'days'                  => $dayTotals,
                     'totals'                => $grand,
+                    'by_category'           => $byCategory,
                     'monthly_overhead'      => $monthlyOverhead,
                     'profit_after_overhead' => round($grand['profit'] - $monthlyOverhead, 2),
                     'settings'              => $settings
