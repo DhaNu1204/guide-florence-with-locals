@@ -79,9 +79,22 @@ const SETTING_GROUPS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Inline editable money cell — shows auto value; click to override; reset icon
+// Category styling + ordering for the day view sections
 // ---------------------------------------------------------------------------
-function EditableCell({ row, field, autoValue, value, overridden, onSave, alignRight = true }) {
+const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Mixed', 'Other'];
+const CATEGORY_BADGE = {
+  Combo: 'bg-amber-100 text-amber-800',
+  Uffizi: 'bg-emerald-100 text-emerald-800',
+  Accademia: 'bg-blue-100 text-blue-800',
+  Pitti: 'bg-rose-100 text-rose-800',
+  Mixed: 'bg-amber-100 text-amber-800',
+  Other: 'bg-stone-100 text-stone-600'
+};
+
+// ---------------------------------------------------------------------------
+// Inline editable money chip — shows auto value; click to override; ↺ resets
+// ---------------------------------------------------------------------------
+function EditableChip({ row, field, label, value, autoValue, overridden, onSave, strong = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -106,7 +119,8 @@ function EditableCell({ row, field, autoValue, value, overridden, onSave, alignR
 
   if (editing) {
     return (
-      <td className={`px-2 py-2 ${alignRight ? 'text-right' : ''}`}>
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-terracotta-400 bg-white text-xs text-stone-600">
+        {label}
         <input
           autoFocus
           type="number"
@@ -119,33 +133,131 @@ function EditableCell({ row, field, autoValue, value, overridden, onSave, alignR
             if (e.key === 'Enter') commit();
             if (e.key === 'Escape') setEditing(false);
           }}
-          className="w-20 px-1 py-0.5 border border-terracotta-400 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+          className="w-16 px-1 border-0 text-right text-xs focus:outline-none"
         />
-      </td>
+      </span>
     );
   }
 
   return (
-    <td
+    <button
       onClick={startEdit}
-      title={overridden ? `Manual (auto: ${eur(autoValue)}) — click to change` : 'Click to override'}
-      className={`px-2 py-2 text-sm cursor-pointer hover:bg-terracotta-50 group ${alignRight ? 'text-right' : ''} ${
-        overridden ? 'font-semibold text-terracotta-700' : 'text-stone-700'
-      }`}
+      title={overridden ? `Manual (auto: ${eur(autoValue)}) — click to change` : 'Click to change'}
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs transition-colors ${
+        overridden
+          ? 'border-terracotta-300 bg-terracotta-50 text-terracotta-700 font-semibold'
+          : 'border-stone-200 bg-stone-50 text-stone-600 hover:border-terracotta-300 hover:bg-terracotta-50'
+      } ${strong ? 'font-semibold' : ''}`}
     >
-      <span className="inline-flex items-center gap-1">
-        {eur(value)}
-        {overridden && (
-          <button
-            onClick={reset}
-            title="Reset to automatic value"
-            className="opacity-0 group-hover:opacity-100 text-stone-400 hover:text-terracotta-600"
-          >
-            <FiRotateCcw size={11} />
-          </button>
-        )}
+      <span>{label}</span>
+      <span>{eur(value)}</span>
+      {overridden && (
+        <span
+          onClick={reset}
+          title="Reset to automatic value"
+          className="text-stone-400 hover:text-terracotta-600"
+        >
+          <FiRotateCcw size={10} />
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One tour (or ticket product) as a simple card: who/when + money in − money
+// out = big green/red profit. Chips are editable.
+// ---------------------------------------------------------------------------
+function UnitCard({ row, onCostSave }) {
+  const chipKeys = row.is_ticket
+    ? ['ticket_cost', 'other_cost']
+    : COST_FIELDS.map((f) => f.key);
+
+  const paxDetail =
+    row.pax.children > 0 || row.pax.infants > 0
+      ? ` (${row.pax.adults} adults, ${row.pax.children} children${row.pax.infants > 0 ? `, ${row.pax.infants} infants` : ''})`
+      : '';
+
+  return (
+    <div className="bg-white rounded-xl shadow-tuscan p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-stone-500">{(row.time || '').slice(0, 5)}</span>
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${CATEGORY_BADGE[row.category] || CATEGORY_BADGE.Other}`}>
+              {row.category}
+            </span>
+            {row.is_ticket && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-purple-100 text-purple-800">Ticket / Audio</span>
+            )}
+            {row.revenue.estimated && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-stone-100 text-stone-500" title="Commission estimated from % — no exact Bokun invoice">
+                ~ estimated
+              </span>
+            )}
+          </div>
+          <p className="font-medium text-stone-800 mt-1 leading-snug">{row.title}</p>
+          <p className="text-xs text-stone-500 mt-0.5">
+            {row.pax.total} PAX{paxDetail}
+            {row.is_group && ` · ${row.bookings} bookings`}
+            {row.guide_name
+              ? ` · Guide: ${row.guide_name}`
+              : (!row.is_ticket ? ' · no guide assigned' : '')}
+            {` · ${row.channels.join(', ')}`}
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className={`text-xl font-bold ${row.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+            {row.profit >= 0 ? '+' : ''}{eur(row.profit)}
+          </p>
+          <p className="text-[11px] text-stone-400">
+            in {eur(row.revenue.net)} − out {eur(row.costs.total)}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 mt-3">
+        <EditableChip
+          row={row}
+          field="revenue_override"
+          label="Money in"
+          value={row.revenue.net}
+          autoValue={row.revenue.retail - row.revenue.commission}
+          overridden={row.revenue.overridden}
+          onSave={onCostSave}
+          strong
+        />
+        <span className="text-stone-300 text-xs">−</span>
+        {COST_FIELDS.filter((f) => chipKeys.includes(f.key)).map((f) => (
+          <EditableChip
+            key={f.key}
+            row={row}
+            field={f.key}
+            label={f.label}
+            value={row.costs[f.key]}
+            autoValue={row.costs.auto[f.key]}
+            overridden={row.costs.overridden.includes(f.key)}
+            onSave={onCostSave}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Small "in · out · profit" summary used in section headers
+function SectionTotals({ rows }) {
+  const t = rows.reduce(
+    (a, r) => ({ net: a.net + r.revenue.net, cost: a.cost + r.costs.total, profit: a.profit + r.profit }),
+    { net: 0, cost: 0, profit: 0 }
+  );
+  return (
+    <span className="text-xs text-stone-500 whitespace-nowrap">
+      in {eur(t.net)} · out {eur(t.cost)} ·{' '}
+      <span className={`font-bold text-sm ${t.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+        {t.profit >= 0 ? '+' : ''}{eur(t.profit)}
       </span>
-    </td>
+    </span>
   );
 }
 
@@ -424,7 +536,10 @@ export default function DailyPnL() {
 }
 
 // ---------------------------------------------------------------------------
-// Day detail table
+// Day detail view — sectioned cards:
+//   1. Guided Tours, grouped by location/category (Combo, Uffizi, Accademia…)
+//   2. Tickets & Audio Guides
+//   3. Cancelled (collapsed, excluded from money)
 // ---------------------------------------------------------------------------
 function DayTable({ data, onCostSave }) {
   if (!data || !data.rows || data.rows.length === 0) {
@@ -436,105 +551,80 @@ function DayTable({ data, onCostSave }) {
     );
   }
 
+  const active = data.rows.filter((r) => r.bookings > 0);
+  const guided = active.filter((r) => !r.is_ticket);
+  const tickets = active.filter((r) => r.is_ticket);
+  const cancelledRows = data.rows.filter((r) => r.bookings === 0);
+
+  const byCategory = {};
+  guided.forEach((r) => {
+    if (!byCategory[r.category]) byCategory[r.category] = [];
+    byCategory[r.category].push(r);
+  });
+  const categories = CATEGORY_ORDER.filter((c) => byCategory[c]);
+
   return (
-    <div className="bg-white rounded-xl shadow-tuscan overflow-hidden">
-      <div className="px-4 py-2 text-xs text-stone-400 border-b border-stone-100">
-        Click any cost or the Net cell to enter your own amount. <span className="font-semibold text-terracotta-600">Orange</span> = manual value,
-        hover it and click ↺ to go back to automatic. “~” = commission estimated from % (no exact Bokun invoice).
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
-              <th className="px-3 py-2 text-left">Time</th>
-              <th className="px-3 py-2 text-left">Tour</th>
-              <th className="px-2 py-2 text-right">PAX</th>
-              <th className="px-2 py-2 text-left">Channel</th>
-              <th className="px-2 py-2 text-right">Retail</th>
-              <th className="px-2 py-2 text-right">Comm.</th>
-              <th className="px-2 py-2 text-right">Net</th>
-              {COST_FIELDS.map((f) => (
-                <th key={f.key} className="px-2 py-2 text-right">{f.label}</th>
-              ))}
-              <th className="px-2 py-2 text-right">Costs</th>
-              <th className="px-3 py-2 text-right">Profit</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-stone-100">
-            {data.rows.map((row) => {
-              const inactive = row.bookings === 0;
-              return (
-                <tr key={row.unit} className={inactive ? 'opacity-50 bg-red-50/40' : 'hover:bg-stone-50/60'}>
-                  <td className="px-3 py-2 whitespace-nowrap text-stone-600">{(row.time || '').slice(0, 5)}</td>
-                  <td className="px-3 py-2 max-w-[280px]">
-                    <p className="truncate font-medium text-stone-800" title={row.title}>{row.title}</p>
-                    <p className="text-xs text-stone-400">
-                      {row.category}
-                      {row.is_group && ` · group of ${row.bookings}`}
-                      {row.is_ticket && ' · ticket/audio product'}
-                      {row.guide_name && ` · ${row.guide_name}`}
-                      {inactive && ` · cancelled`}
-                    </p>
-                  </td>
-                  <td className="px-2 py-2 text-right text-stone-700">
-                    {row.pax.total}
-                    {(row.pax.children > 0 || row.pax.infants > 0) && (
-                      <span className="block text-[10px] text-stone-400">
-                        {row.pax.adults}A {row.pax.children > 0 && `${row.pax.children}C`} {row.pax.infants > 0 && `${row.pax.infants}I`}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-stone-500 max-w-[110px] truncate" title={row.channels.join(', ')}>
-                    {row.channels.join(', ')}
-                  </td>
-                  <td className="px-2 py-2 text-right text-stone-500">{eur(row.revenue.retail)}</td>
-                  <td className="px-2 py-2 text-right text-stone-500">
-                    {row.revenue.estimated && '~'}{eur(row.revenue.commission)}
-                  </td>
-                  <EditableCell
-                    row={row}
-                    field="revenue_override"
-                    autoValue={row.revenue.retail - row.revenue.commission}
-                    value={row.revenue.net}
-                    overridden={row.revenue.overridden}
-                    onSave={onCostSave}
-                  />
-                  {COST_FIELDS.map((f) => (
-                    <EditableCell
-                      key={f.key}
-                      row={row}
-                      field={f.key}
-                      autoValue={row.costs.auto[f.key]}
-                      value={row.costs[f.key]}
-                      overridden={row.costs.overridden.includes(f.key)}
-                      onSave={onCostSave}
-                    />
+    <div className="space-y-6">
+      <p className="text-xs text-stone-400">
+        Click any chip (Money in, Tickets, Guide…) to type your real amount.{' '}
+        <span className="font-semibold text-terracotta-600">Orange</span> = manual value — click ↺ on it to go back to automatic.
+      </p>
+
+      {/* 1. Guided tours, by location */}
+      {guided.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base font-semibold text-stone-800">Guided Tours ({guided.length})</h2>
+            <SectionTotals rows={guided} />
+          </div>
+          <div className="space-y-4">
+            {categories.map((cat) => (
+              <div key={cat}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${CATEGORY_BADGE[cat]}`}>
+                    {cat} · {byCategory[cat].length} {byCategory[cat].length === 1 ? 'tour' : 'tours'}
+                  </span>
+                  <SectionTotals rows={byCategory[cat]} />
+                </div>
+                <div className="space-y-2">
+                  {byCategory[cat].map((row) => (
+                    <UnitCard key={row.unit} row={row} onCostSave={onCostSave} />
                   ))}
-                  <td className="px-2 py-2 text-right font-medium text-stone-700">{eur(row.costs.total)}</td>
-                  <td className={`px-3 py-2 text-right font-semibold ${row.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                    {row.profit >= 0 ? '+' : ''}{eur(row.profit)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="bg-stone-50 font-semibold text-stone-800">
-              <td className="px-3 py-2" colSpan={4}>Day total</td>
-              <td className="px-2 py-2 text-right">{eur(data.totals.retail)}</td>
-              <td className="px-2 py-2 text-right">{eur(data.totals.commission)}</td>
-              <td className="px-2 py-2 text-right">{eur(data.totals.net)}</td>
-              {COST_FIELDS.map((f) => (
-                <td key={f.key} className="px-2 py-2 text-right">{eur(data.totals[f.key])}</td>
-              ))}
-              <td className="px-2 py-2 text-right">{eur(data.totals.total_cost)}</td>
-              <td className={`px-3 py-2 text-right ${data.totals.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                {data.totals.profit >= 0 ? '+' : ''}{eur(data.totals.profit)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 2. Tickets & audio guides */}
+      {tickets.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base font-semibold text-stone-800">Tickets &amp; Audio Guides ({tickets.length})</h2>
+            <SectionTotals rows={tickets} />
+          </div>
+          <div className="space-y-2">
+            {tickets.map((row) => (
+              <UnitCard key={row.unit} row={row} onCostSave={onCostSave} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Cancelled — excluded from all money */}
+      {cancelledRows.length > 0 && (
+        <div className="bg-white/60 rounded-xl border border-stone-200 p-3">
+          <p className="text-xs font-semibold text-stone-500 mb-1">
+            Cancelled ({cancelledRows.length}) — not counted
+          </p>
+          {cancelledRows.map((row) => (
+            <p key={row.unit} className="text-xs text-stone-400 line-through">
+              {(row.time || '').slice(0, 5)} · {row.title}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
