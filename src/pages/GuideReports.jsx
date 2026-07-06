@@ -26,15 +26,24 @@ const PDF_COLORS = {
   white: [255, 255, 255]
 };
 
-// Tour category display order (matches backend classifyTourCategory)
-const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Pitti', 'Accademia', 'Other'];
+// Tour category display order (matches backend classifyTourCategory;
+// "Mixed" = a merged group whose member bookings span more than one category)
+const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Pitti', 'Accademia', 'Other', 'Mixed'];
 
-// All-guides overview columns: always the 4 museums; include "Other"
-// only when some guide actually has Other > 0 (keeps the table clean).
+// All-guides overview columns: always the 4 museums; include "Other"/"Mixed"
+// only when some guide actually has a non-zero count (keeps the table clean).
 const overviewCategoryColumns = (guides = []) => {
-  const showOther = guides.some((g) => (g.by_category?.Other || 0) > 0);
-  return showOther ? CATEGORY_ORDER : CATEGORY_ORDER.filter((c) => c !== 'Other');
+  return CATEGORY_ORDER.filter((c) =>
+    (c !== 'Other' && c !== 'Mixed') || guides.some((g) => (g.by_category?.[c] || 0) > 0)
+  );
 };
+
+// Export label for a tour's category: mixed rows carry their composition,
+// e.g. 'Mixed (Combo ×2, Uffizi ×1)'.
+const categoryExportLabel = (t) =>
+  t.category === 'Mixed' && t.composition_label
+    ? `Mixed (${t.composition_label})`
+    : (t.category || 'Other');
 
 // Default to LAST month (invoices arrive at month-end) — returns 'YYYY-MM'
 const getLastMonth = () => {
@@ -223,7 +232,7 @@ const GuideReports = () => {
         formatDate(t.date),
         formatTime(t.time),
         t.title || '-',
-        t.category || 'Other'
+        categoryExportLabel(t)
       ]);
     } else {
       const guideRows = report.guides || [];
@@ -278,7 +287,7 @@ const GuideReports = () => {
     rows.push([]);
 
     if (report.mode === 'single') {
-      // Category summary block (all five categories, in order)
+      // Category summary block (all categories incl. Mixed, in order)
       const summary = report.summary_by_category || {};
       rows.push(['Category', 'Count']);
       CATEGORY_ORDER.forEach((cat) => rows.push([cat, summary[cat] || 0]));
@@ -286,7 +295,7 @@ const GuideReports = () => {
 
       rows.push(['#', 'Date', 'Time', 'Tour', 'Type']);
       (report.tours || []).forEach((t, i) => {
-        rows.push([i + 1, formatDate(t.date), formatTime(t.time), t.title || '', t.category || 'Other']);
+        rows.push([i + 1, formatDate(t.date), formatTime(t.time), t.title || '', categoryExportLabel(t)]);
       });
       rows.push([]);
       rows.push(['Total tours', report.total_tours || 0]);
@@ -458,13 +467,18 @@ const GuideReports = () => {
                   .filter((cat) => (report.summary_by_category?.[cat] || 0) > 0)
                   .map((cat) => {
                     const count = report.summary_by_category[cat];
-                    const isOther = cat === 'Other';
+                    const highlighted = cat === 'Other' || cat === 'Mixed';
+                    const chipTitle = cat === 'Other'
+                      ? 'Tours that did not match a known museum type'
+                      : cat === 'Mixed'
+                        ? 'Merged groups whose bookings span more than one tour type'
+                        : undefined;
                     return (
                       <span
                         key={cat}
-                        title={isOther ? 'Tours that did not match a known museum type' : undefined}
+                        title={chipTitle}
                         className={`inline-flex items-baseline space-x-1 rounded-tuscan-lg border px-3 py-2 ${
-                          isOther
+                          highlighted
                             ? 'bg-gold-50 border-gold-300 text-gold-800'
                             : 'bg-stone-50 border-stone-200 text-stone-700'
                         }`}
@@ -507,12 +521,15 @@ const GuideReports = () => {
                       <td className="px-3 py-2 text-stone-800">{t.title || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                          t.category === 'Other'
+                          t.category === 'Other' || t.category === 'Mixed'
                             ? 'bg-gold-100 text-gold-800'
                             : 'bg-stone-100 text-stone-700'
                         }`}>
                           {t.category || 'Other'}
                         </span>
+                        {t.category === 'Mixed' && t.composition_label && (
+                          <span className="ml-1.5 text-xs text-stone-500">{t.composition_label}</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -538,12 +555,12 @@ const GuideReports = () => {
                       <td className="px-3 py-2 text-stone-800">{g.guide_name}</td>
                       {overviewCats.map((cat) => {
                         const val = g.by_category?.[cat] || 0;
-                        const isOther = cat === 'Other';
+                        const highlighted = cat === 'Other' || cat === 'Mixed';
                         return (
                           <td
                             key={cat}
                             className={`px-3 py-2 text-right ${
-                              isOther && val > 0 ? 'text-gold-800 font-medium' : 'text-stone-700'
+                              highlighted && val > 0 ? 'text-gold-800 font-medium' : 'text-stone-700'
                             }`}
                           >
                             {val || '—'}

@@ -88,8 +88,8 @@ function resolveDateRange($period, $start, $end) {
 
 /**
  * Month overview across all guides — group-aware unit count + category breakdown per guide.
- * Collapses each tour-group to one unit and classifies it by its representative title
- * (group display name preferred) using the shared classifyTourCategory() helper.
+ * Collapses each tour-group to one unit and classifies it by its MEMBER bookings'
+ * titles (a group mixing categories counts as "Mixed"), via buildComposition().
  */
 function getAllGuidesOverview($conn, $range, $period) {
     $sql = "SELECT
@@ -116,7 +116,7 @@ function getAllGuidesOverview($conn, $range, $period) {
     $stmt->execute();
     $result = $stmt->get_result();
 
-    $byGuide = []; // guide_id => aggregate row (with internal _seen unit map)
+    $byGuide = []; // guide_id => aggregate row (with internal _groups member-title map)
 
     while ($row = $result->fetch_assoc()) {
         $gid = intval($row['guide_id']);
@@ -130,31 +130,33 @@ function getAllGuidesOverview($conn, $range, $period) {
                     'Uffizi'    => 0,
                     'Pitti'     => 0,
                     'Accademia' => 0,
-                    'Other'     => 0
+                    'Other'     => 0,
+                    'Mixed'     => 0
                 ],
-                '_seen'       => []
+                '_groups'     => [] // group_id => list of member titles (this guide's)
             ];
         }
 
-        // Group-aware unit key (1 group = 1 unit, scoped per guide)
-        $unitKey = $row['group_id'] ? ('g' . intval($row['group_id'])) : ('t' . intval($row['id']));
-        if (isset($byGuide[$gid]['_seen'][$unitKey])) {
-            continue; // this unit already counted for this guide
+        if ($row['group_id']) {
+            // Accumulate member titles; each group becomes exactly ONE unit below.
+            $byGuide[$gid]['_groups'][intval($row['group_id'])][] = $row['title'];
+        } else {
+            $category = classifyTourCategory($row['title']);
+            $byGuide[$gid]['by_category'][$category]++;
+            $byGuide[$gid]['total_tours']++;
         }
-        $byGuide[$gid]['_seen'][$unitKey] = true;
-
-        // Representative title — group display name preferred, else the tour title
-        $repTitle = ($row['group_id'] && $row['group_display_name']) ? $row['group_display_name'] : $row['title'];
-
-        $category = classifyTourCategory($repTitle);
-        $byGuide[$gid]['by_category'][$category]++;
-        $byGuide[$gid]['total_tours']++;
     }
 
-    // Drop internal bookkeeping and order by guide name
+    // Resolve each group to one unit: single member category, or "Mixed" when
+    // the members span more than one category. Then drop internal bookkeeping.
     $guides = [];
     foreach ($byGuide as $g) {
-        unset($g['_seen']);
+        foreach ($g['_groups'] as $memberTitles) {
+            list($category, , ) = buildComposition($memberTitles);
+            $g['by_category'][$category]++;
+            $g['total_tours']++;
+        }
+        unset($g['_groups']);
         $guides[] = $g;
     }
     usort($guides, function ($a, $b) {
@@ -207,40 +209,55 @@ function getGuideReport($conn, $guide_id, $range, $period) {
     $stmt->execute();
     $result = $stmt->get_result();
 
-    $tours = [];          // representative rows (one per unit)
-    $seenGroups = [];     // group_id => true (so each group contributes one row)
+    $tours = [];        // representative rows (one per unit)
+    $groupAccum = [];   // group_id => ['titles' => [...], 'date' => ..., 'time' => ..., 'title' => ...]
 
+    // First pass: emit standalone rows directly; accumulate ALL member titles per
+    // group so the group's category reflects its members, not the display title.
     while ($row = $result->fetch_assoc()) {
         if ($row['group_id']) {
             $gid = intval($row['group_id']);
-            if (isset($seenGroups[$gid])) {
-                continue; // already represented by an earlier row in this group
+            if (!isset($groupAccum[$gid])) {
+                $groupAccum[$gid] = [
+                    'titles' => [],
+                    'date'   => $row['date'],
+                    'time'   => $row['time'],
+                    'title'  => $row['title']
+                ];
             }
-            $seenGroups[$gid] = true;
-
-            // Prefer the group's canonical date/time/title when available
-            $groupStmt = $conn->prepare("SELECT display_name, group_date, group_time FROM tour_groups WHERE id = ?");
-            $groupStmt->bind_param("i", $gid);
-            $groupStmt->execute();
-            $groupInfo = $groupStmt->get_result()->fetch_assoc();
-
-            $repTitle = $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $row['title'];
-            $tours[] = [
-                'date'     => $groupInfo && $groupInfo['group_date'] ? $groupInfo['group_date'] : $row['date'],
-                'time'     => $groupInfo && $groupInfo['group_time'] ? $groupInfo['group_time'] : $row['time'],
-                'title'    => $repTitle,
-                'category' => classifyTourCategory($repTitle),
-                'group_id' => $gid
-            ];
+            $groupAccum[$gid]['titles'][] = $row['title'];
         } else {
+            list($category, $composition, $label) = buildComposition([$row['title']]);
             $tours[] = [
-                'date'     => $row['date'],
-                'time'     => $row['time'],
-                'title'    => $row['title'],
-                'category' => classifyTourCategory($row['title']),
-                'group_id' => null
+                'date'              => $row['date'],
+                'time'              => $row['time'],
+                'title'             => $row['title'],
+                'category'          => $category,
+                'composition'       => $composition,
+                'composition_label' => $label,
+                'group_id'          => null
             ];
         }
+    }
+
+    // Second pass: one representative row per group, classified by its members.
+    foreach ($groupAccum as $gid => $accum) {
+        // Prefer the group's canonical date/time/title when available
+        $groupStmt = $conn->prepare("SELECT display_name, group_date, group_time FROM tour_groups WHERE id = ?");
+        $groupStmt->bind_param("i", $gid);
+        $groupStmt->execute();
+        $groupInfo = $groupStmt->get_result()->fetch_assoc();
+
+        list($category, $composition, $label) = buildComposition($accum['titles']);
+        $tours[] = [
+            'date'              => $groupInfo && $groupInfo['group_date'] ? $groupInfo['group_date'] : $accum['date'],
+            'time'              => $groupInfo && $groupInfo['group_time'] ? $groupInfo['group_time'] : $accum['time'],
+            'title'             => $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $accum['title'],
+            'category'          => $category,
+            'composition'       => $composition,
+            'composition_label' => $label,
+            'group_id'          => $gid
+        ];
     }
 
     // Sort representative rows by date, then time
@@ -250,13 +267,16 @@ function getGuideReport($conn, $guide_id, $range, $period) {
         return strcmp($a['time'] ?? '', $b['time'] ?? '');
     });
 
-    // Category breakdown — always include all five keys in this fixed order
+    // Category breakdown — always include all keys in this fixed order.
+    // A Mixed group increments ONLY "Mixed" (not its member categories),
+    // so the bucket sum still equals total_tours.
     $summary_by_category = [
         'Combo'     => 0,
         'Uffizi'    => 0,
         'Pitti'     => 0,
         'Accademia' => 0,
-        'Other'     => 0
+        'Other'     => 0,
+        'Mixed'     => 0
     ];
     foreach ($tours as $t) {
         $summary_by_category[$t['category']]++;
@@ -273,6 +293,43 @@ function getGuideReport($conn, $guide_id, $range, $period) {
             'tours'               => $tours
         ]
     ]);
+}
+
+/**
+ * Classify a set of member titles into one unit category + composition.
+ *
+ * Returns [category, composition, composition_label]:
+ *   - composition: ordered list of ['category' => ..., 'count' => ...] entries
+ *     (fixed order Combo, Uffizi, Pitti, Accademia, Other; only present categories)
+ *   - category: the single category when all members agree, else 'Mixed'
+ *   - composition_label: 'Combo ×2, Uffizi ×1' for Mixed units, '' otherwise
+ */
+function buildComposition($titles) {
+    $counts = [];
+    foreach ($titles as $title) {
+        $c = classifyTourCategory($title);
+        $counts[$c] = isset($counts[$c]) ? $counts[$c] + 1 : 1;
+    }
+
+    $composition = [];
+    foreach (['Combo', 'Uffizi', 'Pitti', 'Accademia', 'Other'] as $cat) {
+        if (isset($counts[$cat])) {
+            $composition[] = ['category' => $cat, 'count' => $counts[$cat]];
+        }
+    }
+
+    if (count($composition) === 0) {
+        return ['Other', [['category' => 'Other', 'count' => 0]], ''];
+    }
+    if (count($composition) === 1) {
+        return [$composition[0]['category'], $composition, ''];
+    }
+
+    $parts = [];
+    foreach ($composition as $entry) {
+        $parts[] = $entry['category'] . ' ×' . $entry['count'];
+    }
+    return ['Mixed', $composition, implode(', ', $parts)];
 }
 
 /**
