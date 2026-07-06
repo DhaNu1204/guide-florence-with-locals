@@ -707,10 +707,12 @@ const Tours = () => {
     setSavingChanges(prev => ({ ...prev, [`guide_${tourId}`]: true }));
 
     // Applies the assignment; pass force=true to bypass the double-booking guard.
+    // Selecting "Unassigned" sends an explicit guide_id: null so the backend clears it.
     const applyAssignment = async (force = false) => {
-      await mysqlDB.updateTour(tourId, force ? { guide_id: guideId, force: true } : { guide_id: guideId });
+      const newGuideId = guideId || null;
+      await mysqlDB.updateTour(tourId, force ? { guide_id: newGuideId, force: true } : { guide_id: newGuideId });
       setTours(prev => prev.map(tour =>
-        tour.id === tourId ? { ...tour, guide_id: guideId } : tour
+        tour.id === tourId ? { ...tour, guide_id: newGuideId } : tour
       ));
       setEditingGuides(prev => {
         const newState = { ...prev };
@@ -718,7 +720,7 @@ const Tours = () => {
         return newState;
       });
       setError(null);
-      setSuccess(`Guide "${guideName}" assigned successfully!`);
+      setSuccess(guide ? `Guide "${guideName}" assigned successfully!` : 'Guide unassigned successfully!');
       setTimeout(() => setSuccess(null), 4000);
     };
 

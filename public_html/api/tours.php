@@ -570,10 +570,12 @@ switch ($method) {
             $bindValues[] = $data['time'];
         }
         
-        // Handle both guideId and guide_id for backward compatibility
-        if (isset($data['guideId']) || isset($data['guide_id'])) {
+        // Handle both guideId and guide_id for backward compatibility.
+        // array_key_exists (not isset) so an explicit null unassigns the guide:
+        // "field omitted" = don't touch, "field present but null/empty" = set NULL.
+        if (is_array($data) && (array_key_exists('guideId', $data) || array_key_exists('guide_id', $data))) {
             $setFields[] = "guide_id = ?";
-            $guideValue = isset($data['guide_id']) ? $data['guide_id'] : $data['guideId'];
+            $guideValue = array_key_exists('guide_id', $data) ? $data['guide_id'] : $data['guideId'];
             // Convert empty string to NULL for database
             if ($guideValue === '' || $guideValue === null) {
                 $bindTypes .= "s";
@@ -700,7 +702,7 @@ switch ($method) {
                     // guide WhatsApp reminders so a newly-assigned within-7-day
                     // tour schedules promptly. Flag-gated + fully isolated:
                     // never affects the assignment response. No payment fields.
-                    if (isset($data['guideId']) || isset($data['guide_id'])) {
+                    if (is_array($data) && (array_key_exists('guideId', $data) || array_key_exists('guide_id', $data))) {
                         try {
                             require_once __DIR__ . '/twilio_reminders.php';
                             reconcileGuideReminders($conn);

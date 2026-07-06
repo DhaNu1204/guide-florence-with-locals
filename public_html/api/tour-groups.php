@@ -694,7 +694,9 @@ function updateGroup($conn, $groupId, $data) {
         $bindValues[] = $data['notes'];
     }
 
-    if (isset($data['guide_id'])) {
+    // array_key_exists (not isset) so an explicit null unassigns the group's guide:
+    // "field omitted" = don't touch, "field present but null/empty" = set NULL.
+    if (is_array($data) && array_key_exists('guide_id', $data)) {
         $guideId = $data['guide_id'] === null || $data['guide_id'] === '' ? null : intval($data['guide_id']);
         $setFields[] = 'guide_id = ?';
         $bindTypes .= 'i';
@@ -746,8 +748,9 @@ function updateGroup($conn, $groupId, $data) {
         }
         $stmt->close();
 
-        // Propagate guide to all tours in the group (inside transaction)
-        if (isset($data['guide_id'])) {
+        // Propagate guide to all tours in the group (inside transaction).
+        // array_key_exists so an explicit null propagates NULL (unassign) too.
+        if (is_array($data) && array_key_exists('guide_id', $data)) {
             $guideIdVal = $data['guide_id'] === null || $data['guide_id'] === '' ? null : intval($data['guide_id']);
             propagateGuideToTours($conn, $groupId, $guideIdVal);
         }
@@ -766,7 +769,7 @@ function updateGroup($conn, $groupId, $data) {
     // the guide WhatsApp reminders so a group-level assignment schedules promptly
     // instead of waiting for the next Bokun sync. Flag-gated + fully isolated: a
     // reminder failure can never affect this group-update response. No payments.
-    if (isset($data['guide_id'])) {
+    if (is_array($data) && array_key_exists('guide_id', $data)) {
         try {
             require_once __DIR__ . '/twilio_reminders.php';
             reconcileGuideReminders($conn);

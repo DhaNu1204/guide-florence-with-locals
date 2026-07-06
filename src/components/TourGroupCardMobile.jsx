@@ -44,8 +44,8 @@ const TourGroupCardMobile = ({
     setSavingGuide(true);
     try {
       await tourGroupsAPI.update(group.id, { guide_id: selectedGuideId || null });
-      const name = guides.find(g => g.id == selectedGuideId)?.name || 'None';
-      onSuccess?.(`Guide "${name}" assigned to group`);
+      const name = guides.find(g => g.id == selectedGuideId)?.name;
+      onSuccess?.(name ? `Guide "${name}" assigned to group` : 'Guide unassigned from group');
       setEditingGuide(false);
       onRefresh?.();
     } catch (err) {
