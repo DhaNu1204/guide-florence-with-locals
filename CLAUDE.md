@@ -29,7 +29,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 **Production**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Last Updated**: March 3, 2026
+**Last Updated**: July 6, 2026
 
 ## Tech Stack
 
@@ -40,7 +40,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 - **PDF**: jsPDF + jsPDF-AutoTable
 - **Monitoring**: Sentry.io (frontend + backend)
 - **CI/CD**: GitHub Actions (build + deploy + health checks)
-- **Testing**: Vitest + React Testing Library (52 tests)
+- **Testing**: Vitest + React Testing Library (87 tests)
 - **Hosting**: Hostinger shared hosting (HTTPS)
 
 ## Key Features
@@ -269,7 +269,7 @@ Read-only month-end invoice verification — lists the tours a guide actually pe
 ### API
 | Method | Endpoint | Notes |
 |--------|----------|-------|
-| GET | `/api/guide-tour-report.php` | Auth required (read-only). Params: optional `guide_id`; `period=YYYY-MM` **or** `start=YYYY-MM-DD&end=YYYY-MM-DD`. With `guide_id`: returns `guide_info`, `total_tours`, `tours[]` (date/time/title/category) + `summary_by_category` (Combo/Uffizi/Pitti/Accademia/Other). Without `guide_id`: month overview `guides[]` (guide_id/guide_name/total_tours). |
+| GET | `/api/guide-tour-report.php` | Auth required (read-only). Params: optional `guide_id`; `period=YYYY-MM` **or** `start=YYYY-MM-DD&end=YYYY-MM-DD`. With `guide_id`: returns `guide_info`, `total_tours`, `tours[]` (date/time/title/category/composition/composition_label) + `summary_by_category` (Combo/Uffizi/Pitti/Accademia/Other/**Mixed**). Without `guide_id`: month overview `guides[]` (guide_id/guide_name/total_tours/by_category incl. Mixed). Group units are classified by MEMBER bookings (see "Mixed merged groups"). |
 
 ## Guide Availability Requests (Jun 2026)
 
@@ -321,6 +321,13 @@ The Auth Token is used only for the HTTP Basic auth header — never logged or e
 ### Failures
 - A schedule failure (e.g. an **invalid guide phone number**) is recorded in `guide_reminders.last_error` with `status='failed'` and **swallowed** (never throws to the caller). It's **retried automatically on the next reconcile** once the underlying data is fixed (e.g. the guide's phone corrected in the Guides page). Phone normalization deliberately does **not** guess a country code — Italian mobiles stored without `+39` are treated as unusable until corrected.
 
+### Delivery fix (Jun 2026, dd3d8d3) — WANTED vs CREATABLE
+The original reconcile **self-cancelled every reminder ~12 min before SendAt**: Twilio's 15-minute scheduling floor (`minSendAt = now + 15min`) wrongly gated **retention** as well as creation, so a tour inside the floor dropped out of the kept set and the removal pass cancelled its already-booked message. Fixed by splitting the concepts in a pure, unit-tested `reminderPlan()`:
+- **WANTED** (valid phone + future start within the 7-day window) alone decides **retention** — imminent reminders are never cancelled.
+- **CREATABLE** (`sendAt >= now + 15min`) only gates **new** scheduling.
+- The removal pass cancels only reminders that are **not wanted** (tour cancelled, guide unassigned/changed, time moved).
+Also in the same fix: **one reminder per DEPARTURE** — the candidate query collapses each group to its lowest active tour id, so a grouped guide gets ONE WhatsApp, not one per booking; **group-level guide assignment** (tour-groups.php `updateGroup`) propagates `guide_id` to member tours and reconciles (exception-isolated); and the **unassign path** reconciles too (see "Guide unassign fix" below), cancelling the guide's reminder when they're removed from a tour/group.
+
 ## Tour Classification (Jun 2026)
 
 `public_html/api/tour_classification.php` is the **single source of truth** for private-tour classification and per-product PAX capacity. Pure logic — no DB access, no side effects, no payment logic — safe to `require_once` anywhere.
@@ -329,6 +336,7 @@ The Auth Token is used only for the HTTP Basic auth header — never logged or e
 - **`isPrivateBooking($productId, $rateId, $rateTitle)`** → bool
 - **`getMaxPaxForTitle($title)`** → 9 for `uffizi` (incl. Uffizi+Accademia combos), 19 for `accademia`/`david`, else 9
 - **`bokunRateInfo($bokunData)`** → `[rateId, rateTitle]` (accepts a decoded array or JSON string)
+- **`computePaxBreakdown($bokunData, $fallbackParticipants)`** → `[adults, children, infants]` from `productBookings[0].fields.priceCategoryBookings` (sums quantity by `pricingCategory.ticketCategory` ADULT/CHILD/INFANT, title-keyword fallback; else all-adults from participants). Powers the server-computed `pax_adults`/`pax_children`/`pax_infants` fields.
 
 ### Private rules (the constants live in this file)
 ```php
@@ -361,13 +369,34 @@ Edit the constants in `tour_classification.php` (add the product id to `FULLY_PR
 - Set on **every** insert/update in `bokun_sync.php` via `isPrivateBooking()`. Returned to the frontend through the existing `SELECT t.*` (no SELECT change).
 - **Frontend**: purple **Private** badge (`bg-purple-100 text-purple-800`) on Tours rows + `TourCardMobile` (private tours render standalone with the normal guide-assign UI + Ask button). Cancelled bookings are excluded from PAX/booking/FULL counts (`src/utils/tourCapacity.js` — `getMaxPax`, `countActivePax`, `countActiveBookings`). Assigned + non-cancelled tours get a light-green background (priority: cancelled red > assigned green > default).
 
-## Tours date filter (Jun 2026)
+## Tours date filter (Jun–Jul 2026)
 
 `src/components/DateFilter.jsx` — a themed in-app calendar replaces the native `<input type="date">` and the loose period buttons; `Tours.jsx` just renders `<DateFilter {...state/setters} />` (all existing filter state reused: `filterDate`, `showUpcoming`, `showPast`, `showDateRange`, `rangeStartDate`, `rangeEndDate`).
 - **Trigger** button: calendar icon + selected date `EEE, d MMM yyyy`; "Pick a date" when in Upcoming/Past/Range mode; terracotta border/ring when open.
 - **Popover calendar**: date-fns 6-row grid (`startOfMonth/endOfMonth/startOfWeek/endOfWeek/eachDayOfInterval`); selected day = terracotta filled, today = inset terracotta ring, out-of-month muted, hover stone. Outside-click + Escape close.
 - **Month arrows land on the 1st** (`startOfMonth(addMonths/subMonths(filterDate||today, 1))`) and keep the popover open (owner's preferred behavior).
-- **Segmented control**: Today / Upcoming / Past 40 Days / Date Range (active segment terracotta), wired to the same handlers; Range mode shows the two date inputs (`end >= start`).
+- **Segmented control (Jul 2026)**: **Today / Tomorrow / Upcoming / Date Range** (active segment terracotta). "Past 40 Days" was removed (the `showPast` state/plumbing in Tours.jsx intentionally remains, unused). **Tomorrow** = `setFilterDate(startOfDay(addDays(today, 1)))` + clear all flags (same single-date mode as Today); active when the selected single date is tomorrow. Range mode shows the two date inputs (`end >= start`).
+
+## Tours counts & Category Summary (Jul 2026)
+
+- **Cancelled bookings are excluded from ALL counts**: not just group PAX/booking/FULL badges (`countActivePax`/`countActiveBookings` in `src/utils/tourCapacity.js`), but also the **day-header, period-header, and Summary tour counts**. Shared `computeItemStats(items)` in Tours.jsx returns `{activeTours, cancelledCount, pax}`; counts render as "N tours · M PAX" with a muted "**· N cancelled**" suffix only when N > 0.
+- **Category Summary panel** on the Tours page Summary card: buckets each ACTIVE departure once via `tourCategory(title)` (`src/utils/tourCapacity.js` — mirrors backend `classifyTourCategory`: uffizi; accademia incl. david; pitti incl. boboli/palatina/palatine; 2+ museums = Combo; else Other). Private departures mirror shared categories exactly: **Combo, Uffizi, Accademia, Pitti, Other, Private Combo, Private Uffizi, Private Accademia, Private Pitti, Private (other)** — 0-buckets hidden, Private tiles tinted purple.
+
+## PAX breakdown — adults/children/infants (Jul 2026)
+
+- **Server-computed** so it works for BOTH standalone rows and group member rows (group members come from tour-groups.php `getGroupTours()` which doesn't return `bokun_data`): `tours.php` GET and tour-groups.php member rows include **`pax_adults` / `pax_children` / `pax_infants`** per tour, via `computePaxBreakdown()` in `tour_classification.php`.
+- **Frontend** `getPaxBreakdown(tour)` (tourCapacity.js) PREFERS the server `pax_*` fields, falls back to parsing `bokun_data`, then to `participants` as all-adults. Display (muted, only when children/infants > 0): appended to PAX cells/rows via `formatBreakdown`/`aggregateBreakdown` — e.g. "5 adults, 1 child".
+- **BookingDetailsModal.jsx compacted** (smaller header/typography/spacing; the oversized Adults/Children/Total cards became a compact inline chip row — all fields kept).
+
+## Guide unassign fix (Jul 2026)
+
+Clearing a guide (select "Unassigned") sends an explicit **`guide_id: null`** — and PHP `isset()` is FALSE for a present-but-null key, so the dynamic UPDATE builders skipped the field and returned 400 "No fields to update". **Fixed with `array_key_exists()`** (not `isset()`) at every guide_id detection point in tours.php PUT and tour-groups.php `updateGroup` (SET clause, `propagateGuideToTours` — NULL now propagates to member tours — and the reminder-reconcile triggers, so unassign cancels the guide's WhatsApp reminder). Rule: **"field omitted" = don't touch; "field present but null/empty" = SET NULL.** The double-booking guard only fires for non-null values, so unassigns are never blocked. ⚠️ Apply the same `array_key_exists` pattern to any nullable field in a `$setFields` dynamic-UPDATE builder.
+
+## Mixed merged groups (Jul 2026)
+
+A merged group can span more than one tour category (e.g. 2 Combo bookings + 1 Uffizi) — this matters for guide pay, so it is flagged everywhere (display/report only, NO payment calculation touched):
+- **Tours page** (TourGroup.jsx desktop + TourGroupCardMobile.jsx): expanded member rows show each booking's own category via `tourCategory(booking.title)` as a badge (new "Type" column on desktop; inline on mobile) — Combo styled gold. The group HEADER computes the distinct category set over NON-cancelled members; >1 distinct → gold **"Mixed" badge** next to the title with a tooltip breakdown ("Combo x2, Uffizi x1").
+- **Guide Reports** (guide-tour-report.php): group units are classified by their **member bookings** via `buildComposition($titles)` → `[category, composition, composition_label]` — 1 distinct member category → that category; >1 → **"Mixed"**. A mixed group stays ONE tour unit, increments only the **Mixed** bucket (order: Combo, Uffizi, Pitti, Accademia, Other, Mixed; bucket sum = total_tours), and its `tours[]` row carries `composition` (`[{category,count},…]`) + `composition_label` ("Combo ×2, Uffizi ×1"). Same member-based classification in `getAllGuidesOverview` (by_category gains Mixed). Frontend GuideReports.jsx shows a gold Mixed badge + label; **PDF/CSV export** "Mixed (Combo ×2, Uffizi ×1)" and include Mixed in summaries.
 
 ## Guide phone validation (Jun 2026)
 
@@ -648,7 +677,7 @@ autoRateLimit('your_endpoint');
 1. **Starting**: Read this file, then `docs/CHANGELOG.md` for recent changes
 2. **Before changes**: Check `docs/ARCHITECTURE.md`, verify DB schema
 3. **Development**: Frontend in `src/`, backend in `public_html/api/`
-4. **Testing**: `npm run test` (52 tests), test locally before deploying
+4. **Testing**: `npm run test` (87 tests), test locally before deploying
 5. **Ports**: Always 5173 (frontend) + 8080 (backend)
 6. **When stuck**: Check `docs/TROUBLESHOOTING.md`
 
@@ -669,8 +698,8 @@ Custom skills in `../florence-skills/` directory:
 
 ---
 
-**Last Updated**: March 3, 2026
+**Last Updated**: July 6, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Tests**: 52 passing (Vitest + React Testing Library)
+**Tests**: 87 passing (Vitest + React Testing Library)
 **Repository**: https://github.com/DhaNu1204/guide-florence-with-locals.git
