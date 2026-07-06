@@ -51,7 +51,9 @@ const SETTING_GROUPS = [
       ['ticket_accademia_adult', 'Accademia — adult'],
       ['ticket_accademia_child', 'Accademia — child/reduced'],
       ['ticket_pitti_adult', 'Pitti — adult'],
-      ['ticket_pitti_child', 'Pitti — child/reduced']
+      ['ticket_pitti_child', 'Pitti — child/reduced'],
+      ['ticket_borghese_adult', 'Borghese — adult'],
+      ['ticket_borghese_child', 'Borghese — child (no child ticket = adult price)']
     ]
   },
   {
@@ -84,12 +86,13 @@ const SETTING_GROUPS = [
 // ---------------------------------------------------------------------------
 // Category styling + ordering for the day view sections
 // ---------------------------------------------------------------------------
-const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Mixed', 'Other'];
+const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Borghese', 'Mixed', 'Other'];
 const CATEGORY_BADGE = {
   Combo: 'bg-amber-100 text-amber-800',
   Uffizi: 'bg-emerald-100 text-emerald-800',
   Accademia: 'bg-blue-100 text-blue-800',
   Pitti: 'bg-rose-100 text-rose-800',
+  Borghese: 'bg-teal-100 text-teal-800',
   Mixed: 'bg-amber-100 text-amber-800',
   Other: 'bg-stone-100 text-stone-600'
 };
@@ -521,8 +524,11 @@ export default function DailyPnL() {
           <div className="bg-white rounded-xl shadow-tuscan p-4">
             <p className="text-xs text-stone-500 uppercase tracking-wide">Volume</p>
             <p className="text-xl font-bold text-stone-800 mt-1">
-              {totals.units} <span className="text-sm font-normal text-stone-500">tours</span> · {totals.pax}{' '}
-              <span className="text-sm font-normal text-stone-500">PAX</span>
+              {totals.tour_units ?? totals.units} <span className="text-sm font-normal text-stone-500">tours</span>
+              {(totals.ticket_units ?? 0) > 0 && (
+                <> · {totals.ticket_units} <span className="text-sm font-normal text-stone-500">tickets</span></>
+              )}
+              {' '}· {totals.pax} <span className="text-sm font-normal text-stone-500">PAX</span>
             </p>
             {totals.cancelled > 0 && (
               <p className="text-xs text-stone-400 mt-1">{totals.cancelled} cancelled (excluded)</p>
@@ -692,7 +698,10 @@ function MonthTable({ data, onOpenDay }) {
                       weekday: 'short', day: 'numeric', month: 'short'
                     })}
                   </td>
-                  <td className="px-2 py-2 text-right text-stone-600">{d.units}</td>
+                  <td className="px-2 py-2 text-right text-stone-600">
+                    {d.tour_units ?? d.units}
+                    {(d.ticket_units ?? 0) > 0 && <span className="text-stone-400 text-xs"> +{d.ticket_units}t</span>}
+                  </td>
                   <td className="px-2 py-2 text-right text-stone-600">{d.pax}</td>
                   <td className="px-2 py-2 text-right text-stone-700">{eur(d.net)}</td>
                   <td className="px-2 py-2 text-right text-stone-500">{eur(d.ticket_cost)}</td>
@@ -709,7 +718,10 @@ function MonthTable({ data, onOpenDay }) {
           <tfoot className="bg-stone-50 font-semibold text-stone-800">
             <tr>
               <td className="px-3 py-2">Month total</td>
-              <td className="px-2 py-2 text-right">{data.totals.units}</td>
+              <td className="px-2 py-2 text-right">
+                {data.totals.tour_units ?? data.totals.units}
+                {(data.totals.ticket_units ?? 0) > 0 && <span className="text-stone-400 text-xs"> +{data.totals.ticket_units}t</span>}
+              </td>
               <td className="px-2 py-2 text-right">{data.totals.pax}</td>
               <td className="px-2 py-2 text-right">{eur(data.totals.net)}</td>
               <td className="px-2 py-2 text-right">{eur(data.totals.ticket_cost)}</td>

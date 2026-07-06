@@ -76,6 +76,7 @@ function pnlSettingKeys() {
         'ticket_uffizi_adult_pm', 'ticket_uffizi_child_pm', // Uffizi entry from 16:00
         'ticket_accademia_adult', 'ticket_accademia_child',
         'ticket_pitti_adult', 'ticket_pitti_child',
+        'ticket_borghese_adult', 'ticket_borghese_child',
         // Per-person extras
         'radio_per_person', 'gelato_per_person',
         // Flat fee paid when a booking is given to another agency
@@ -93,6 +94,8 @@ function pnlDefaultSettings() {
     $defaults['ticket_uffizi_adult']     = 29.0; // €25 + €4 advance reservation
     $defaults['ticket_uffizi_adult_pm']  = 20.0; // €16 + €4, entry from 16:00 (since 1 Jan 2026)
     $defaults['ticket_accademia_adult']  = 20.0; // €16 + €4 reservation
+    $defaults['ticket_borghese_adult']   = 17.0;
+    $defaults['ticket_borghese_child']   = 17.0; // no child ticket — adults' price applies
     $defaults['outsource_fee']           = 10.0;
     $defaults['comm_getyourguide'] = 30.0;
     $defaults['comm_viator']       = 30.0;
@@ -125,6 +128,7 @@ function pnlMuseumsInTitle($title) {
     if (strpos($t, 'accademia') !== false || strpos($t, 'david') !== false) $museums[] = 'accademia';
     if (strpos($t, 'pitti') !== false || strpos($t, 'boboli') !== false
         || strpos($t, 'palatina') !== false || strpos($t, 'palatine') !== false) $museums[] = 'pitti';
+    if (strpos($t, 'borghese') !== false) $museums[] = 'borghese';
     return $museums;
 }
 
@@ -134,6 +138,7 @@ function pnlCategory($title) {
     if (in_array('uffizi', $m)) return 'Uffizi';
     if (in_array('pitti', $m)) return 'Pitti';
     if (in_array('accademia', $m)) return 'Accademia';
+    if (in_array('borghese', $m)) return 'Borghese';
     return 'Other';
 }
 
@@ -463,7 +468,8 @@ function pnlBuildRows($conn, $start, $end, $settings) {
 
 function pnlTotals($rows) {
     $t = [
-        'units' => 0, 'bookings' => 0, 'cancelled' => 0, 'pax' => 0,
+        'units' => 0, 'tour_units' => 0, 'ticket_units' => 0,
+        'bookings' => 0, 'cancelled' => 0, 'pax' => 0,
         'retail' => 0.0, 'commission' => 0.0, 'net' => 0.0,
         'ticket_cost' => 0.0, 'guide_cost' => 0.0, 'radio_cost' => 0.0,
         'gelato_cost' => 0.0, 'staff_cost' => 0.0, 'other_cost' => 0.0,
@@ -472,6 +478,7 @@ function pnlTotals($rows) {
     foreach ($rows as $r) {
         if ($r['bookings'] === 0) { $t['cancelled'] += $r['cancelled']; continue; }
         $t['units']++;
+        if ($r['is_ticket']) $t['ticket_units']++; else $t['tour_units']++;
         $t['bookings']   += $r['bookings'];
         $t['cancelled']  += $r['cancelled'];
         $t['pax']        += $r['pax']['total'];
