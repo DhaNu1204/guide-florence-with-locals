@@ -687,6 +687,37 @@ export const tourGroupsAPI = {
   }
 };
 
+// ===== Daily P&L (admin only) =====
+
+export const getPnlDay = async (date) => {
+  const response = await axios.get(addCacheBuster(`${API_BASE_URL}/pnl.php?date=${encodeURIComponent(date)}`));
+  return response.data;
+};
+
+export const getPnlRange = async (start, end) => {
+  const response = await axios.get(addCacheBuster(
+    `${API_BASE_URL}/pnl.php?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+  ));
+  return response.data;
+};
+
+export const getPnlSettings = async () => {
+  const response = await axios.get(addCacheBuster(`${API_BASE_URL}/pnl.php?action=settings`));
+  return response.data;
+};
+
+export const savePnlSettings = async (settings) => {
+  const response = await axios.post(`${API_BASE_URL}/pnl.php?action=settings`, { settings });
+  return response.data;
+};
+
+export const savePnlCosts = async (payload) => {
+  // payload: { tour_unit, date, ticket_cost?, guide_cost?, radio_cost?, gelato_cost?,
+  //            staff_cost?, other_cost?, revenue_override?, notes? } — null clears an override
+  const response = await axios.post(`${API_BASE_URL}/pnl.php?action=costs`, payload);
+  return response.data;
+};
+
 // Default export object for backwards compatibility
 const mysqlDB = {
   // Tours operations

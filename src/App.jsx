@@ -14,6 +14,7 @@ import GuideReports from './pages/GuideReports';
 import EditTour from './pages/EditTour';
 import BokunIntegration from './pages/BokunIntegration';
 import PriorityTickets from './pages/PriorityTickets';
+import DailyPnL from './pages/DailyPnL';
 import Login from './pages/Login';
 import GuideRespond from './pages/GuideRespond';
 import { PageTitleProvider } from './contexts/PageTitleContext';
@@ -139,6 +140,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <ModernLayout>
               <BokunIntegration />
+            </ModernLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/daily-pnl"
+        element={
+          <ProtectedRoute>
+            <ModernLayout>
+              <DailyPnL />
             </ModernLayout>
           </ProtectedRoute>
         }

@@ -13,7 +13,8 @@ import {
   FiRefreshCw,
   FiDollarSign,
   FiMapPin,
-  FiClipboard
+  FiClipboard,
+  FiTrendingUp
 } from 'react-icons/fi';
 import { BsBoxSeam } from 'react-icons/bs';
 
@@ -114,6 +115,15 @@ const ModernLayout = ({ children }) => {
       borderColor: 'border-renaissance-500'
     },
     {
+      title: 'Daily P&L',
+      icon: FiTrendingUp,
+      path: '/daily-pnl',
+      color: 'text-terracotta-600',
+      bgColor: 'bg-terracotta-50',
+      borderColor: 'border-terracotta-500',
+      adminOnly: true
+    },
+    {
       title: 'Bokun Integration',
       icon: FiRefreshCw,
       path: '/bokun-integration',
@@ -121,7 +131,7 @@ const ModernLayout = ({ children }) => {
       bgColor: 'bg-renaissance-50',
       borderColor: 'border-renaissance-500'
     }
-  ];
+  ].filter((item) => !item.adminOnly || userInfo.role === 'admin');
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
