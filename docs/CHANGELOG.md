@@ -1,5 +1,31 @@
 # Changelog - Recent Major Updates
 
+## ✅ DAILY P&L TRACKER — ADMIN ONLY (2026-07-06)
+
+### New Feature — per-day profit & loss over tour units
+✅ COMPLETED & DEPLOYED (2d8bfbf) — admin-only page showing revenue, costs, and profit per tour unit (group or standalone booking) per day, plus a month summary. **Touches NO payment logic** — reads tours/groups read-only and writes only to its own self-provisioned tables (`pnl_settings`, `pnl_tour_costs`).
+
+- **Revenue**: auto-extracted per booking from stored `bokun_data` — `resellerInvoice` (retail / commission / net) preferred, then `sellerCommission` + `customerInvoice`/`totalPrice`, else channel commission % estimate (flagged `estimated`, shown with "~"). Cancelled bookings excluded.
+- **Auto costs** from configurable rates: museum tickets per adult/child (per museum in each booking's title), guide rate per tour category (a Mixed merged group pays the highest member-category rate), radio per person, gelato per person (gelato tours only). Ticket/audio products get no guide/radio cost.
+- **Manual overrides**: click any cost or Net cell in the day table to enter your own amount (terracotta = manual, ↺ resets to automatic). `null` clears an override (`array_key_exists` pattern).
+- **Month view**: per-day totals, click into day, monthly overhead (staff/office/other from settings) and profit-after-overhead footer.
+
+### Files
+- **Backend** (1 new): `api/pnl.php` — `Middleware::requireRole($conn, 'admin')`; `GET ?date=` day detail, `GET ?start=&end=` range summary (max 92 days), `GET/POST ?action=settings` (whitelisted keys), `POST ?action=costs` (per-unit override upsert). Tour unit key `g<group_id>` / `t<id>` — same convention as the payment system.
+- **Frontend** (1 new): `src/pages/DailyPnL.jsx` — Day/Month views, summary cards, editable-cell day table, Rates & Costs settings modal.
+- **Modified**: `App.jsx` (route `/daily-pnl`, protected), `ModernLayout.jsx` (sidebar item, `adminOnly` filter on `userInfo.role`), `mysqlDB.js` (`getPnlDay`, `getPnlRange`, `getPnlSettings`, `savePnlSettings`, `savePnlCosts`).
+
+### Verification
+| Test | Result |
+|------|--------|
+| `php -l` pnl.php | No syntax errors |
+| `npm test -- --run` | 87/87 pass |
+| `npm run build` | OK |
+| Local end-to-end (dev DB, login dhanu) | Day 2026-05-27: 2 units, net €407.77 from real Bokun invoices (non-estimated); settings save recomputes guide cost; cost override persists + resets; Month view renders with overhead footer |
+| Production | frontend 200; `pnl.php` 401 unauthenticated (live, admin-auth enforced); bundle `index-CH1-Fp9r.js` matches build |
+
+---
+
 ## ✅ IDEMPOTENT TICKET CLASSIFICATION FIX (2026-03-03)
 
 ### Bug Fix — Borghese Gallery ticket appearing on Tours page
