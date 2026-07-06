@@ -41,13 +41,14 @@ const COST_FIELDS = [
 
 const SETTING_GROUPS = [
   {
-    title: 'Guide pay per tour (by category)',
+    title: 'Guide pay per tour (€60/h — shared 3.5h, private 4h)',
     keys: [
-      ['guide_rate_combo', 'Combo tour'],
+      ['guide_rate_combo', 'Combo tour (shared)'],
       ['guide_rate_uffizi', 'Uffizi tour'],
       ['guide_rate_accademia', 'Accademia tour'],
       ['guide_rate_pitti', 'Pitti tour'],
-      ['guide_rate_other', 'Other tour']
+      ['guide_rate_other', 'Other tour'],
+      ['guide_rate_private', 'Private tour (any museum, 4h)']
     ]
   },
   {
@@ -204,6 +205,9 @@ function UnitCard({ row, onCostSave }) {
             </span>
             {row.is_ticket && (
               <span className="px-2 py-0.5 rounded-full text-[11px] bg-purple-100 text-purple-800">Ticket / Audio</span>
+            )}
+            {row.is_private && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-purple-100 text-purple-800">Private</span>
             )}
             {row.outsourced && (
               <span className="px-2 py-0.5 rounded-full text-[11px] bg-indigo-100 text-indigo-800">Given to agency</span>

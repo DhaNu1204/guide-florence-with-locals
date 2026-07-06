@@ -71,6 +71,8 @@ function pnlSettingKeys() {
         // Guide pay per tour unit, by category
         'guide_rate_combo', 'guide_rate_uffizi', 'guide_rate_accademia',
         'guide_rate_pitti', 'guide_rate_other',
+        // Private tours: flat rate regardless of category (owner pays €60/h × 4h)
+        'guide_rate_private',
         // Museum ticket cost per person (what YOU pay the museum)
         'ticket_uffizi_adult', 'ticket_uffizi_child',
         'ticket_uffizi_adult_pm', 'ticket_uffizi_child_pm', // Uffizi entry from 16:00
@@ -91,6 +93,8 @@ function pnlSettingKeys() {
 function pnlDefaultSettings() {
     $defaults = array_fill_keys(pnlSettingKeys(), 0.0);
     // Business defaults (owner can change in Rates & Costs)
+    $defaults['guide_rate_private']      = 240.0; // €60/h × 4h private
+    $defaults['guide_rate_combo']        = 210.0; // €60/h × 3.5h shared
     $defaults['ticket_uffizi_adult']     = 29.0; // €25 + €4 advance reservation
     $defaults['ticket_uffizi_adult_pm']  = 20.0; // €16 + €4, entry from 16:00 (since 1 Jan 2026)
     $defaults['ticket_accademia_adult']  = 20.0; // €16 + €4 reservation
@@ -247,7 +251,7 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
 function pnlBuildRows($conn, $start, $end, $settings) {
     $sql = "SELECT t.id, t.group_id, t.title, t.date, t.time, t.participants,
                    t.cancelled, t.booking_channel, t.total_amount_paid, t.bokun_data,
-                   t.guide_id, g.name AS guide_name,
+                   t.is_private, t.guide_id, g.name AS guide_name,
                    tg.display_name AS group_display_name, tg.group_time,
                    (CASE WHEN pr.product_type = 'ticket' THEN 1 ELSE 0 END) AS is_ticket_product
             FROM tours t
@@ -272,6 +276,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 'title'           => $row['group_id'] && $row['group_display_name'] ? $row['group_display_name'] : $row['title'],
                 'is_group'        => $row['group_id'] ? true : false,
                 'is_ticket'       => intval($row['is_ticket_product']) === 1,
+                'is_private'      => false,
                 'guide_name'      => null,
                 'channels'        => [],
                 'titles'          => [],
@@ -291,6 +296,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         $u = &$units[$key];
 
         if ($row['guide_name']) $u['guide_name'] = $row['guide_name'];
+        if (intval($row['is_private']) === 1) $u['is_private'] = true;
 
         if (intval($row['cancelled']) === 1) {
             $u['cancelled']++;
@@ -386,7 +392,10 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             // No guide, no radio, no gelato from your side.
             $auto['other_cost'] = floatval($settings['outsource_fee']);
         } elseif (!$u['is_ticket'] && $u['bookings'] > 0) {
-            if ($category === 'Mixed') {
+            if ($u['is_private']) {
+                // Private tour: flat 4-hour rate, any category
+                $auto['guide_cost'] = floatval($settings['guide_rate_private']);
+            } elseif ($category === 'Mixed') {
                 // A mixed merged group is one tour — pay the highest member rate
                 $rate = 0.0;
                 foreach (array_keys($cats) as $c) {
@@ -430,6 +439,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             'category'    => $category,
             'is_group'    => $u['is_group'],
             'is_ticket'   => $u['is_ticket'],
+            'is_private'  => $u['is_private'],
             'guide_name'  => $u['guide_name'],
             'channels'    => $u['channels'],
             'bookings'    => $u['bookings'],
