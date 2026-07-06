@@ -60,4 +60,26 @@ describe('DateFilter', () => {
     expect(picked.getMonth()).toBe(7); // August
     expect(picked.getDate()).toBe(1);  // the 1st
   });
+
+  it('segments are Today/Tomorrow/Upcoming/Date Range; Tomorrow picks tomorrow at midnight', () => {
+    const { props, setFilterDate } = baseProps();
+    render(<DateFilter {...props} />);
+    expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upcoming' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Date Range' })).toBeInTheDocument();
+    expect(screen.queryByText('Past 40 Days')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
+    expect(setFilterDate).toHaveBeenCalledTimes(1);
+    const picked = setFilterDate.mock.calls[0][0];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(picked.getFullYear()).toBe(tomorrow.getFullYear());
+    expect(picked.getMonth()).toBe(tomorrow.getMonth());
+    expect(picked.getDate()).toBe(tomorrow.getDate());
+    expect(picked.getHours()).toBe(0); // startOfDay
+    expect(props.setShowUpcoming).toHaveBeenCalledWith(false);
+    expect(props.setShowPast).toHaveBeenCalledWith(false);
+    expect(props.setShowDateRange).toHaveBeenCalledWith(false);
+  });
 });

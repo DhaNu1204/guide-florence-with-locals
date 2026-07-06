@@ -1,7 +1,20 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import { tourGroupsAPI } from '../services/mysqlDB';
-import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown } from '../utils/tourCapacity';
+import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
+
+// Small per-booking category badge; Combo gets the gold treatment so a
+// higher-pay booking hiding inside a group is easy to spot.
+const CategoryBadge = ({ title, className = '' }) => {
+  const cat = tourCategory(title);
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+      cat === 'Combo' ? 'bg-gold-100 text-gold-700' : 'bg-stone-100 text-stone-600'
+    } ${className}`}>
+      {cat}
+    </span>
+  );
+};
 
 const getChannelColor = (channel) => {
   if (!channel) return 'text-stone-500';
@@ -39,6 +52,18 @@ const TourGroupCardMobile = ({
   const languages = [...new Set(
     (group.tours || []).map(t => t.language).filter(Boolean)
   )];
+
+  // Category breakdown over NON-cancelled bookings; >1 distinct category means
+  // the merged group mixes tour types (matters for guide pay), so flag it.
+  const categoryCounts = (group.tours || []).reduce((acc, t) => {
+    if (!t.cancelled) {
+      const c = tourCategory(t.title);
+      acc[c] = (acc[c] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const isMixed = Object.keys(categoryCounts).length > 1;
+  const mixedTooltip = Object.entries(categoryCounts).map(([c, n]) => `${c} x${n}`).join(', ');
 
   const handleGuideUpdate = async () => {
     setSavingGuide(true);
@@ -138,6 +163,14 @@ const TourGroupCardMobile = ({
         {/* Row 2: Tour name */}
         <p className="text-sm text-stone-900 line-clamp-2 leading-snug mb-1">
           {group.display_name}
+          {isMixed && (
+            <span
+              className="ml-1.5 align-middle inline-block text-xs bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded-full"
+              title={mixedTooltip}
+            >
+              Mixed
+            </span>
+          )}
         </p>
 
         {/* Row 3: PAX + Guide */}
@@ -242,6 +275,7 @@ const TourGroupCardMobile = ({
                       </span>
                     )}
                   </span>
+                  <CategoryBadge title={tour.title} className="mt-0.5" />
                 </div>
 
                 {/* PAX */}

@@ -1,7 +1,20 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import { tourGroupsAPI } from '../services/mysqlDB';
-import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown } from '../utils/tourCapacity';
+import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
+
+// Small per-booking category badge; Combo gets the gold treatment so a
+// higher-pay booking hiding inside a group is easy to spot.
+const CategoryBadge = ({ title, className = '' }) => {
+  const cat = tourCategory(title);
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+      cat === 'Combo' ? 'bg-gold-100 text-gold-700' : 'bg-stone-100 text-stone-600'
+    } ${className}`}>
+      {cat}
+    </span>
+  );
+};
 
 const GroupTourNames = ({ tour }) => {
   const names = (() => {
@@ -61,6 +74,18 @@ const TourGroup = ({
       .map(t => t.language)
       .filter(Boolean)
   )];
+
+  // Category breakdown over NON-cancelled bookings; >1 distinct category means
+  // the merged group mixes tour types (matters for guide pay), so flag it.
+  const categoryCounts = (group.tours || []).reduce((acc, t) => {
+    if (!t.cancelled) {
+      const c = tourCategory(t.title);
+      acc[c] = (acc[c] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const isMixed = Object.keys(categoryCounts).length > 1;
+  const mixedTooltip = Object.entries(categoryCounts).map(([c, n]) => `${c} x${n}`).join(', ');
 
   const handleGuideUpdate = async () => {
     setSavingGuide(true);
@@ -139,10 +164,18 @@ const TourGroup = ({
         </span>
 
         {/* Tour name */}
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-stone-900 truncate block">
+        <div className="flex-1 min-w-0 flex items-center gap-1.5">
+          <span className="text-sm font-medium text-stone-900 truncate">
             {group.display_name}
           </span>
+          {isMixed && (
+            <span
+              className="text-xs bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded-full flex-shrink-0"
+              title={mixedTooltip}
+            >
+              Mixed
+            </span>
+          )}
         </div>
 
         {/* Language badges */}
@@ -244,6 +277,7 @@ const TourGroup = ({
               <tr>
                 <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase w-8"></th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Customer</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Type</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Channel</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">PAX</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-stone-500 uppercase">Confirmation</th>
@@ -272,6 +306,9 @@ const TourGroup = ({
                       )}
                     </div>
                     <GroupTourNames tour={tour} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <CategoryBadge title={tour.title} />
                   </td>
                   <td className="px-4 py-2 text-sm text-stone-600">
                     {tour.booking_channel || 'Direct'}

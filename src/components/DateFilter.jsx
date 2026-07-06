@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-  eachDayOfInterval, addMonths, subMonths, isSameDay, isSameMonth, isToday
+  eachDayOfInterval, addMonths, subMonths, isSameDay, isSameMonth, isToday,
+  addDays, startOfDay
 } from 'date-fns';
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -26,7 +27,9 @@ const DateFilter = ({
 
   const singleMode = !showUpcoming && !showPast && !showDateRange;
   const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const tomorrowStr = format(addDays(new Date(), 1), 'yyyy-MM-dd');
   const isTodaySelected = singleMode && filterDate && format(filterDate, 'yyyy-MM-dd') === todayStr;
+  const isTomorrowSelected = singleMode && filterDate && format(filterDate, 'yyyy-MM-dd') === tomorrowStr;
 
   // Re-center the calendar on the selected date each time it opens.
   useEffect(() => {
@@ -79,12 +82,12 @@ const DateFilter = ({
       onClick: () => { setFilterDate(new Date()); clearFlags(); setOpen(false); },
     },
     {
-      key: 'upcoming', label: 'Upcoming', active: showUpcoming && !showPast && !showDateRange,
-      onClick: () => { setShowUpcoming(true); setShowPast(false); setShowDateRange(false); },
+      key: 'tomorrow', label: 'Tomorrow', active: isTomorrowSelected,
+      onClick: () => { setFilterDate(startOfDay(addDays(new Date(), 1))); clearFlags(); setOpen(false); },
     },
     {
-      key: 'past', label: 'Past 40 Days', active: showPast && !showDateRange,
-      onClick: () => { setShowPast(true); setShowUpcoming(false); setShowDateRange(false); },
+      key: 'upcoming', label: 'Upcoming', active: showUpcoming && !showPast && !showDateRange,
+      onClick: () => { setShowUpcoming(true); setShowPast(false); setShowDateRange(false); },
     },
     {
       key: 'range', label: 'Date Range', active: showDateRange,
