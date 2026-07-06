@@ -46,6 +46,8 @@ const SETTING_GROUPS = [
     keys: [
       ['ticket_uffizi_adult', 'Uffizi — adult'],
       ['ticket_uffizi_child', 'Uffizi — child/reduced'],
+      ['ticket_uffizi_adult_pm', 'Uffizi from 16:00 — adult'],
+      ['ticket_uffizi_child_pm', 'Uffizi from 16:00 — child'],
       ['ticket_accademia_adult', 'Accademia — adult'],
       ['ticket_accademia_child', 'Accademia — child/reduced'],
       ['ticket_pitti_adult', 'Pitti — adult'],
@@ -53,10 +55,11 @@ const SETTING_GROUPS = [
     ]
   },
   {
-    title: 'Per-person extras',
+    title: 'Per-person extras & agency fee',
     keys: [
       ['radio_per_person', 'Radio / headset per person'],
-      ['gelato_per_person', 'Gelato per person (gelato tours only)']
+      ['gelato_per_person', 'Gelato per person (gelato tours only)'],
+      ['outsource_fee', 'Given-to-agency fee (per booking)']
     ]
   },
   {
@@ -190,6 +193,9 @@ function UnitCard({ row, onCostSave }) {
             {row.is_ticket && (
               <span className="px-2 py-0.5 rounded-full text-[11px] bg-purple-100 text-purple-800">Ticket / Audio</span>
             )}
+            {row.outsourced && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-indigo-100 text-indigo-800">Given to agency</span>
+            )}
             {row.revenue.estimated && (
               <span className="px-2 py-0.5 rounded-full text-[11px] bg-stone-100 text-stone-500" title="Commission estimated from % — no exact Bokun invoice">
                 ~ estimated
@@ -240,6 +246,18 @@ function UnitCard({ row, onCostSave }) {
             onSave={onCostSave}
           />
         ))}
+        <span className="w-px h-4 bg-stone-200 mx-1" />
+        <button
+          onClick={() => onCostSave(row, 'outsourced', row.outsourced ? 0 : 1)}
+          title="Given to another agency: no guide/radio/gelato cost from you — just the ticket + the agency fee from Settings. Click again to undo."
+          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs transition-colors ${
+            row.outsourced
+              ? 'border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold'
+              : 'border-dashed border-stone-300 bg-white text-stone-400 hover:border-indigo-300 hover:text-indigo-600'
+          }`}
+        >
+          {row.outsourced ? '✓ Given to agency' : 'Given to agency?'}
+        </button>
       </div>
     </div>
   );

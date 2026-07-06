@@ -52,10 +52,17 @@ function pnlEnsureTables($conn) {
         staff_cost       DECIMAL(10,2) NULL,
         other_cost       DECIMAL(10,2) NULL,
         revenue_override DECIMAL(10,2) NULL,
+        outsourced       TINYINT(1) NOT NULL DEFAULT 0,
         notes            VARCHAR(500) NULL,
         updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_pnl_costs_date (date)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Column guard for installs created before the outsourced feature
+    $res = $conn->query("SHOW COLUMNS FROM pnl_tour_costs LIKE 'outsourced'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE pnl_tour_costs ADD COLUMN outsourced TINYINT(1) NOT NULL DEFAULT 0 AFTER revenue_override");
+    }
 }
 
 // Whitelisted setting keys (all numeric EUR amounts; comm_* are percentages).
@@ -66,10 +73,13 @@ function pnlSettingKeys() {
         'guide_rate_pitti', 'guide_rate_other',
         // Museum ticket cost per person (what YOU pay the museum)
         'ticket_uffizi_adult', 'ticket_uffizi_child',
+        'ticket_uffizi_adult_pm', 'ticket_uffizi_child_pm', // Uffizi entry from 16:00
         'ticket_accademia_adult', 'ticket_accademia_child',
         'ticket_pitti_adult', 'ticket_pitti_child',
         // Per-person extras
         'radio_per_person', 'gelato_per_person',
+        // Flat fee paid when a booking is given to another agency
+        'outsource_fee',
         // Monthly overheads (not per tour)
         'staff_monthly', 'office_monthly', 'other_monthly',
         // Fallback commission % when bokun_data has no invoice info
@@ -79,6 +89,11 @@ function pnlSettingKeys() {
 
 function pnlDefaultSettings() {
     $defaults = array_fill_keys(pnlSettingKeys(), 0.0);
+    // Business defaults (owner can change in Rates & Costs)
+    $defaults['ticket_uffizi_adult']     = 29.0; // €25 + €4 advance reservation
+    $defaults['ticket_uffizi_adult_pm']  = 20.0; // €16 + €4, entry from 16:00 (since 1 Jan 2026)
+    $defaults['ticket_accademia_adult']  = 20.0; // €16 + €4 reservation
+    $defaults['outsource_fee']           = 10.0;
     $defaults['comm_getyourguide'] = 30.0;
     $defaults['comm_viator']       = 30.0;
     $defaults['comm_headout']      = 25.0;
@@ -299,11 +314,18 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         $u['net']        += $net;
         if ($estimated && $retail > 0) $u['estimated'] = true;
 
-        // Museum ticket cost for THIS booking (per museum mentioned in ITS title)
+        // Museum ticket cost for THIS booking (per museum mentioned in ITS title).
+        // Uffizi has a cheaper afternoon rate for entries from 16:00.
         foreach (pnlMuseumsInTitle($row['title']) as $museum) {
+            $adultKey = 'ticket_' . $museum . '_adult';
+            $childKey = 'ticket_' . $museum . '_child';
+            if ($museum === 'uffizi' && substr((string)$row['time'], 0, 5) >= '16:00') {
+                $adultKey = 'ticket_uffizi_adult_pm';
+                $childKey = 'ticket_uffizi_child_pm';
+            }
             $u['ticket_cost_auto'] +=
-                $pax['adults']   * $settings['ticket_' . $museum . '_adult'] +
-                $pax['children'] * $settings['ticket_' . $museum . '_child'];
+                $pax['adults']   * $settings[$adultKey] +
+                $pax['children'] * $settings[$childKey];
         }
         if (strpos(mb_strtolower($row['title']), 'gelato') !== false) {
             $u['has_gelato'] = true;
@@ -341,6 +363,10 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             $category = 'Mixed';
         }
 
+        // Overrides row (needed early: the outsourced flag changes auto costs)
+        $ov = isset($overrides[$key]) ? $overrides[$key] : null;
+        $isOutsourced = $ov !== null && intval($ov['outsourced']) === 1;
+
         // Auto costs
         $auto = [
             'ticket_cost' => round($u['ticket_cost_auto'], 2),
@@ -350,7 +376,11 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             'staff_cost'  => 0.0,
             'other_cost'  => 0.0
         ];
-        if (!$u['is_ticket'] && $u['bookings'] > 0) {
+        if ($isOutsourced) {
+            // Given to another agency: you pay the ticket + a flat handling fee.
+            // No guide, no radio, no gelato from your side.
+            $auto['other_cost'] = floatval($settings['outsource_fee']);
+        } elseif (!$u['is_ticket'] && $u['bookings'] > 0) {
             if ($category === 'Mixed') {
                 // A mixed merged group is one tour — pay the highest member rate
                 $rate = 0.0;
@@ -368,7 +398,6 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         }
 
         // Apply overrides (NULL column = keep auto value)
-        $ov = isset($overrides[$key]) ? $overrides[$key] : null;
         $costs = [];
         $overriddenFields = [];
         foreach (['ticket_cost', 'guide_cost', 'radio_cost', 'gelato_cost', 'staff_cost', 'other_cost'] as $f) {
@@ -418,6 +447,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 'auto'       => $auto,
                 'overridden' => $overriddenFields
             ]),
+            'outsourced'  => $isOutsourced,
             'profit'      => round($net - $totalCost, 2),
             'notes'       => $ov !== null ? $ov['notes'] : null
         ];
@@ -507,7 +537,7 @@ try {
         }
 
         $fields = ['ticket_cost', 'guide_cost', 'radio_cost', 'gelato_cost',
-                   'staff_cost', 'other_cost', 'revenue_override'];
+                   'staff_cost', 'other_cost', 'revenue_override', 'outsourced'];
         $cols = []; $vals = []; $updates = [];
         foreach ($fields as $f) {
             // array_key_exists (NOT isset): present-but-null = clear override
@@ -519,7 +549,11 @@ try {
                     exit();
                 }
                 $cols[] = $f;
-                $vals[$f] = $v === null ? null : round(floatval($v), 2);
+                if ($f === 'outsourced') {
+                    $vals[$f] = $v ? 1 : 0; // flag column, never NULL
+                } else {
+                    $vals[$f] = $v === null ? null : round(floatval($v), 2);
+                }
             }
         }
         $notesProvided = is_array($input) && array_key_exists('notes', $input);
