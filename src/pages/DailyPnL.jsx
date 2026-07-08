@@ -135,7 +135,10 @@ function EditableChip({ row, field, label, value, autoValue, overridden, onSave,
 
   if (editing) {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-terracotta-400 bg-white text-xs text-stone-600">
+      <span
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-terracotta-400 bg-white text-xs text-stone-600"
+      >
         {label}
         <input
           autoFocus
@@ -157,7 +160,7 @@ function EditableChip({ row, field, label, value, autoValue, overridden, onSave,
 
   return (
     <button
-      onClick={startEdit}
+      onClick={(e) => { e.stopPropagation(); startEdit(); }}
       title={overridden ? `Manual (auto: ${eur(autoValue)}) — click to change` : 'Click to change'}
       className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs transition-colors ${
         overridden
@@ -184,7 +187,7 @@ function EditableChip({ row, field, label, value, autoValue, overridden, onSave,
 // One tour (or ticket product) as a simple card: who/when + money in − money
 // out = big green/red profit. Chips are editable.
 // ---------------------------------------------------------------------------
-function UnitCard({ row, onCostSave }) {
+function UnitCard({ row, onCostSave, onOpenDetail }) {
   const chipKeys = row.is_ticket
     ? ['ticket_cost', 'other_cost']
     : COST_FIELDS.map((f) => f.key);
@@ -195,7 +198,11 @@ function UnitCard({ row, onCostSave }) {
       : '';
 
   return (
-    <div className="bg-white rounded-xl shadow-tuscan p-4">
+    <div
+      onClick={() => onOpenDetail && onOpenDetail(row)}
+      className="bg-white rounded-xl shadow-tuscan p-4 cursor-pointer hover:shadow-tuscan-xl transition-shadow"
+      title="Tap to see how this is calculated and edit amounts"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -238,7 +245,8 @@ function UnitCard({ row, onCostSave }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 mt-3">
+      <p className="sm:hidden text-[11px] text-terracotta-600 mt-2">Tap to see &amp; edit costs ▸</p>
+      <div className="hidden sm:flex flex-wrap items-center gap-1.5 mt-3">
         <EditableChip
           row={row}
           field="revenue_override"
@@ -264,7 +272,7 @@ function UnitCard({ row, onCostSave }) {
         ))}
         <span className="w-px h-4 bg-stone-200 mx-1" />
         <button
-          onClick={() => onCostSave(row, 'outsourced', row.outsourced ? 0 : 1)}
+          onClick={(e) => { e.stopPropagation(); onCostSave(row, 'outsourced', row.outsourced ? 0 : 1); }}
           title="Given to another agency: no guide/radio/gelato cost from you — just the ticket + the agency fee from Settings. Click again to undo."
           className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs transition-colors ${
             row.outsourced
@@ -388,6 +396,7 @@ export default function DailyPnL() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [detailRow, setDetailRow] = useState(null);
 
   const loadDay = useCallback(async (d) => {
     setLoading(true);
@@ -574,7 +583,7 @@ export default function DailyPnL() {
       {loading ? (
         <div className="flex items-center justify-center py-20 text-stone-500">Loading…</div>
       ) : view === 'day' ? (
-        <DayTable data={dayData} onCostSave={handleCostSave} />
+        <DayTable data={dayData} onCostSave={handleCostSave} onOpenDetail={setDetailRow} />
       ) : (
         <>
           <CategoryTiles cats={monthData?.by_category} />
@@ -584,6 +593,23 @@ export default function DailyPnL() {
             showOverhead={view === 'month'}
           />
         </>
+      )}
+
+      {detailRow && settings && (
+        <CostDetailModal
+          row={detailRow}
+          settings={settings}
+          onClose={() => setDetailRow(null)}
+          onSave={async (payload) => {
+            try {
+              await savePnlCosts({ tour_unit: detailRow.unit, date: detailRow.date, ...payload });
+              setDetailRow(null);
+              await loadDay(date);
+            } catch (e) {
+              setError('Failed to save. Try again.');
+            }
+          }}
+        />
       )}
 
       {showSettings && settings && (
@@ -596,6 +622,219 @@ export default function DailyPnL() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cost detail modal — tap a tour card to see HOW each amount is calculated
+// and edit any value. Mobile-first (full width, scrollable).
+// ---------------------------------------------------------------------------
+function CostDetailModal({ row, settings, onClose, onSave }) {
+  const fieldKeys = row.is_ticket ? ['ticket_cost', 'other_cost'] : COST_FIELDS.map((f) => f.key);
+  const autoNet = Math.round((row.revenue.retail - row.revenue.commission) * 100) / 100;
+
+  const [draft, setDraft] = useState(() => {
+    const d = { revenue: String(row.revenue.net) };
+    COST_FIELDS.forEach((f) => { d[f.key] = String(row.costs[f.key]); });
+    return d;
+  });
+  const [notes, setNotes] = useState(row.notes || '');
+  const [outsourced, setOutsourced] = useState(!!row.outsourced);
+  const [saving, setSaving] = useState(false);
+
+  const people = row.pax.adults + row.pax.children;
+  const isPm = (row.time || '') >= '16:00';
+  const MUSEUMS = { Combo: ['uffizi', 'accademia'], Uffizi: ['uffizi'], Accademia: ['accademia'], Pitti: ['pitti'], Borghese: ['borghese'] };
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  const ticketExplain = () => {
+    const mus = MUSEUMS[row.category];
+    if (!mus) return 'Sum over the bookings in this group';
+    return mus.map((m) => {
+      const pm = m === 'uffizi' && isPm;
+      const a = settings[pm ? 'ticket_uffizi_adult_pm' : `ticket_${m}_adult`] ?? 0;
+      const c = settings[pm ? 'ticket_uffizi_child_pm' : `ticket_${m}_child`] ?? 0;
+      let s = `${cap(m)}${pm ? ' (after 16:00)' : ''}: ${row.pax.adults} adult × €${a}`;
+      if (row.pax.children > 0) s += ` + ${row.pax.children} child × €${c}`;
+      return s;
+    }).join('   +   ');
+  };
+
+  const explains = {
+    ticket_cost: ticketExplain(),
+    guide_cost: outsourced ? 'Given to agency — no guide cost from you'
+      : row.is_ticket ? 'Ticket product — no guide'
+      : row.is_private ? `Private tour flat rate (4h × €60 = €${settings.guide_rate_private})`
+      : row.category === 'Mixed' ? 'Mixed group — highest member category rate'
+      : `${row.category} tour rate from Settings`,
+    radio_cost: outsourced || row.is_ticket ? '—' : `${people} people × €${settings.radio_per_person}`,
+    gelato_cost: outsourced || row.is_ticket ? '—'
+      : row.costs.auto.gelato_cost > 0 ? `${people} people × €${settings.gelato_per_person} (gelato tour)` : 'Not a gelato tour',
+    staff_cost: 'Manual — extra staff for this tour only',
+    other_cost: outsourced ? `Agency handling fee (€${settings.outsource_fee} from Settings)` : 'Manual — taxi, extra tickets, anything else'
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const payload = { outsourced: outsourced ? 1 : 0 };
+      fieldKeys.forEach((f) => {
+        const num = parseFloat(draft[f]);
+        if (isNaN(num)) return;
+        if (Math.abs(num - row.costs.auto[f]) < 0.005) {
+          // Equals the automatic value: clear any manual override
+          if (row.costs.overridden.includes(f)) payload[f] = null;
+        } else {
+          payload[f] = num;
+        }
+      });
+      const rev = parseFloat(draft.revenue);
+      if (!isNaN(rev)) {
+        if (Math.abs(rev - autoNet) < 0.005) {
+          if (row.revenue.overridden) payload.revenue_override = null;
+        } else {
+          payload.revenue_override = rev;
+        }
+      }
+      if (notes !== (row.notes || '')) payload.notes = notes.trim() === '' ? null : notes.trim();
+      await onSave(payload);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const numInput = (key) => (
+    <input
+      type="number"
+      step="0.01"
+      min="0"
+      inputMode="decimal"
+      value={draft[key]}
+      onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+      className="w-24 px-2 py-1.5 border border-stone-300 rounded-lg text-right text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400"
+    />
+  );
+
+  const totalCost = fieldKeys.reduce((s, f) => s + (parseFloat(draft[f]) || 0), 0);
+  const netVal = parseFloat(draft.revenue) || 0;
+  const liveProfit = Math.round((netVal - totalCost) * 100) / 100;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4" onClick={onClose}>
+      <div
+        className="bg-white sm:rounded-xl rounded-t-2xl shadow-tuscan-xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between px-4 py-3 border-b border-stone-200 sticky top-0 bg-white z-10">
+          <div className="min-w-0 pr-2">
+            <p className="text-sm font-semibold text-stone-800 leading-snug">{row.title}</p>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {(row.time || '').slice(0, 5)} · {row.category} · {row.pax.total} PAX
+              ({row.pax.adults} adults{row.pax.children > 0 ? `, ${row.pax.children} children` : ''}{row.pax.infants > 0 ? `, ${row.pax.infants} infants` : ''})
+              {row.guide_name && ` · ${row.guide_name}`}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-2 -mr-2 shrink-0">
+            <FiX size={20} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Money in */}
+          <div className="bg-stone-50 rounded-lg p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-stone-700">Money in (net)</p>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Retail {eur(row.revenue.retail)} − {row.channels.join(', ')} commission {row.revenue.estimated && '~'}{eur(row.revenue.commission)}
+                </p>
+              </div>
+              {numInput('revenue')}
+            </div>
+            {(parseFloat(draft.revenue) || 0) !== autoNet && (
+              <button
+                onClick={() => setDraft((d) => ({ ...d, revenue: String(autoNet) }))}
+                className="mt-1 text-[11px] text-terracotta-600 flex items-center gap-1"
+              >
+                <FiRotateCcw size={10} /> Back to automatic ({eur(autoNet)})
+              </button>
+            )}
+          </div>
+
+          {/* Given to agency toggle */}
+          {!row.is_ticket && (
+            <label className="flex items-center justify-between gap-2 px-1 cursor-pointer">
+              <span className="text-sm text-stone-700">
+                Given to another agency
+                <span className="block text-xs text-stone-400">Ticket + €{settings.outsource_fee} fee — no guide/radio/gelato</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={outsourced}
+                onChange={(e) => setOutsourced(e.target.checked)}
+                className="w-5 h-5 accent-terracotta-600"
+              />
+            </label>
+          )}
+
+          {/* Cost lines */}
+          <div className="space-y-3">
+            {COST_FIELDS.filter((f) => fieldKeys.includes(f.key)).map((f) => (
+              <div key={f.key} className="flex items-center justify-between gap-2 border-b border-stone-100 pb-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-stone-700">{f.label}</p>
+                  <p className="text-[11px] text-stone-400 leading-snug">{explains[f.key]}</p>
+                  {Math.abs((parseFloat(draft[f.key]) || 0) - row.costs.auto[f.key]) >= 0.005 && (
+                    <button
+                      onClick={() => setDraft((d) => ({ ...d, [f.key]: String(row.costs.auto[f.key]) }))}
+                      className="text-[11px] text-terracotta-600 flex items-center gap-1 mt-0.5"
+                    >
+                      <FiRotateCcw size={10} /> Auto: {eur(row.costs.auto[f.key])}
+                    </button>
+                  )}
+                </div>
+                {numInput(f.key)}
+              </div>
+            ))}
+          </div>
+
+          {/* Notes */}
+          <div>
+            <p className="text-sm font-medium text-stone-700 mb-1">Notes</p>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="e.g. gave to Marco's agency, guest was late…"
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400"
+            />
+          </div>
+
+          {/* Live result */}
+          <div className={`rounded-lg p-3 text-center ${liveProfit >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+            <p className="text-xs text-stone-500">
+              {eur(netVal)} in − {eur(totalCost)} out =
+            </p>
+            <p className={`text-2xl font-bold ${liveProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {liveProfit >= 0 ? '+' : ''}{eur(liveProfit)}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-3 px-4 py-3 border-t border-stone-200 sticky bottom-0 bg-white">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50">
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex-1 px-4 py-2.5 text-sm rounded-lg bg-terracotta-600 text-white hover:bg-terracotta-700 disabled:opacity-50 font-medium"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -636,7 +875,7 @@ function CategoryTiles({ cats }) {
 //   2. Tickets & Audio Guides
 //   3. Cancelled (collapsed, excluded from money)
 // ---------------------------------------------------------------------------
-function DayTable({ data, onCostSave }) {
+function DayTable({ data, onCostSave, onOpenDetail }) {
   if (!data || !data.rows || data.rows.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-tuscan p-10 text-center text-stone-500">
@@ -683,7 +922,7 @@ function DayTable({ data, onCostSave }) {
                 </div>
                 <div className="space-y-2">
                   {byCategory[cat].map((row) => (
-                    <UnitCard key={row.unit} row={row} onCostSave={onCostSave} />
+                    <UnitCard key={row.unit} row={row} onCostSave={onCostSave} onOpenDetail={onOpenDetail} />
                   ))}
                 </div>
               </div>
@@ -701,7 +940,7 @@ function DayTable({ data, onCostSave }) {
           </div>
           <div className="space-y-2">
             {tickets.map((row) => (
-              <UnitCard key={row.unit} row={row} onCostSave={onCostSave} />
+              <UnitCard key={row.unit} row={row} onCostSave={onCostSave} onOpenDetail={onOpenDetail} />
             ))}
           </div>
         </div>
