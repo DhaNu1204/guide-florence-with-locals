@@ -22,6 +22,16 @@ Sentry.init({
   environment: import.meta.env.MODE,
 });
 
+// PWA: register the service worker (production only — never in dev, so
+// localhost:5173 hot reload is unaffected). sw.js never intercepts /api/.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+
 const container = document.getElementById('root');
 const root = ReactDOM.createRoot(container);
 
