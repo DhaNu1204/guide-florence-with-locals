@@ -11,7 +11,9 @@ import {
   FiMapPin,
   FiMessageCircle,
   FiCheckCircle,
-  FiXCircle
+  FiXCircle,
+  FiChevronDown,
+  FiChevronUp
 } from 'react-icons/fi';
 import Card from './UI/Card';
 import Button from './UI/Button';
@@ -65,6 +67,25 @@ const Dashboard = () => {
   const [recentResponses, setRecentResponses] = useState([]);
   const [askTour, setAskTour] = useState(null);            // tour being asked about
   const [dashRequested, setDashRequested] = useState({});  // tour_id -> guideName (in-session note)
+
+  // Collapsed-by-default sections: show a short preview, expand on demand
+  const [expanded, setExpanded] = useState({});
+  const PREVIEW_COUNT = { alert: 3, responses: 3, upcoming: 5, attention: 5 };
+  const toggleExpand = (key) => setExpanded((p) => ({ ...p, [key]: !p[key] }));
+  const visibleItems = (list, key) => (expanded[key] ? list : list.slice(0, PREVIEW_COUNT[key]));
+  const ShowMore = ({ list, k, accent = 'text-stone-500 hover:text-stone-700' }) =>
+    list.length > PREVIEW_COUNT[k] ? (
+      <button
+        onClick={() => toggleExpand(k)}
+        className={`w-full mt-2 py-2 min-h-[44px] text-sm font-medium ${accent} flex items-center justify-center gap-1 touch-manipulation`}
+      >
+        {expanded[k] ? (
+          <>Show less <FiChevronUp className="w-4 h-4" /></>
+        ) : (
+          <>Show all {list.length} <FiChevronDown className="w-4 h-4" /></>
+        )}
+      </button>
+    ) : null;
   const [loading, setLoading] = useState(true);
   const toast = useToast();
 
@@ -288,7 +309,7 @@ const Dashboard = () => {
             </Link>
           </div>
           <div className="space-y-2">
-            {needsGuideSoon.map((tour) => (
+            {visibleItems(needsGuideSoon, 'alert').map((tour) => (
               <div
                 key={tour.id}
                 className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-tuscan-lg border border-gold-200 hover:border-gold-300 transition-all min-h-[44px]"
@@ -323,6 +344,7 @@ const Dashboard = () => {
               </div>
             ))}
           </div>
+          <ShowMore list={needsGuideSoon} k="alert" accent="text-gold-700 hover:text-gold-900" />
         </div>
       ) : (
         <div className="bg-gradient-to-br from-olive-50 to-olive-100/50 border border-olive-200 rounded-tuscan-xl shadow-tuscan-sm px-4 py-3 flex items-center text-sm text-olive-800">
@@ -341,7 +363,7 @@ const Dashboard = () => {
             </h2>
           </div>
           <div className="p-3 md:p-4 space-y-2">
-            {recentResponses.map((r) => (
+            {visibleItems(recentResponses, 'responses').map((r) => (
               <div key={r.id} className="flex items-start gap-2 text-sm">
                 {r.status === 'accepted' ? (
                   <FiCheckCircle className="text-olive-600 mt-0.5 flex-shrink-0" />
@@ -358,6 +380,7 @@ const Dashboard = () => {
                 </span>
               </div>
             ))}
+            <ShowMore list={recentResponses} k="responses" accent="text-renaissance-600 hover:text-renaissance-800" />
           </div>
         </div>
       )}
@@ -468,7 +491,7 @@ const Dashboard = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                {upcomingTours.map((tour) => (
+                {visibleItems(upcomingTours, 'upcoming').map((tour) => (
                   <div
                     key={tour.id}
                     className="group p-3 rounded-tuscan-lg border border-stone-100 hover:border-olive-200 hover:bg-olive-50/30 active:bg-olive-50/50 transition-all duration-200 cursor-pointer touch-manipulation min-h-[44px]"
@@ -506,6 +529,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                 ))}
+                <ShowMore list={upcomingTours} k="upcoming" accent="text-olive-600 hover:text-olive-800" />
               </div>
             )}
           </div>
@@ -535,7 +559,7 @@ const Dashboard = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                {recentTours.map((tour) => (
+                {visibleItems(recentTours, 'attention').map((tour) => (
                   <div
                     key={tour.id}
                     className="group p-3 rounded-tuscan-lg border border-stone-100 hover:border-gold-200 hover:bg-gold-50/30 active:bg-gold-50/50 transition-all duration-200 cursor-pointer touch-manipulation min-h-[44px]"
@@ -573,6 +597,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                 ))}
+                <ShowMore list={recentTours} k="attention" accent="text-gold-600 hover:text-gold-800" />
               </div>
             )}
           </div>
