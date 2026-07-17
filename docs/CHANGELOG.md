@@ -1,5 +1,20 @@
 # Changelog - Recent Major Updates
 
+## ✅ DASHBOARD COMPACTION (2026-07-17)
+✅ DEPLOYED (6a130fd) — dashboard sections collapsed by default with "Show all (N) ▾ / Show less ▴" toggles: needs-guide alert previews 3, recent responses 3, Upcoming Tours 5, Needs Attention 5. Display-only. New `Dashboard.collapse.test.jsx` (4 interaction tests → suite 91).
+
+## ✅ PWA — INSTALLABLE APP (2026-07-15)
+✅ DEPLOYED (544fd71) — installable on iOS/Android home screens ("FwL Tours", terracotta Duomo icon). New `public/manifest.webmanifest`, `public/sw.js` (never intercepts `/api/`; navigations network-first so deploys appear immediately; assets stale-while-revalidate), `public/icons/`; iOS meta in index.html; SW registration prod-only in main.jsx; `.htaccess` manifest MIME + sw.js no-cache. **GOTCHA discovered: deploy.sh does not ship `.htaccess`** — upload manually when it changes.
+
+## ✅ DAILY P&L — ITERATIONS (2026-07-06 → 07-08)
+Six follow-up deploys on the P&L tracker (all NO payment logic):
+- **Day-view redesign** (20784a7): flat table → sectioned cards (Guided Tours by category / Tickets & Audio / Cancelled) with EditableChip inline overrides and per-section in/out/profit subtotals.
+- **Outsourced flag + Uffizi PM pricing** (7a745a6): "Given to agency?" toggle per unit (ticket kept + `outsource_fee`, guide/radio/gelato €0; new `pnl_tour_costs.outsourced` column, SHOW COLUMNS guard); `ticket_uffizi_*_pm` settings used when booking time ≥ 16:00; business defaults (Uffizi 29 / PM 20 / Accademia 20 / fee 10) for never-saved keys.
+- **Borghese + unit split** (a14ece0): 'Borghese' museum/category (teal badge, adult+child both default €17 — no child ticket); totals split `tour_units`/`ticket_units` ("N tours · M tickets" — ticket products no longer counted as tours).
+- **Week view + profit by product** (03e3ef7): Day|Week|Month toggle, Mon–Sun week nav, `by_category[]` in range API, CategoryTiles in week+month views, overhead footer month-only.
+- **Private guide rate** (2518807): `guide_rate_private` (€240 = 4h × €60/h; shared combo €210 = 3.5h); `is_private` units use the flat private rate; purple Private badge. Cost precedence: outsourced > ticket > private > Mixed(highest member) > category.
+- **CostDetailModal** (aa07b10): tap any card → mobile bottom-sheet popup showing the calculation formulas (per-museum tickets incl. PM variant, guide-rate source, per-person radio/gelato) with editable fields, per-field Auto reset, agency toggle, notes, live profit preview. Chips hidden on mobile ("Tap to see & edit costs ▸").
+
 ## ✅ DAILY P&L TRACKER — ADMIN ONLY (2026-07-06)
 
 ### New Feature — per-day profit & loss over tour units

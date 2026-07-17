@@ -200,3 +200,17 @@ import {
 generateGuidePaymentSummaryPDF(guidesData);
 generatePendingPaymentsPDF(pendingToursData);
 ```
+
+## Daily P&L API — `pnl.php` (Added Jul 6, 2026, admin-only)
+
+All requests require an admin token (`Middleware::requireRole($conn, 'admin')`). Writes go only to the self-provisioned `pnl_settings` and `pnl_tour_costs` tables — no payment logic.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/pnl.php?date=YYYY-MM-DD` | Day detail: per-tour-unit rows (`g<group_id>` / `t<id>`) with pax breakdown, revenue (retail/commission/net, `estimated` flag), auto+override costs, profit; day totals; settings |
+| GET | `/api/pnl.php?start=YYYY-MM-DD&end=YYYY-MM-DD` | Range summary (max 92 days): per-day totals (`tour_units`/`ticket_units` split), grand totals, `by_category[]` (Combo/Uffizi/Accademia/Pitti/Borghese/Mixed/Other/Tickets), `monthly_overhead`, `profit_after_overhead` |
+| GET | `/api/pnl.php?action=settings` | Rate settings key/value map (guide rates incl. `guide_rate_private`, museum ticket prices incl. `ticket_uffizi_*_pm`, radio/gelato per person, `outsource_fee`, monthly overheads, fallback commission %) |
+| POST | `/api/pnl.php?action=settings` | `{settings: {key: value}}` — upsert whitelisted numeric keys |
+| POST | `/api/pnl.php?action=costs` | `{tour_unit, date, ticket_cost?, guide_cost?, radio_cost?, gelato_cost?, staff_cost?, other_cost?, revenue_override?, outsourced?, notes?}` — per-unit override upsert; explicit `null` clears an override (`array_key_exists` pattern); `outsourced` stored 0/1 |
+
+Revenue is auto-extracted per booking from stored `bokun_data` (resellerInvoice → sellerCommission+customerInvoice → channel-% estimate). Guide-cost precedence: outsourced > ticket product > private flat rate > Mixed (highest member rate) > category rate. Uffizi bookings with time ≥ 16:00 use the PM ticket rates.

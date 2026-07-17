@@ -20,6 +20,7 @@
 - **Use the `deploy` skill** in `.claude/skills/deploy/` for the full verified checklist. Always verify each changed file is COMPLETE (not truncated) before committing.
 - **Never touch payment logic or passwords.**
 - **Log every deploy** in `DEPLOY_LOG.md`.
+- **⚠️ deploy.sh does NOT ship `.htaccess`** — `scp dist/*` misses dotfiles and the rsync branch excludes it. If `public/.htaccess` changes (e.g. the PWA MIME/no-cache block, Jul 2026), upload it manually: `scp -P 65002 dist/.htaccess u803853690@82.25.82.111:.../withlocals/.htaccess` and verify live headers after.
 - **Hostinger cron does not work** — server-side sync relies on the Bokun webhook (`api/bokun_webhook.php`) + in-app 15-min sync. Do not rely on Hostinger cron jobs.
 - **Owner (Dhanu) does not use the terminal.** Cowork-Claude writes copy-paste prompts; Claude Code executes the git/terminal work.
 
@@ -29,7 +30,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 
 **Production**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Last Updated**: July 6, 2026
+**Last Updated**: July 17, 2026
 
 ## Tech Stack
 
@@ -40,7 +41,7 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 - **PDF**: jsPDF + jsPDF-AutoTable
 - **Monitoring**: Sentry.io (frontend + backend)
 - **CI/CD**: GitHub Actions (build + deploy + health checks)
-- **Testing**: Vitest + React Testing Library (87 tests)
+- **Testing**: Vitest + React Testing Library (91 tests)
 - **Hosting**: Hostinger shared hosting (HTTPS)
 
 ## Key Features
@@ -65,6 +66,9 @@ A tour guide management system for Florence, Italy. Integrates with Bokun API fo
 18. **Guide Reports**: Per-guide monthly tour verification with category breakdown and PDF/CSV export (read-only)
 19. **Needs-a-guide alert**: Dashboard alert for tours needing a guide in the next 7 days + double-booking guard on assignment
 20. **Guide availability requests**: WhatsApp Accept/Decline links, language-matched guide picker, no-login guide page
+21. **Daily P&L tracker (admin-only)**: per-tour-unit revenue (auto from Bokun invoices) vs costs (tickets/guide/radio/gelato/staff/other) with Day/Week/Month views, profit-by-product tiles, cost detail modal, outsourced flag, private guide rate
+22. **PWA**: installable on iOS/Android home screens (manifest + conservative service worker that never touches /api/)
+23. **Compact dashboard**: sections collapsed by default (3/3/5/5 previews) with Show all/Show less toggles
 
 ## CRITICAL INFORMATION
 
@@ -398,6 +402,38 @@ A merged group can span more than one tour category (e.g. 2 Combo bookings + 1 U
 - **Tours page** (TourGroup.jsx desktop + TourGroupCardMobile.jsx): expanded member rows show each booking's own category via `tourCategory(booking.title)` as a badge (new "Type" column on desktop; inline on mobile) — Combo styled gold. The group HEADER computes the distinct category set over NON-cancelled members; >1 distinct → gold **"Mixed" badge** next to the title with a tooltip breakdown ("Combo x2, Uffizi x1").
 - **Guide Reports** (guide-tour-report.php): group units are classified by their **member bookings** via `buildComposition($titles)` → `[category, composition, composition_label]` — 1 distinct member category → that category; >1 → **"Mixed"**. A mixed group stays ONE tour unit, increments only the **Mixed** bucket (order: Combo, Uffizi, Pitti, Accademia, Other, Mixed; bucket sum = total_tours), and its `tours[]` row carries `composition` (`[{category,count},…]`) + `composition_label` ("Combo ×2, Uffizi ×1"). Same member-based classification in `getAllGuidesOverview` (by_category gains Mixed). Frontend GuideReports.jsx shows a gold Mixed badge + label; **PDF/CSV export** "Mixed (Combo ×2, Uffizi ×1)" and include Mixed in summaries.
 
+## Daily P&L Tracker (Jul 2026) — ADMIN ONLY
+
+Per-day/week/month profit & loss over tour units. **Touches NO payment logic** — reads tours/groups read-only; writes ONLY to its own self-provisioned tables.
+
+### Backend — `api/pnl.php` (`Middleware::requireRole($conn, 'admin')`)
+| Method | Endpoint | Notes |
+|--------|----------|-------|
+| GET | `?date=YYYY-MM-DD` | Per-tour-unit rows (unit key `g<group_id>`/`t<id>`, same as payments) + day totals + settings |
+| GET | `?start=&end=` | Range (max 92 days): per-day totals, grand totals, `by_category[]` (Combo/Uffizi/Accademia/Pitti/Borghese/Mixed/Other/Tickets with units/pax/net/cost/profit), monthly overhead, profit_after_overhead |
+| GET/POST | `?action=settings` | Whitelisted key/value rates (see below) |
+| POST | `?action=costs` | Per-unit override upsert — `array_key_exists` pattern, explicit null CLEARS an override; `outsourced` stored strictly 0/1 |
+
+- **Tables (self-provisioned)**: `pnl_settings` (key/value DECIMAL), `pnl_tour_costs` (per-unit overrides: 6 cost fields + revenue_override + outsourced TINYINT + notes; `outsourced` column added via SHOW COLUMNS guard for older installs).
+- **Revenue extraction** per booking from stored `bokun_data` (checks top level, `productBookings[0]`, `activityBookings[0]`): `resellerInvoice` (total/totalCommission/totalSansCommission) → `sellerCommission` + `customerInvoice.total`/`totalPrice` → channel-% estimate from settings (flagged `estimated`, "~" in UI; direct/Bokun/website channels = 0%). Cancelled bookings excluded everywhere.
+- **Auto-cost precedence for guide cost**: outsourced (→ €0 + `outsource_fee` in Other, tickets KEPT) > ticket product (€0) > `is_private` flat `guide_rate_private` (€240 = 4h × €60) > Mixed group (highest member-category rate) > category rate. Museum tickets = per museum mentioned in each BOOKING's title × adult/child PAX (`computePaxBreakdown`); **Uffizi bookings with time ≥ 16:00 use `ticket_uffizi_*_pm`** (afternoon rate since 1 Jan 2026). Radio/gelato per person (gelato only when a member title contains "gelato").
+- **Settings keys**: `guide_rate_{combo,uffizi,accademia,pitti,other,private}`, `ticket_{uffizi,accademia,pitti,borghese}_{adult,child}` + `ticket_uffizi_{adult,child}_pm`, `radio_per_person`, `gelato_per_person`, `outsource_fee`, `staff_monthly`, `office_monthly`, `other_monthly`, `comm_{getyourguide,viator,headout,default}`. Defaults apply only to never-saved keys (DB rows win). Owner's rule: guides = €60/h; shared 3.5h (€210 combo), private 4h (€240).
+
+### Frontend — `src/pages/DailyPnL.jsx` (route `/daily-pnl`, sidebar item `adminOnly`)
+Day|Week|Month views. Day = sectioned cards (Guided Tours grouped by category, Tickets & Audio Guides, collapsed Cancelled) with EditableChip inline overrides (terracotta = manual, ↺ reset) and **CostDetailModal** (tap card → formula breakdown + editable fields + agency toggle + notes + live profit; chips hidden on mobile, modal is bottom sheet <sm). Week/Month = CategoryTiles ("Profit by product") + per-day table (overhead footer month-only). Services in mysqlDB.js: `getPnlDay/getPnlRange/getPnlSettings/savePnlSettings/savePnlCosts`.
+
+## PWA (Jul 2026)
+
+Installable on iOS/Android (Safari → Share → Add to Home Screen → "FwL Tours").
+- `public/manifest.webmanifest` (standalone, portrait, #C75D3A/#FAF6F0), `public/icons/` (192/512/512-maskable/apple-touch 180 — terracotta Duomo).
+- `public/sw.js` — conservative: **NEVER intercepts `/api/`**; navigations network-first (cached index.html only as offline fallback, so deploys appear on next load); `/assets/*` stale-while-revalidate; bump `CACHE_VERSION` to force-clear.
+- Registration in `src/main.jsx` gated on `import.meta.env.PROD` (dev HMR unaffected). `index.html` has the iOS meta tags.
+- `public/.htaccess` adds manifest MIME + sw.js no-cache — **remember deploy.sh does not ship .htaccess** (see deployment warnings).
+
+## Dashboard compaction (Jul 2026)
+
+Dashboard sections collapsed by default with per-section "Show all (N) ▾ / Show less ▴" (44px targets): needs-guide alert previews 3, recent guide responses 3, Upcoming Tours 5, Needs Attention 5. Display-only (data/sort/caps unchanged). Tests: `src/components/__tests__/Dashboard.collapse.test.jsx` (4 interaction tests; suite now 91).
+
 ## Guide phone validation (Jun 2026)
 
 The Add/Edit Guide form (`src/pages/Guides.jsx`) requires an **international** phone so the WhatsApp tour reminder can actually send. `isValidGuidePhone(phone)` strips spaces/dashes/dots/parens then requires `/^(\+|00)\d{8,15}$/` (must start with `+` or `00` country code, then 8–15 digits; empty = invalid). On an invalid number the form shows an inline terracotta warning + a toast and **blocks save**. Bare local numbers (e.g. `3392863290`) and emails in the phone field are rejected. Pairs with the reminder backend, which deliberately won't guess a country code.
@@ -677,7 +713,7 @@ autoRateLimit('your_endpoint');
 1. **Starting**: Read this file, then `docs/CHANGELOG.md` for recent changes
 2. **Before changes**: Check `docs/ARCHITECTURE.md`, verify DB schema
 3. **Development**: Frontend in `src/`, backend in `public_html/api/`
-4. **Testing**: `npm run test` (87 tests), test locally before deploying
+4. **Testing**: `npm run test` (91 tests), test locally before deploying
 5. **Ports**: Always 5173 (frontend) + 8080 (backend)
 6. **When stuck**: Check `docs/TROUBLESHOOTING.md`
 
@@ -698,8 +734,8 @@ Custom skills in `../florence-skills/` directory:
 
 ---
 
-**Last Updated**: July 6, 2026
+**Last Updated**: July 17, 2026
 **Production URL**: https://withlocals.deetech.cc
 **Status**: Fully Operational
-**Tests**: 87 passing (Vitest + React Testing Library)
+**Tests**: 91 passing (Vitest + React Testing Library)
 **Repository**: https://github.com/DhaNu1204/guide-florence-with-locals.git
