@@ -71,8 +71,10 @@ function pnlSettingKeys() {
         // Guide pay per tour unit, by category
         'guide_rate_combo', 'guide_rate_uffizi', 'guide_rate_accademia',
         'guide_rate_pitti', 'guide_rate_other',
-        // Private tours: flat rate regardless of category (owner pays €60/h × 4h)
-        'guide_rate_private',
+        // Private tours: per-category flat rates (€60/h × hours; hours differ by museum)
+        'guide_rate_private_combo', 'guide_rate_private_uffizi',
+        'guide_rate_private_accademia', 'guide_rate_private_pitti',
+        'guide_rate_private_other',
         // Museum ticket cost per person (what YOU pay the museum)
         'ticket_uffizi_adult', 'ticket_uffizi_child',
         'ticket_uffizi_adult_pm', 'ticket_uffizi_child_pm', // Uffizi entry from 16:00
@@ -93,7 +95,11 @@ function pnlSettingKeys() {
 function pnlDefaultSettings() {
     $defaults = array_fill_keys(pnlSettingKeys(), 0.0);
     // Business defaults (owner can change in Rates & Costs)
-    $defaults['guide_rate_private']      = 240.0; // €60/h × 4h private
+    $defaults['guide_rate_private_combo']     = 240.0; // 4h
+    $defaults['guide_rate_private_uffizi']    = 120.0; // 2h
+    $defaults['guide_rate_private_accademia'] = 90.0;  // 1.5h
+    $defaults['guide_rate_private_pitti']     = 120.0; // 2h
+    $defaults['guide_rate_private_other']     = 120.0; // 2h (incl. Borghese)
     $defaults['guide_rate_combo']        = 210.0; // €60/h × 3.5h shared
     $defaults['ticket_uffizi_adult']     = 29.0; // €25 + €4 advance reservation
     $defaults['ticket_uffizi_adult_pm']  = 20.0; // €16 + €4, entry from 16:00 (since 1 Jan 2026)
@@ -153,6 +159,16 @@ function pnlGuideRateForCategory($category, $settings) {
         case 'Accademia': return $settings['guide_rate_accademia'];
         case 'Pitti':     return $settings['guide_rate_pitti'];
         default:          return $settings['guide_rate_other'];
+    }
+}
+
+function pnlPrivateGuideRate($category, $settings) {
+    switch ($category) {
+        case 'Combo':     return $settings['guide_rate_private_combo'];
+        case 'Uffizi':    return $settings['guide_rate_private_uffizi'];
+        case 'Accademia': return $settings['guide_rate_private_accademia'];
+        case 'Pitti':     return $settings['guide_rate_private_pitti'];
+        default:          return $settings['guide_rate_private_other'];
     }
 }
 
@@ -393,8 +409,8 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             $auto['other_cost'] = floatval($settings['outsource_fee']);
         } elseif (!$u['is_ticket'] && $u['bookings'] > 0) {
             if ($u['is_private']) {
-                // Private tour: flat 4-hour rate, any category
-                $auto['guide_cost'] = floatval($settings['guide_rate_private']);
+                // Private tour: per-category flat rate (hours differ by museum)
+                $auto['guide_cost'] = floatval(pnlPrivateGuideRate($category, $settings));
             } elseif ($category === 'Mixed') {
                 // A mixed merged group is one tour — pay the highest member rate
                 $rate = 0.0;

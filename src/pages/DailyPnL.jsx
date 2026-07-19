@@ -41,14 +41,18 @@ const COST_FIELDS = [
 
 const SETTING_GROUPS = [
   {
-    title: 'Guide pay per tour (€60/h — shared 3.5h, private 4h)',
+    title: 'Guide pay per tour (€60/h — hours vary by tour type)',
     keys: [
-      ['guide_rate_combo', 'Combo tour (shared)'],
+      ['guide_rate_combo', 'Combo tour (shared, 3.5h)'],
       ['guide_rate_uffizi', 'Uffizi tour'],
       ['guide_rate_accademia', 'Accademia tour'],
       ['guide_rate_pitti', 'Pitti tour'],
       ['guide_rate_other', 'Other tour'],
-      ['guide_rate_private', 'Private tour (any museum, 4h)']
+      ['guide_rate_private_combo', 'Private Combo (4h)'],
+      ['guide_rate_private_uffizi', 'Private Uffizi (2h)'],
+      ['guide_rate_private_accademia', 'Private Accademia (1.5h)'],
+      ['guide_rate_private_pitti', 'Private Pitti (2h)'],
+      ['guide_rate_private_other', 'Private other (2h)']
     ]
   },
   {
@@ -665,7 +669,13 @@ function CostDetailModal({ row, settings, onClose, onSave }) {
     ticket_cost: ticketExplain(),
     guide_cost: outsourced ? 'Given to agency — no guide cost from you'
       : row.is_ticket ? 'Ticket product — no guide'
-      : row.is_private ? `Private tour flat rate (4h × €60 = €${settings.guide_rate_private})`
+      : row.is_private ? `Private ${row.category} rate from Settings (€${
+          settings[{
+            Combo: 'guide_rate_private_combo',
+            Uffizi: 'guide_rate_private_uffizi',
+            Accademia: 'guide_rate_private_accademia',
+            Pitti: 'guide_rate_private_pitti'
+          }[row.category] || 'guide_rate_private_other'] ?? 0})`
       : row.category === 'Mixed' ? 'Mixed group — highest member category rate'
       : `${row.category} tour rate from Settings`,
     radio_cost: outsourced || row.is_ticket ? '—' : `${people} people × €${settings.radio_per_person}`,
