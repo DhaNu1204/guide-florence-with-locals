@@ -557,8 +557,17 @@ Hard-won facts from the sync overhaul (2026-06-22/23). The server-side mechanism
 ### `bokun_sync.php` as a LIBRARY
 Define `BOKUN_SYNC_LIB` **before** `require`-ing the file to expose `syncBookings()` without running the endpoint: the guard `if (php_sapi_name() !== 'cli' && !defined('BOKUN_SYNC_LIB'))` skips **both** the web auth/routing block **and** the top-level `applyRateLimit('bokun_sync')`. Used by the webhook (which keeps its own `webhook` 30/min limit, so no double-charge / 429-abort on bursts). CLI cron skips the same block via `php_sapi_name() === 'cli'`. Direct HTTP access stays fully authenticated + rate-limited.
 
+### Duplicate-booking race fix (Jul 2026)
+A real incident (GET-98758588 inserted twice, both rows `created_at` in the same second) proved the upsert's check-then-insert (`SELECT … WHERE bokun_booking_id = ? OR external_id = ?` → INSERT) races when two syncs run concurrently — e.g. the 15-min in-app timer firing on two open tabs/devices at once. Fixes in `bokun_sync.php`:
+- **`UNIQUE KEY uniq_tours_external_id (tours.external_id)`** — the DB-level backstop. Self-provisioned by `ensureExternalIdUniqueIndex()` at the start of every `syncBookings()` (SHOW INDEX guard). NULLs are allowed (manual tours have no external_id — MySQL unique indexes permit multiple NULLs). If legacy duplicate rows exist the ALTER fails **non-fatally** (try/catch — mysqli strict mode THROWS on failed queries, a plain `if (!$conn->query(...))` is not enough) and the sync continues without the index until duplicates are cleaned up.
+- **Insert path is `INSERT … ON DUPLICATE KEY UPDATE`**: a race loser becomes a light update (`bokun_data`, `last_sync`, `updated_at`) instead of a duplicate row. `id = LAST_INSERT_ID(id)` in the ODKU clause keeps `$conn->insert_id` valid for the follow-up `is_private` write. Created-vs-updated stats use `$conn->affected_rows` (1 = insert, 2 = duplicate-key update), captured IMMEDIATELY after execute — any later statement resets it.
+- ⚠️ The duplicated row pair also revealed the follow-on failure mode: later syncs only ever update the FIRST match, so the loser row froze at insert time, and the auto-grouper then **grouped the booking with its own duplicate** (inflating PAX and P&L revenue). If duplicates ever reappear, delete the row with the stale `last_sync` (check payments/guide_reminders/availability_requests references first) and re-run `autoGroupAfterSync()` for the affected date.
+
+### `sync_logs` — self-provisioned (Jul 2026)
+`sync_logs` never existed in prod, and `logSyncOperation()`/`updateSyncLog()` silently SKIPPED logging when the table was missing — syncs ran for months with zero trace (this is why the duplicate-race incident couldn't be attributed to a specific run). Both functions now call `ensureSyncLogsTable()` (CREATE TABLE IF NOT EXISTS, same pattern as `bokun_webhook_logs`), so every sync — including FAILED ones — gets a row with type/status/counts/`triggered_by`/duration.
+
 ### HOST NOTE — no PHP logs
-**`log_errors` is `Off` server-wide**, so `error_log()` output is **NOT persisted anywhere** on this host. Debug via **DB side-effects** instead: `tours.last_sync` (bumped by a sync), `bokun_webhook_logs` (`processed` flag + captured `payload`), and the webhook's JSON response (`synced_dates`) — not PHP logs.
+**`log_errors` is `Off` server-wide**, so `error_log()` output is **NOT persisted anywhere** on this host. Debug via **DB side-effects** instead: `tours.last_sync` (bumped by a sync), **`sync_logs`** (one row per sync run incl. failures), `bokun_webhook_logs` (`processed` flag + captured `payload`), and the webhook's JSON response (`synced_dates`) — not PHP logs.
 
 ## API Rate Limiting
 

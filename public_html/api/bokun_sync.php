@@ -37,6 +37,45 @@ function ensureIsPrivateColumn($conn) {
     }
 }
 
+// Self-provision the unique index that makes the booking upsert race-safe.
+// NULLs are allowed (manual tours have no external_id). The ALTER fails if legacy
+// duplicate rows still exist — those must be cleaned up manually first; the sync
+// must keep working either way (mysqli strict mode throws, hence the try/catch).
+function ensureExternalIdUniqueIndex($conn) {
+    $c = $conn->query("SHOW INDEX FROM tours WHERE Key_name = 'uniq_tours_external_id'");
+    if ($c && $c->num_rows === 0) {
+        try {
+            if (!@$conn->query("ALTER TABLE tours ADD UNIQUE KEY `uniq_tours_external_id` (`external_id`)")) {
+                error_log("Bokun Sync: could not add uniq_tours_external_id (duplicate external_id rows present?)");
+            }
+        } catch (mysqli_sql_exception $e) {
+            error_log("Bokun Sync: could not add uniq_tours_external_id: " . $e->getMessage());
+        }
+    }
+}
+
+// Self-provision the sync_logs table (idempotent, same pattern as bokun_webhook_logs).
+function ensureSyncLogsTable($conn) {
+    $conn->query("CREATE TABLE IF NOT EXISTS sync_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        sync_type VARCHAR(50) NOT NULL,
+        start_date DATE NULL,
+        end_date DATE NULL,
+        status VARCHAR(20) NOT NULL,
+        bookings_found INT NOT NULL DEFAULT 0,
+        bookings_synced INT NOT NULL DEFAULT 0,
+        bookings_created INT NOT NULL DEFAULT 0,
+        bookings_updated INT NOT NULL DEFAULT 0,
+        bookings_failed INT NOT NULL DEFAULT 0,
+        error_message TEXT NULL,
+        triggered_by VARCHAR(100) NULL,
+        duration_seconds DECIMAL(10,2) NULL,
+        created_at DATETIME NOT NULL,
+        completed_at DATETIME NULL,
+        KEY idx_sync_logs_created (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
 // Get Bokun configuration
 function getBokunConfig() {
     global $conn;
@@ -139,12 +178,7 @@ define('PAST_DAYS_BUFFER', 7);     // Always include past 7 days
 function logSyncOperation($syncType, $startDate, $endDate, $status, $stats = [], $errorMessage = null, $triggeredBy = null) {
     global $conn;
 
-    // Check if sync_logs table exists
-    $tableCheck = $conn->query("SHOW TABLES LIKE 'sync_logs'");
-    if ($tableCheck->num_rows === 0) {
-        // Table doesn't exist yet, skip logging
-        return null;
-    }
+    ensureSyncLogsTable($conn);
 
     $stmt = $conn->prepare("
         INSERT INTO sync_logs (
@@ -179,11 +213,7 @@ function updateSyncLog($logId, $status, $stats = [], $errorMessage = null, $dura
 
     if (!$logId) return;
 
-    // Check if sync_logs table exists
-    $tableCheck = $conn->query("SHOW TABLES LIKE 'sync_logs'");
-    if ($tableCheck->num_rows === 0) {
-        return;
-    }
+    ensureSyncLogsTable($conn);
 
     $stmt = $conn->prepare("
         UPDATE sync_logs SET
@@ -227,6 +257,10 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
 
     // Make sure the private-tour flag column exists before we write to it.
     ensureIsPrivateColumn($conn);
+
+    // Race-safety for the booking upsert: concurrent syncs (webhook + in-app,
+    // or two clients' 15-min timers firing together) must not double-insert.
+    ensureExternalIdUniqueIndex($conn);
 
     // Default to past 7 days and next 4 MONTHS (120 days) to catch advance bookings
     // This allows guide assignment for tours booked months in advance
@@ -325,7 +359,10 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $existing['id']
                     );
                 } else {
-                    // Insert new tour
+                    // Insert new tour. ON DUPLICATE KEY UPDATE (backed by uniq_tours_external_id)
+                    // makes this race-safe: if a concurrent sync inserted the same booking after
+                    // our SELECT above, this becomes a light update instead of a duplicate row.
+                    // id = LAST_INSERT_ID(id) keeps $conn->insert_id valid on that path.
                     $stmt = $conn->prepare("
                         INSERT INTO tours (
                             external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration, language,
@@ -334,6 +371,11 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                             external_source, needs_guide_assignment, guide_id, cancelled,
                             bokun_data, last_sync, product_id, created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                        ON DUPLICATE KEY UPDATE
+                            id = LAST_INSERT_ID(id),
+                            bokun_data = VALUES(bokun_data),
+                            last_sync = VALUES(last_sync),
+                            updated_at = NOW()
                     ");
                     $stmt->bind_param("sssssssssssissddsisiiissi",
                         $tourData['external_id'], $tourData['bokun_booking_id'], $tourData['bokun_confirmation_code'],
@@ -347,6 +389,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                 }
 
                 if ($stmt->execute()) {
+                    // Capture before any further statement resets them.
+                    $upsertAffected = $conn->affected_rows;
                     // Classify private (single source of truth) and persist on every write.
                     $rowId = $isUpdate ? (int) $existing['id'] : (int) $conn->insert_id;
                     if ($rowId > 0) {
@@ -361,7 +405,12 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                     if ($isUpdate) {
                         $updatedCount++;
                     } else {
-                        $createdCount++;
+                        // affected_rows: 1 = fresh insert, 2 = duplicate-key update (lost the race)
+                        if ($upsertAffected === 2) {
+                            $updatedCount++;
+                        } else {
+                            $createdCount++;
+                        }
                     }
                 } else {
                     $failedCount++;
