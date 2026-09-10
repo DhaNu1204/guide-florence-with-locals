@@ -135,9 +135,11 @@ fi
 # --- Remote sync helper (runs on the server): copy only changed files from a staged tree --------------
 # args: SRC DEST [DELETE_SCOPE]. DELETE_SCOPE (e.g. "assets") removes remote files under that folder
 # that are not in SRC. Nothing else is ever deleted; unchanged files are left untouched (mtime kept).
+# (plain temp-file lists, no process substitution: the host's bash has no /dev/fd)
 read -r -d '' REMOTE_SYNC <<'SYNC' || true
 SRC="$1"; DEST="$2"; SCOPE="${3:-}"; changed=0; same=0; removed=0
-mkdir -p "$DEST"; cd "$SRC"
+LIST=$(mktemp); mkdir -p "$DEST"; cd "$SRC"
+find . -type f > "$LIST"
 while IFS= read -r f; do
     f=${f#./}; mkdir -p "$DEST/$(dirname "$f")"
     if [ -f "$DEST/$f" ] && cmp -s "$f" "$DEST/$f"; then
@@ -145,13 +147,15 @@ while IFS= read -r f; do
     else
         cp -f "$f" "$DEST/$f"; chmod 644 "$DEST/$f"; changed=$((changed+1)); echo "  updated: $f"
     fi
-done < <(find . -type f)
+done < "$LIST"
 if [ -n "$SCOPE" ] && [ -d "$DEST/$SCOPE" ]; then
+    find "$DEST/$SCOPE" -type f > "$LIST"
     while IFS= read -r f; do
         rel=${f#$DEST/}
         if [ ! -f "$SRC/$rel" ]; then rm -f "$f"; removed=$((removed+1)); echo "  removed stale: $rel"; fi
-    done < <(find "$DEST/$SCOPE" -type f)
+    done < "$LIST"
 fi
+rm -f "$LIST"
 echo "  sync: $changed updated, $same unchanged, $removed removed"
 SYNC
 
