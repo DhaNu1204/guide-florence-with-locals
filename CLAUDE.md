@@ -5,7 +5,7 @@
 
 ## 1. What this is
 Internal web app for a Florence tour operator: Bokun bookings (Viator, GetYourGuide, direct) are synced into MySQL, grouped into departures, assigned to guides, paid, and reported (guide reports, Daily P&L, museum tickets, WhatsApp guide reminders).
-- Production: `https://withlocals.deetech.cc` · Staging: `https://staging.withlocals.deetech.cc` (Phase 0.1)
+- Production: `https://withlocals.deetech.cc` · Staging: `https://stagingwithlocals.deetech.cc` (Phase 0.1)
 - Stack: React 18 + Vite 5 + Tailwind 3 (SPA/PWA) · PHP 8.2 REST API (no framework, mysqli) · MySQL · Hostinger shared hosting · Bokun REST (HMAC-SHA1) · Twilio WhatsApp · Sentry
 - Layout: `src/` (frontend) · `public_html/api/` (API) · `database/migrations/` · `tools/` (CLI-only scripts, **never deployed**) · `scripts/deploy.sh` · `docs/`
 

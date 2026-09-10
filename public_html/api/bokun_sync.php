@@ -244,11 +244,28 @@ function updateSyncLog($logId, $status, $stats = [], $errorMessage = null, $dura
     $stmt->close();
 }
 
+/**
+ * Step 0.1: BOKUN_SYNC_ENABLED in the server .env. When it is set to false every
+ * sync path (in-app timer, manual, webhook, cron) is refused regardless of the
+ * bokun_config.sync_enabled flag (which staging inherits from the production
+ * dump). Absent (production today) -> unchanged behaviour.
+ */
+function bokunSyncEnabledByEnv() {
+    if (!EnvLoader::has('BOKUN_SYNC_ENABLED')) {
+        return true;
+    }
+    return EnvLoader::getBool('BOKUN_SYNC_ENABLED', true);
+}
+
 // Sync bookings from Bokun
 function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $triggeredBy = null) {
     global $conn;
 
     $startTime = microtime(true);
+
+    if (!bokunSyncEnabledByEnv()) {
+        return ['success' => false, 'error' => 'sync_disabled'];
+    }
 
     $config = getBokunConfig();
     if (!$config || !$config['sync_enabled']) {
@@ -724,6 +741,8 @@ function getSyncHistory($limit = 20) {
 // Get sync configuration info
 function getSyncInfo() {
     return [
+        'environment' => ENVIRONMENT,
+        'sync_enabled_env' => bokunSyncEnabledByEnv(),
         'default_sync_days' => DEFAULT_SYNC_DAYS,
         'full_sync_days' => FULL_SYNC_DAYS,
         'past_days_buffer' => PAST_DAYS_BUFFER,

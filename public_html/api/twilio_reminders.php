@@ -23,6 +23,9 @@
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_MESSAGING_SERVICE_SID,
  *   TWILIO_GUIDE_REMINDER_CONTENT_SID, TWILIO_GUIDE_REMINDER_LEAD_MIN,
  *   TWILIO_REMINDERS_ENABLED (default false).
+ *   TWILIO_DRY_RUN (default false) - step 0.1: when true, NO HTTP call is ever
+ *   made to Twilio; the intended action is written to guide_reminders.last_error
+ *   as "DRY RUN: <action>" and the row keeps its normal status (staging default).
  */
 
 require_once __DIR__ . '/EnvLoader.php';
@@ -46,7 +49,34 @@ function guideReminderConfig() {
         'messaging_service_sid' => (string) EnvLoader::get('TWILIO_MESSAGING_SERVICE_SID', ''),
         'content_sid'           => (string) EnvLoader::get('TWILIO_GUIDE_REMINDER_CONTENT_SID', ''),
         'lead_min'              => $lead,
+        'dry_run'               => EnvLoader::getBool('TWILIO_DRY_RUN', false),
     ];
+}
+
+/**
+ * Step 0.1 (staging): true when TWILIO_DRY_RUN=true. In dry-run mode no
+ * request is sent to Twilio; see twDryRunNote().
+ */
+function twilioDryRun() {
+    return EnvLoader::getBool('TWILIO_DRY_RUN', false);
+}
+
+/**
+ * Record the action a dry run WOULD have performed in guide_reminders.last_error
+ * ("DRY RUN: <action>"). Never throws.
+ */
+function twDryRunNote($conn, $tourId, $action) {
+    try {
+        $note = 'DRY RUN: ' . (string) $action;
+        if (strlen($note) > 1000) {
+            $note = substr($note, 0, 1000);
+        }
+        $upd = $conn->prepare("UPDATE guide_reminders SET last_error = ? WHERE tour_id = ?");
+        $upd->bind_param('si', $note, $tourId);
+        $upd->execute();
+    } catch (\Throwable $e) {
+        error_log('twDryRunNote error: ' . $e->getMessage());
+    }
 }
 
 /**
@@ -171,6 +201,15 @@ function twScheduleReminder($conn, $tour) {
         'SendAt'              => $tour['send_at_iso'],
     ];
 
+    // Dry run (step 0.1): no HTTP call; return a synthetic sid and the intended action.
+    if (twilioDryRun()) {
+        return [
+            'sid'     => 'DRYRUN-' . substr(sha1($to . '|' . $tour['send_at_iso']), 0, 24),
+            'status'  => 'scheduled',
+            'dry_run' => 'schedule SendAt=' . $tour['send_at_iso'] . ' tour="' . (string) ($tour['title'] ?? '') . '" ' . (string) ($tour['time_hhmm'] ?? '') . ' guide=' . $firstName,
+        ];
+    }
+
     $url = 'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode($cfg['account_sid']) . '/Messages.json';
     $res = twilioPost($cfg, $url, $fields);
 
@@ -197,6 +236,11 @@ function twScheduleReminder($conn, $tour) {
 function twCancelReminder($sid) {
     $sid = trim((string) $sid);
     if ($sid === '') {
+        return;
+    }
+
+    // Dry run (step 0.1): no HTTP call. Callers record "DRY RUN: cancel ..." themselves.
+    if (twilioDryRun()) {
         return;
     }
 
@@ -437,6 +481,9 @@ function reconcileGuideReminders($conn) {
                             VALUES (?, ?, ?, ?, 'scheduled', NULL)");
                         $ins->bind_param('iiss', $tourId, $guideId, $r['sid'], $desiredSendDb);
                         $ins->execute();
+                        if (!empty($r['dry_run'])) {
+                            twDryRunNote($conn, $tourId, $r['dry_run']);
+                        }
                         $stats['scheduled']++;
                     } catch (\Throwable $e) {
                         recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
@@ -453,6 +500,9 @@ function reconcileGuideReminders($conn) {
                             WHERE tour_id = ?");
                         $upd->bind_param('issi', $guideId, $r['sid'], $desiredSendDb, $tourId);
                         $upd->execute();
+                        if (!empty($r['dry_run'])) {
+                            twDryRunNote($conn, $tourId, 're' . $r['dry_run']);
+                        }
                         $stats['scheduled']++;
                     } catch (\Throwable $e) {
                         recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
@@ -471,6 +521,9 @@ function reconcileGuideReminders($conn) {
                             WHERE tour_id = ?");
                         $upd->bind_param('issi', $guideId, $r['sid'], $desiredSendDb, $tourId);
                         $upd->execute();
+                        if (!empty($r['dry_run'])) {
+                            twDryRunNote($conn, $tourId, 're' . $r['dry_run'] . ' + cancel ' . $exSid);
+                        }
                         $stats['rescheduled']++;
                     } catch (\Throwable $e) {
                         recordReminderFailure($conn, $tourId, $guideId, $desiredSendDb, $e->getMessage());
@@ -486,6 +539,9 @@ function reconcileGuideReminders($conn) {
                     $mark = $conn->prepare("UPDATE guide_reminders SET status = 'canceled' WHERE tour_id = ?");
                     $mark->bind_param('i', $tourId);
                     $mark->execute();
+                    if (twilioDryRun()) {
+                        twDryRunNote($conn, $tourId, 'cancel stale ' . $exSid);
+                    }
                     $stats['canceled']++;
                     break;
 
@@ -536,6 +592,9 @@ function reconcileGuideReminders($conn) {
                 $mark = $conn->prepare("UPDATE guide_reminders SET status = 'canceled' WHERE id = ?");
                 $mark->bind_param('i', $rmId);
                 $mark->execute();
+                if (twilioDryRun()) {
+                    twDryRunNote($conn, $rmTourId, 'cancel ' . (string) $rm['twilio_sid']);
+                }
                 $stats['canceled']++;
             }
         }

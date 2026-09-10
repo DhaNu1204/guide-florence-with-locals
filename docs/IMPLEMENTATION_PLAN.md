@@ -28,7 +28,7 @@ Each step below is small enough to finish and verify in one sitting. For every s
 ## Phase 0 — Safety net (do first, ~1 day)
 
 ### 0.1 Staging environment on Hostinger
-- Create subdomain `staging.withlocals.deetech.cc` → `…/public_html/withlocals-staging/`; create DB `u803853690_withlocals_stg` from a **fresh dump of production** (with a `UPDATE users SET password=…` for a staging-only admin password); copy the server `.env` with `APP_ENV=staging`, staging DB creds, **`BOKUN_SYNC_ENABLED=false`** by default (so staging never writes reminders/Twilio to real guides — add a `TWILIO_DRY_RUN=true` flag honoured in `twilio_reminders.php`).
+- Create subdomain `stagingwithlocals.deetech.cc` → `…/public_html/stagingwithlocals/`; create DB `u803853690_withlocals_stg` from a **fresh dump of production** (with a `UPDATE users SET password=…` for a staging-only admin password); copy the server `.env` with `APP_ENV=staging`, staging DB creds, **`BOKUN_SYNC_ENABLED=false`** by default (so staging never writes reminders/Twilio to real guides — add a `TWILIO_DRY_RUN=true` flag honoured in `twilio_reminders.php`).
 - `scripts/deploy.sh --target staging|production` (target selects path + `VITE_API_URL`); production is refused unless `--target production` is explicit.
 - `config.php`: environment from `APP_ENV` (`EnvLoader`), **default = production** (§2.12); CORS list includes the staging origin.
 - **Verify:** staging login works; sync on staging with `BOKUN_SYNC_ENABLED=true` reads from Bokun fine; Twilio dry-run logs but does not send. **Rollback:** none needed — production untouched.
