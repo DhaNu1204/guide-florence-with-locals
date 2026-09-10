@@ -72,8 +72,8 @@ class BokunAPI {
             'Content-Type: application/json;charset=UTF-8'
         ];
         
-        error_log("BokunAPI: Making {$method} request to {$url}");
-        error_log("BokunAPI: Headers: " . json_encode($headers));
+        // Step 0.2: log method + path only - never the headers (they carry the access key + signature).
+        error_log("BokunAPI: {$method} {$endpoint}");
         
         try {
             // Use cURL if available, fallback to HttpClient
@@ -119,8 +119,7 @@ class BokunAPI {
                 $responseBody = $response['body'];
             }
             
-            error_log("BokunAPI: Response code: {$httpCode}");
-            error_log("BokunAPI: Response body: " . substr($responseBody, 0, 500));
+            error_log("BokunAPI: {$method} {$endpoint} -> HTTP {$httpCode}");
             
             $decodedResponse = json_decode($responseBody, true);
             

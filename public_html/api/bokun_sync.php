@@ -298,7 +298,6 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         // Get bookings from Bokun
         error_log("Bokun Sync [$syncType]: Requesting bookings from $startDate to $endDate");
         $bookingsResponse = $bokunAPI->getBookings($startDate, $endDate);
-        error_log("Bokun Sync: Raw API response: " . json_encode($bookingsResponse));
 
         // getBookings() now returns the items array directly after our fix
         $bookings = $bookingsResponse;
