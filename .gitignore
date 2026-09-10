@@ -60,8 +60,7 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# Database configuration (keep template)
-public_html/api/config.php
+# Database configuration: config.php is tracked since step 0.1 (it holds no secrets - credentials come from the server .env via EnvLoader)
 
 # Development and testing files
 debug_*.php

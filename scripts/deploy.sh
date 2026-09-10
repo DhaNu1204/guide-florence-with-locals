@@ -6,11 +6,14 @@
 # Works with both manual deployment and GitHub Actions.
 #
 # Usage:
-#   ./scripts/deploy.sh              # Deploy both frontend and backend
-#   ./scripts/deploy.sh --frontend   # Deploy frontend only
-#   ./scripts/deploy.sh --backend    # Deploy backend only
-#   ./scripts/deploy.sh --check      # Health check only (no deployment)
-#   ./scripts/deploy.sh --no-backup  # Deploy without creating backup
+#   ./scripts/deploy.sh --target staging               # Deploy both frontend and backend to staging
+#   ./scripts/deploy.sh --target production            # Deploy to production (master + clean tree only)
+#   ./scripts/deploy.sh --target <t> --frontend        # Deploy frontend only
+#   ./scripts/deploy.sh --target <t> --backend         # Deploy backend only
+#   ./scripts/deploy.sh --target <t> --check           # Health check only (no deployment)
+#   ./scripts/deploy.sh --target <t> --no-backup       # Deploy without creating backup
+#
+# --target is mandatory (step 0.1). There is no default target.
 #
 # Requirements:
 #   - SSH access configured
@@ -25,9 +28,13 @@ set -e  # Exit on error
 SSH_HOST="82.25.82.111"
 SSH_PORT="65002"
 SSH_USER="u803853690"
-PRODUCTION_PATH="/home/u803853690/domains/deetech.cc/public_html/withlocals"
-BACKUP_DIR="/home/u803853690/domains/deetech.cc/backups"
-PRODUCTION_URL="https://withlocals.deetech.cc"
+
+# Deploy target (step 0.1). Set by --target; resolved below into the three
+# variables the rest of the script already uses (names kept unchanged on purpose).
+TARGET=""
+PRODUCTION_PATH=""
+PRODUCTION_URL=""
+BACKUP_DIR=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -65,6 +72,14 @@ CREATE_BACKUP=true
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --target)
+            TARGET="$2"
+            shift 2
+            ;;
+        --target=*)
+            TARGET="${1#*=}"
+            shift
+            ;;
         --frontend)
             DEPLOY_BACKEND=false
             shift
@@ -89,6 +104,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
+            echo "  --target T    REQUIRED: staging | production"
             echo "  --frontend    Deploy frontend only"
             echo "  --backend     Deploy backend only"
             echo "  --check       Run health check only (no deployment)"
@@ -96,10 +112,11 @@ while [[ $# -gt 0 ]]; do
             echo "  --help, -h    Show this help message"
             echo ""
             echo "Examples:"
-            echo "  $0                      # Deploy everything with backup"
-            echo "  $0 --frontend           # Deploy frontend only"
-            echo "  $0 --backend --no-backup  # Deploy backend without backup"
-            echo "  $0 --check              # Check if production is healthy"
+            echo "  $0 --target staging                 # Deploy everything to staging with backup"
+            echo "  $0 --target production              # Deploy to production (master + clean tree only)"
+            echo "  $0 --target staging --frontend      # Deploy frontend only"
+            echo "  $0 --target staging --backend --no-backup  # Deploy backend without backup"
+            echo "  $0 --target production --check      # Check if production is healthy"
             exit 0
             ;;
         *)
@@ -109,6 +126,43 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# ===========================================================================
+# Resolve deploy target (step 0.1) - an explicit --target is mandatory
+# ===========================================================================
+case "$TARGET" in
+    staging)
+        PRODUCTION_PATH="/home/u803853690/domains/deetech.cc/public_html/stagingwithlocals"
+        PRODUCTION_URL="https://stagingwithlocals.deetech.cc"
+        BACKUP_DIR="/home/u803853690/domains/deetech.cc/backups/staging"
+        ;;
+    production)
+        PRODUCTION_PATH="/home/u803853690/domains/deetech.cc/public_html/withlocals"
+        PRODUCTION_URL="https://withlocals.deetech.cc"
+        BACKUP_DIR="/home/u803853690/domains/deetech.cc/backups"
+        ;;
+    "")
+        log_error "No deploy target given. Use --target staging or --target production."
+        exit 1
+        ;;
+    *)
+        log_error "Unknown target: '$TARGET' (expected: staging | production)"
+        exit 1
+        ;;
+esac
+
+# Production guard: only from branch master (never main) and only with a clean tree
+if [ "$TARGET" = "production" ] && [ "$CHECK_ONLY" != true ]; then
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    if [ "$CURRENT_BRANCH" != "master" ]; then
+        log_error "Production deploys only from branch 'master' (current: $CURRENT_BRANCH)."
+        exit 1
+    fi
+    if [ -n "$(git status --porcelain)" ]; then
+        log_error "Production deploys require a clean working tree. Commit or stash first."
+        exit 1
+    fi
+fi
 
 # ===========================================================================
 # Health Check Function
@@ -179,6 +233,7 @@ fi
 
 log_info "Starting deployment process..."
 echo "========================================"
+echo "Target: $TARGET -> $PRODUCTION_URL"
 echo "Frontend: $([ "$DEPLOY_FRONTEND" = true ] && echo "Yes" || echo "No")"
 echo "Backend: $([ "$DEPLOY_BACKEND" = true ] && echo "Yes" || echo "No")"
 echo "Backup: $([ "$CREATE_BACKUP" = true ] && echo "Yes" || echo "No")"
@@ -206,6 +261,7 @@ if [ "$CREATE_BACKUP" = true ]; then
     log_info "Creating backup on remote server..."
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     BACKUP_NAME="withlocals_backup_${TIMESTAMP}"
+    [ "$TARGET" = "staging" ] && BACKUP_NAME="stagingwithlocals_backup_${TIMESTAMP}"
 
     ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "
         mkdir -p $BACKUP_DIR
@@ -249,6 +305,9 @@ if [ "$DEPLOY_BACKEND" = true ]; then
 
     # List of files to exclude from deployment
     EXCLUDE_FILES="sentry_test.php migrate_bokun_credentials.php database_check.php bokun_debug.php"
+
+    # Make sure the target api folder exists (first staging deploy)
+    ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "mkdir -p $PRODUCTION_PATH/api"
 
     # Deploy PHP files
     for file in public_html/api/*.php; do
@@ -335,6 +394,7 @@ else
     echo -e "${YELLOW}⚠️  DEPLOYMENT COMPLETE (with warnings)${NC}"
 fi
 echo "========================================"
+echo "Target: $TARGET"
 echo "URL: $PRODUCTION_URL"
 echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "Frontend: $([ "$DEPLOY_FRONTEND" = true ] && echo "✅ Deployed" || echo "⏭️ Skipped")"

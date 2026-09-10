@@ -18,7 +18,7 @@ scripts/deploy.sh --target <target>
 The script must: `npm ci` → `npm run build` with the target's `VITE_API_URL` → upload an allowlist from `git ls-files public_html/api` (never `tools/`, never `*_test.php`, never `fix_*`/`migrate_*`/`check_*`) plus `public_html/api/.htaccess` and `dist/` (with `dist/.htaccess`) → keep the previous release in `backups/` → `curl` `api/health.php` and expect 200 with the deployed git SHA.
 
 ## Smoke test (all must pass; print a table of results)
-Host: `https://staging.withlocals.deetech.cc` or `https://withlocals.deetech.cc`. Tokens come from `STAGING_ADMIN_TOKEN` / `STAGING_VIEWER_TOKEN` env vars (ask the user to log in and paste, or obtain via `POST /api/auth.php` with credentials from the untracked `~/.florence/credentials.md` — never from the repo).
+Host: `https://stagingwithlocals.deetech.cc` or `https://withlocals.deetech.cc`. Tokens come from `STAGING_ADMIN_TOKEN` / `STAGING_VIEWER_TOKEN` env vars (ask the user to log in and paste, or obtain via `POST /api/auth.php` with credentials from the untracked `~/.florence/credentials.md` — never from the repo).
 
 | # | Check | Expect |
 |---|---|---|
