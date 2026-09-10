@@ -28,8 +28,8 @@
 # Prevent directory listing
 Options -Indexes
 
-# Hide sensitive files (step 0.2: also .env.local/.env.production, error_log)
-<FilesMatch "^(\.env.*|.*\.(log|sql)|error_log)$">
+# Hide sensitive files (step 0.2: env files, logs, sql/md/backups, and one-off maintenance/test scripts that must never be web-served)
+<FilesMatch "^(\.env.*|.*\.(log|sql|md|bak|backup)(\..*|-.*)?|error_log|(debug|test|check|fix|migrate|setup|create_views|execute)_.*\.php|.*_test\.php|test\.php)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
