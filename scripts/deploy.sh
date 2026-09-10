@@ -92,7 +92,8 @@ if [ "$CHECK_ONLY" = true ]; then health_check ""; exit $?; fi
 # --- --restore-last-backup: copy the newest backup of this target back over the release -------------
 if [ "$RESTORE" = true ]; then
     log_warning "Restoring the last backup for $TARGET ..."
-    rssh "set -e; B=\$(ls -dt $BACKUP_DIR/${BACKUP_PREFIX}_* 2>/dev/null | head -1); [ -n \"\$B\" ] || { echo 'no backup found'; exit 1; }; echo \"restoring from \$B\"; cp -a \"\$B/.\" \"$REMOTE_PATH/\"; echo restored"
+    # newest = highest name (timestamp in the name); never ls -t: cp -a preserves old mtimes
+    rssh "set -e; B=\$(ls -d $BACKUP_DIR/${BACKUP_PREFIX}_* 2>/dev/null | sort -r | head -1); [ -n \"\$B\" ] || { echo 'no backup found'; exit 1; }; echo \"restoring from \$B\"; cp -a \"\$B/.\" \"$REMOTE_PATH/\"; echo restored"
     health_check ""; exit $?
 fi
 
@@ -198,7 +199,7 @@ if [ "$DEPLOY_BACKEND" = true ]; then health_check "$SHA"; else health_check "";
 HEALTH=$?
 set -e
 if [ "$CREATE_BACKUP" = true ]; then
-    rssh "ls -dt $BACKUP_DIR/${BACKUP_PREFIX}_* 2>/dev/null | tail -n +6 | xargs -r rm -rf" || true
+    rssh "ls -d $BACKUP_DIR/${BACKUP_PREFIX}_* 2>/dev/null | sort -r | tail -n +6 | xargs -r rm -rf" || true   # keep newest 5 by name
 fi
 
 # --- Summary ------------------------------------------------------------------------------------------

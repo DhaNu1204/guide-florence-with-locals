@@ -40,7 +40,7 @@
 # or maintenance/test scripts - even if a stray copy lands in this folder.
 # Web-facing PHP endpoints are unaffected. bokun_cron.php is CLI/cron only.
 # ===========================================================================
-<FilesMatch "^(\.env.*|.*\.(log|sql|md|json|txt|bak)|error_log|VERSION|(debug|test|check|fix|migrate)_.*\.php|.*_test\.php|bokun_cron\.php)$">
+<FilesMatch "^(\.env.*|.*\.(log|sql|md|json|txt|bak|backup)(\..*|-.*)?|error_log|VERSION|(debug|test|check|fix|migrate)_.*\.php|.*_test\.php|bokun_cron\.php)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
