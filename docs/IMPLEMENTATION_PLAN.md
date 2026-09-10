@@ -27,11 +27,21 @@ Each step below is small enough to finish and verify in one sitting. For every s
 
 ## Phase 0 — Safety net (do first, ~1 day)
 
-### 0.1 Staging environment on Hostinger
+### 0.1 Staging environment on Hostinger — [x] DONE 2026-09-10 (commit 1be84c6, merged to master; production not redeployed — goes live with 0.2)
 - Create subdomain `stagingwithlocals.deetech.cc` → `…/public_html/stagingwithlocals/`; create DB `u803853690_withlocals_stg` from a **fresh dump of production** (with a `UPDATE users SET password=…` for a staging-only admin password); copy the server `.env` with `APP_ENV=staging`, staging DB creds, **`BOKUN_SYNC_ENABLED=false`** by default (so staging never writes reminders/Twilio to real guides — add a `TWILIO_DRY_RUN=true` flag honoured in `twilio_reminders.php`).
 - `scripts/deploy.sh --target staging|production` (target selects path + `VITE_API_URL`); production is refused unless `--target production` is explicit.
 - `config.php`: environment from `APP_ENV` (`EnvLoader`), **default = production** (§2.12); CORS list includes the staging origin.
 - **Verify:** staging login works; sync on staging with `BOKUN_SYNC_ENABLED=true` reads from Bokun fine; Twilio dry-run logs but does not send. **Rollback:** none needed — production untouched.
+
+**Notes from 0.1 (observed, not changed — for later steps):**
+- Real staging hostname is `stagingwithlocals.deetech.cc` (hPanel created it without the dot); docroot `public_html/stagingwithlocals/`; DB + user `u803853690_withlocals_stg` (Hostinger prefix — `~/.florence/credentials.md` lists them without it). No Hostinger MCP server is configured on the owner's PC; DNS/subdomain/DB were created in hPanel by hand.
+- **Staging admin password is still the production one**: the "Staging admin login" section of the credentials file was a placeholder, so the `UPDATE users SET password=…` of this step was skipped. Fill it in, then run that one UPDATE on the staging DB (do not reuse production passwords on staging).
+- `config.php` was gitignored (`.gitignore:64`) although 0.1/2.1 change it and 0.2 deploys from `git ls-files`; it is now tracked (it holds no secrets).
+- The plan assumed a `BOKUN_SYNC_ENABLED` env flag; the only existing flag was `bokun_config.sync_enabled` in the DB (staging inherits `1` from the dump). The env gate was added to `bokun_sync.php` (`bokunSyncEnabledByEnv()`, reported by `sync-info`).
+- `deploy.sh` still ships the working tree (6 untracked `check_*`/`*_test`/`migrate_*` files went to staging), does not ship `.htaccess` (root + api — copied from production by hand on staging), and its health check treats the 401 from `tours.php`/`guides.php` as failure (exit 1 on every deploy) → all 0.2.
+- **Production finding (untouched):** every browser-triggered sync (`triggered_by` = `periodic`/`startup`/`visibility`, full 67-day window) dies at the 60 s web timeout and leaves `sync_logs.status='started'` forever — 158 such rows in 24 h vs 275 completed. Only `cron` (240–330 s) and `webhook` complete, and the cron fires **twice** per 15-min slot (two rows at the same second → duplicate crontab entry). CLAUDE.md rule 7 ("Hostinger cron does not fire") is wrong. Proposed step for Phase 3: browser sync uses a short window (today → +7 d) or is dropped in favour of cron + webhook; dedupe the cron; mark `started` rows older than 10 min as `failed`.
+- `public_html/withlocals/api/error_log` (10 MB) **is** written on the host and contains the Bokun access key in logged request headers (`BokunAPI: Headers:` lines) → add to the 0.3 rotation list and to 2.1 (never log auth headers).
+- Staging `sync_logs` row 13855 is a stuck `started` row from the same full-window attempt on staging (harmless).
 
 ### 0.2 Repo hygiene that blocks nothing
 - Add `api/health.php` (no auth: `{ok:true, db:true, env, sha}`), used by deploy checks (§2.12).

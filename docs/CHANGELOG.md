@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 0.1 — STAGING ENVIRONMENT (2026-09-10)
+2026-09-10 step 0.1 — staging at https://stagingwithlocals.deetech.cc (fresh prod DB copy, reminders/availability truncated); `deploy.sh --target staging|production` (production only from master + clean tree); `APP_ENV=staging` in config.php (= production behaviour + staging CORS origin); `BOKUN_SYNC_ENABLED` env gate; `TWILIO_DRY_RUN` writes "DRY RUN: …" to guide_reminders.last_error instead of calling Twilio — verified: no-token 401 / admin 200 (25 tours), sync-info `sync_enabled_env:false`, sync refused `sync_disabled`, 1-week sync completed (197 updated, 26 s) with 27/27 dry-run reminders and 0 real Twilio sids, production files + DB counts unchanged. Not deployed to production (ships with 0.2).
+
 ## ✅ DASHBOARD COMPACTION (2026-07-17)
 ✅ DEPLOYED (6a130fd) — dashboard sections collapsed by default with "Show all (N) ▾ / Show less ▴" toggles: needs-guide alert previews 3, recent responses 3, Upcoming Tours 5, Needs Attention 5. Display-only. New `Dashboard.collapse.test.jsx` (4 interaction tests → suite 91).
 
