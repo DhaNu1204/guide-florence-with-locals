@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 0.2 — REPO HYGIENE + SAFE DEPLOY (2026-09-11)
+2026-09-11 step 0.2 — `api/health.php` ({ok,db,env,sha,time}); maintenance scripts moved to `tools/` (CLI guard) and out of the web root; Bokun header/raw-response logging removed; deny blocks in both `.htaccess` (.env*, logs, sql/md/json/txt/bak/backup, VERSION, maintenance/test scripts, tests/); `deploy.sh` rewritten (mandatory --target, dirty tree refused, production only from master, `npm ci`, backend allowlist from `git ls-files` + VERSION, frontend sync without root delete, backups keep-5 by name, `--restore-last-backup`, health = sha match) — verified: staging + production health 200 with sha 82fc41f, all denied URLs 403/404, smoke rows 1–5/11 green (6–8 expected-fail pre-1.x), second deploy 0 files changed and no mtime churn, .env files intact; production backed up first (`~/backups/pre-0.2-20260910_215631.{tgz,sql}`).
+
 ## ✅ STEP 0.1 — STAGING ENVIRONMENT (2026-09-10)
 2026-09-10 step 0.1 — staging at https://stagingwithlocals.deetech.cc (fresh prod DB copy, reminders/availability truncated); `deploy.sh --target staging|production` (production only from master + clean tree); `APP_ENV=staging` in config.php (= production behaviour + staging CORS origin); `BOKUN_SYNC_ENABLED` env gate; `TWILIO_DRY_RUN` writes "DRY RUN: …" to guide_reminders.last_error instead of calling Twilio — verified: no-token 401 / admin 200 (25 tours), sync-info `sync_enabled_env:false`, sync refused `sync_disabled`, 1-week sync completed (197 updated, 26 s) with 27/27 dry-run reminders and 0 real Twilio sids, production files + DB counts unchanged. Not deployed to production (ships with 0.2).
 
