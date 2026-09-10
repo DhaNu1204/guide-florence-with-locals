@@ -36,10 +36,28 @@
 </IfModule>
 
 # ===========================================================================
+# DENY (step 0.2): never serve env files, logs, dumps, docs, the release marker
+# or maintenance/test scripts - even if a stray copy lands in this folder.
+# Web-facing PHP endpoints are unaffected. bokun_cron.php is CLI/cron only.
+# ===========================================================================
+<FilesMatch "^(\.env.*|.*\.(log|sql|md|json|txt|bak)|error_log|VERSION|(debug|test|check|fix|migrate)_.*\.php|.*_test\.php|bokun_cron\.php)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# ===========================================================================
 # URL REWRITING
 # ===========================================================================
 RewriteEngine On
 RewriteBase /api/
+
+# tests/ is never web-served (step 0.2)
+RewriteRule ^tests(/.*)?$ - [F,L]
 
 # Allow direct access to existing files and directories
 RewriteCond %{REQUEST_FILENAME} -f

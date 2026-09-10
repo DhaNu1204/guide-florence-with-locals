@@ -28,9 +28,15 @@
 # Prevent directory listing
 Options -Indexes
 
-# Hide sensitive files
-<FilesMatch "\.(env|log|sql)$">
-  Require all denied
+# Hide sensitive files (step 0.2: also .env.local/.env.production, error_log)
+<FilesMatch "^(\.env.*|.*\.(log|sql)|error_log)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
 </FilesMatch>
 
 # PWA: correct MIME for the web app manifest + never cache the service worker

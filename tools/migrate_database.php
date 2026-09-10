@@ -1,11 +1,12 @@
 <?php
+if (php_sapi_name() !== 'cli') { http_response_code(404); exit; } // CLI-only maintenance script (step 0.2): never reachable over HTTP
 /**
  * Database Migration Script
  * Adds missing columns and tables to local database
  */
 
 // Include database configuration
-require_once 'config.php';
+require_once __DIR__ . '/../public_html/api/config.php';
 
 header('Content-Type: application/json');
 

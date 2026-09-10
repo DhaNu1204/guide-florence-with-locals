@@ -1,4 +1,5 @@
 <?php
+if (php_sapi_name() !== 'cli') { http_response_code(404); exit; } // CLI-only maintenance script (step 0.2): never reachable over HTTP
 /**
  * Fix Tour Dates - Correct dates that were incorrectly set to booking creation date
  *
@@ -8,7 +9,7 @@
  * Usage: php fix_tour_dates.php
  */
 
-require_once 'config.php';
+require_once __DIR__ . '/../public_html/api/config.php';
 
 echo "Starting tour date correction process...\n";
 echo "=========================================\n\n";
