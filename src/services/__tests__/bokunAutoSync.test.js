@@ -3,6 +3,7 @@
  * - viewer: performSync makes no request, resolves false, lastSync untouched
  * - admin: performSync calls config + sync and resolves true on success
  * - 403 from the API: treated as "not allowed" (skipped, not failed), lastSync untouched
+ * - step 1.2: one request only (action=sync, no config round-trip); {success:false,error:'sync_disabled'} = skip
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -61,21 +62,33 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
     expect(notifyForbidden).toHaveBeenCalledTimes(1);
   });
 
-  it('admin: config + sync are requested and a successful sync resolves true', async () => {
+  it('admin: exactly one request (action=sync, no config call) and a successful sync resolves true', async () => {
     setStorage({ token: 't', userRole: 'admin' });
     bokunAutoSync.userRole = 'admin';
-    axios.get
-      .mockResolvedValueOnce({ data: { sync_enabled: true } })
-      .mockResolvedValueOnce({ data: { success: true, synced_count: 2, total_bookings: 10 } });
+    axios.get.mockResolvedValueOnce({ data: { success: true, synced_count: 2, total_bookings: 10 } });
 
     const result = await bokunAutoSync.performSync('periodic');
 
     expect(result).toBe(true);
-    expect(axios.get).toHaveBeenCalledTimes(2);
-    expect(axios.get.mock.calls[0][0]).toContain('action=config');
-    expect(axios.get.mock.calls[1][0]).toContain('action=sync');
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(axios.get.mock.calls[0][0]).toContain('action=sync');
+    expect(axios.get.mock.calls[0][0]).not.toContain('action=config');
     expect(bokunAutoSync.lastSyncTime).not.toBeNull();
     expect(events.map((e) => e.type)).toEqual(['sync_started', 'sync_completed']);
+  });
+
+  it('sync_disabled from the server is a skip: no failure event, lastSync untouched, one request', async () => {
+    setStorage({ token: 't', userRole: 'admin' });
+    bokunAutoSync.userRole = 'admin';
+    axios.get.mockResolvedValueOnce({ data: { success: false, error: 'sync_disabled' } });
+
+    const result = await bokunAutoSync.performSync('periodic');
+
+    expect(result).toBe(false);
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(bokunAutoSync.lastSyncTime).toBeNull();
+    expect(events.map((e) => e.type)).toEqual(['sync_started', 'sync_skipped']);
+    expect(events[1].reason).toBe('sync_disabled');
   });
 
   it('403 from the API is "not allowed": no failure event, lastSync untouched', async () => {

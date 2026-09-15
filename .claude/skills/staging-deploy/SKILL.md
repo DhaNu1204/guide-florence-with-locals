@@ -35,7 +35,7 @@ Host: `https://stagingwithlocals.deetech.cc` or `https://withlocals.deetech.cc`.
 | 11 | `GET /api/bokun_sync.php?action=sync-info` admin | 200, last status not `failed` |
 | 12 | Response headers on `/` | exactly one `Strict-Transport-Security`, one `X-Frame-Options`, a `Content-Security-Policy` |
 
-Checks 6 and 7 pass since step 1.1 (server-side roles). Check 8 will fail until step 1.2 — before that, mark it "expected-fail (pre-1.2)" instead of blocking, but say so loudly.
+Checks 6 and 7 pass since step 1.1 (server-side roles); check 8 passes since step 1.2 (masked config). All 12 rows block.
 
 ## Manual part (ask the user to do on the phone for production)
 Open the PWA on mobile data → Tours list shows today's departures grouped, with PAX badges.

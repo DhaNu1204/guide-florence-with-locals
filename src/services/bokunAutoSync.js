@@ -2,6 +2,7 @@ import axios from 'axios';
 import { format } from 'date-fns';
 import { clearTourCache } from './mysqlDB';
 import { notifyForbidden } from './sessionExpiry';
+import { isSyncDisabledResponse } from '../utils/bokunConfig';
 
 class BokunAutoSyncService {
   constructor() {
@@ -141,21 +142,8 @@ class BokunAutoSyncService {
       console.log(`Starting Bokun sync (trigger: ${trigger})`);
       this.notifyListeners({ type: 'sync_started', trigger });
 
-      // Check if sync is enabled
-      const configResponse = await axios.get(`${API_BASE}/bokun_sync.php?action=config`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!configResponse.data?.sync_enabled) {
-        console.log('Bokun sync is disabled');
-        this.notifyListeners({
-          type: 'sync_skipped',
-          trigger,
-          reason: 'Sync is disabled in configuration'
-        });
-        return false;
-      }
-
+      // Step 1.2: no config round-trip. action=sync answers {success:false, error:'sync_disabled'}
+      // when the server has sync switched off, and that is a skip, not a failure.
       // Perform the sync using GET as specified in the requirements
       // GET /api/bokun_sync.php?action=sync
       // Pass sync type for proper logging (auto/manual/startup/periodic)
@@ -195,6 +183,10 @@ class BokunAutoSyncService {
           this.showNewBookingsNotification(synced_count);
         }
         return true;
+      } else if (isSyncDisabledResponse(response.data)) {
+        console.log('Bokun sync is disabled on the server');
+        this.notifyListeners({ type: 'sync_skipped', trigger, reason: 'sync_disabled' });
+        return false;
       } else {
         console.log('Bokun sync failed:', response.data.error);
         this.notifyListeners({
