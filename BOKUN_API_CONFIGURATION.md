@@ -12,8 +12,8 @@ Based on the official Bokun documentation, here's how to properly configure the 
 
 ### Step 2: API Key Components
 You'll receive:
-- **Access Key**: Your public API identifier (e.g., `***REMOVED***`)
-- **Secret Key**: Your private key for signature generation (e.g., `***REMOVED***`)
+- **Access Key**: Your public API identifier (e.g., `<your-access-key>`)
+- **Secret Key**: Your private key for signature generation (e.g., `<your-secret-key>`)
 - **Vendor ID**: Your unique vendor identifier
 
 ### Step 3: Set Appropriate Permissions
@@ -42,7 +42,7 @@ Content-Type: application/json;charset=UTF-8
 
 **Example**:
 ```
-String to sign: 2013-11-09 14:33:46***REMOVED***POST/activity.json/search?lang=EN&currency=ISK
+String to sign: 2013-11-09 14:33:<your-access-key>4aPOST/activity.json/search?lang=EN&currency=ISK
 Resulting Signature: XrOiTYa9Y34zscnLCsAEh8ieoyo=
 ```
 
