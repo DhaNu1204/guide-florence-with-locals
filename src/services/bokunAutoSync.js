@@ -8,6 +8,9 @@ class BokunAutoSyncService {
   constructor() {
     this.syncInterval = null;
     this.lastSyncTime = null;
+    // Step 1.2: when the server answers sync_disabled, lastSync must stay untouched but
+    // focus/visibility must not re-attempt every few seconds: the attempt time is throttled.
+    this.lastAttemptTime = null;
     this.syncInProgress = false;
     this.userRole = null;
     this.listeners = new Set();
@@ -102,9 +105,10 @@ class BokunAutoSyncService {
   // Check if we should sync on focus (avoid too frequent syncs)
   // Uses 15-minute interval as specified in requirements
   shouldSyncOnFocus() {
-    if (!this.lastSyncTime) return true;
+    const reference = this.lastAttemptTime || this.lastSyncTime;
+    if (!reference) return true;
 
-    const lastSync = new Date(this.lastSyncTime);
+    const lastSync = new Date(reference);
     const now = new Date();
     const minutesSinceLastSync = (now - lastSync) / (1000 * 60);
 
@@ -140,6 +144,7 @@ class BokunAutoSyncService {
       }
 
       console.log(`Starting Bokun sync (trigger: ${trigger})`);
+      this.lastAttemptTime = new Date().toISOString();
       this.notifyListeners({ type: 'sync_started', trigger });
 
       // Step 1.2: no config round-trip. action=sync answers {success:false, error:'sync_disabled'}

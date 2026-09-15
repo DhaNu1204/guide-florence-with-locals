@@ -31,6 +31,7 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
     axios.get.mockReset();
     bokunAutoSync.stop();
     bokunAutoSync.lastSyncTime = null;
+    bokunAutoSync.lastAttemptTime = null;
     bokunAutoSync.syncInProgress = false;
     bokunAutoSync.userRole = null;
     bokunAutoSync.listeners.clear();
@@ -89,6 +90,9 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
     expect(bokunAutoSync.lastSyncTime).toBeNull();
     expect(events.map((e) => e.type)).toEqual(['sync_started', 'sync_skipped']);
     expect(events[1].reason).toBe('sync_disabled');
+    // the attempt is remembered so focus/visibility do not re-fire within 15 minutes
+    expect(bokunAutoSync.lastAttemptTime).not.toBeNull();
+    expect(bokunAutoSync.shouldSyncOnFocus()).toBe(false);
   });
 
   it('403 from the API is "not allowed": no failure event, lastSync untouched', async () => {
