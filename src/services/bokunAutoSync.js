@@ -1,12 +1,14 @@
 import axios from 'axios';
 import { format } from 'date-fns';
 import { clearTourCache } from './mysqlDB';
+import { notifyForbidden } from './sessionExpiry';
 
 class BokunAutoSyncService {
   constructor() {
     this.syncInterval = null;
     this.lastSyncTime = null;
     this.syncInProgress = false;
+    this.userRole = null;
     this.listeners = new Set();
 
     // Auto-sync configuration
@@ -27,8 +29,22 @@ class BokunAutoSyncService {
     }
   }
 
+  // Step 1.1: only admins may sync (the API answers 403 otherwise). The stored
+  // role (written by AuthContext after the server verified the token) is the
+  // source of truth; the role passed to initialize() is the fallback.
+  isAdmin() {
+    let stored = null;
+    try {
+      stored = localStorage.getItem('userRole');
+    } catch (_) {
+      stored = null;
+    }
+    return (stored || this.userRole) === 'admin';
+  }
+
   // Initialize auto-sync when user logs in
   initialize(userRole) {
+    this.userRole = userRole;
     if (userRole !== 'admin') {
       this.stop(); // Only admins can sync
       return;
@@ -55,7 +71,7 @@ class BokunAutoSyncService {
       clearInterval(this.syncInterval);
     }
 
-    if (this.config.enabled) {
+    if (this.config.enabled && this.isAdmin()) {
       this.syncInterval = setInterval(() => {
         this.performSync('periodic');
       }, this.config.intervalMinutes * 60 * 1000);
@@ -66,7 +82,7 @@ class BokunAutoSyncService {
 
   // Handle app getting focus (like checking email when you open the app)
   onAppFocus() {
-    if (this.config.onFocusSync && this.shouldSyncOnFocus()) {
+    if (this.isAdmin() && this.config.onFocusSync && this.shouldSyncOnFocus()) {
       setTimeout(() => {
         this.performSync('focus');
       }, 1000);
@@ -75,7 +91,7 @@ class BokunAutoSyncService {
 
   // Handle app visibility change
   onVisibilityChange() {
-    if (!document.hidden && this.config.onFocusSync && this.shouldSyncOnFocus()) {
+    if (!document.hidden && this.isAdmin() && this.config.onFocusSync && this.shouldSyncOnFocus()) {
       setTimeout(() => {
         this.performSync('visibility');
       }, 1000);
@@ -95,11 +111,20 @@ class BokunAutoSyncService {
     return minutesSinceLastSync >= 15;
   }
 
-  // Perform the actual sync
+  // Perform the actual sync. Resolves to true only when a sync really completed
+  // (callers use that to stamp lastSync); false when skipped, not allowed or failed.
   async performSync(trigger = 'manual') {
     if (this.syncInProgress) {
       console.log('Sync already in progress, skipping');
-      return;
+      return false;
+    }
+
+    if (!this.isAdmin()) {
+      // Viewer: no request, no error, lastSync untouched. Background triggers skip
+      // silently; an explicit click on "Sync now" gets the permission toast.
+      if (trigger === 'manual') notifyForbidden();
+      this.notifyListeners({ type: 'sync_skipped', trigger, reason: 'not_allowed' });
+      return false;
     }
 
     try {
@@ -110,7 +135,7 @@ class BokunAutoSyncService {
 
       if (!token) {
         console.log('No auth token, skipping sync');
-        return;
+        return false;
       }
 
       console.log(`Starting Bokun sync (trigger: ${trigger})`);
@@ -128,7 +153,7 @@ class BokunAutoSyncService {
           trigger,
           reason: 'Sync is disabled in configuration'
         });
-        return;
+        return false;
       }
 
       // Perform the sync using GET as specified in the requirements
@@ -169,6 +194,7 @@ class BokunAutoSyncService {
         if (synced_count > 0 && trigger === 'manual') {
           this.showNewBookingsNotification(synced_count);
         }
+        return true;
       } else {
         console.log('Bokun sync failed:', response.data.error);
         this.notifyListeners({
@@ -178,6 +204,11 @@ class BokunAutoSyncService {
         });
       }
     } catch (error) {
+      if (error?.response?.status === 403) {
+        // Not allowed (viewer or role changed server-side): not a failure, lastSync untouched.
+        this.notifyListeners({ type: 'sync_skipped', trigger, reason: 'not_allowed' });
+        return false;
+      }
       console.log('Bokun sync error:', error.message);
       this.notifyListeners({
         type: 'sync_failed',
@@ -187,6 +218,7 @@ class BokunAutoSyncService {
     } finally {
       this.syncInProgress = false;
     }
+    return false;
   }
 
   // Show a subtle notification for new bookings (like email notifications)

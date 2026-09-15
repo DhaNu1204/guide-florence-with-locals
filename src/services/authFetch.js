@@ -1,4 +1,4 @@
-import { notifySessionExpired } from './sessionExpiry';
+import { notifySessionExpired, notifyForbidden } from './sessionExpiry';
 
 // Shared authenticated fetch wrapper.
 //
@@ -22,6 +22,9 @@ export const authFetch = async (url, options = {}) => {
 
   if (response.status === 401) {
     notifySessionExpired();
+  } else if (response.status === 403) {
+    // Step 1.1: not allowed - one toast, token untouched (only 401 logs out).
+    notifyForbidden();
   }
 
   return response;

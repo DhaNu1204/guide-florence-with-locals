@@ -1057,11 +1057,19 @@ if (php_sapi_name() !== 'cli' && !defined('BOKUN_SYNC_LIB')) {
 
 // Require authentication for all sync operations
 require_once __DIR__ . '/Middleware.php';
-Middleware::requireAuth($conn);
+$authUser = Middleware::requireAuth($conn);
 
 // Handle requests
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+
+// Step 1.1: everything here is admin-only except the two read-only views a viewer
+// needs (GET sync-info, GET unassigned). Covers sync, full-sync, backfill-names, test
+// and config (GET and POST). Viewers get the uniform 403 from Middleware::forbidden().
+$viewerAllowed = ($method === 'GET' && in_array($action, ['sync-info', 'unassigned'], true));
+if (!$viewerAllowed && $authUser['role'] !== 'admin') {
+    Middleware::forbidden();
+}
 
 switch ($method) {
     case 'GET':

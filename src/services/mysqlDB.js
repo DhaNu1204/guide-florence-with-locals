@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { notifySessionExpired } from './sessionExpiry';
+import { notifySessionExpired, notifyForbidden } from './sessionExpiry';
 
 // Use environment variable for API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -33,6 +33,9 @@ axios.interceptors.response.use(
   (error) => {
     if (error?.response?.status === 401) {
       notifySessionExpired();
+    } else if (error?.response?.status === 403) {
+      // Step 1.1: not allowed (viewer hit an admin-only write). One toast, keep the session.
+      notifyForbidden();
     }
     return Promise.reject(error);
   }

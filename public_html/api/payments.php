@@ -15,7 +15,7 @@ require_once 'config.php';
 require_once 'Middleware.php';
 
 // Require authentication for all payment operations
-Middleware::requireAuth($conn);
+Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('payments');
