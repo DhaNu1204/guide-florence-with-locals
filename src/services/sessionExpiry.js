@@ -37,3 +37,18 @@ export const notifySessionExpired = () => {
 export const resetSessionExpiryGuard = () => {
   alreadyNotified = false;
 };
+
+// Step 1.1: central 403 signal. A 403 means "logged in, but not allowed" -
+// the token stays, nothing is cleared, the user just gets one toast. Bursts of
+// parallel 403s (e.g. a page firing several writes) collapse into one toast.
+export const FORBIDDEN_EVENT = 'app:forbidden';
+const FORBIDDEN_TOAST_THROTTLE_MS = 2000;
+let lastForbiddenAt = 0;
+
+export const notifyForbidden = () => {
+  if (typeof window === 'undefined') return;
+  const now = Date.now();
+  if (now - lastForbiddenAt < FORBIDDEN_TOAST_THROTTLE_MS) return;
+  lastForbiddenAt = now;
+  window.dispatchEvent(new Event(FORBIDDEN_EVENT));
+};

@@ -116,12 +116,37 @@ class Middleware {
         $user = self::requireAuth($conn);
 
         if ($user['role'] !== $requiredRole && $user['role'] !== 'admin') {
-            http_response_code(403);
-            echo json_encode(['error' => 'Insufficient permissions']);
-            exit();
+            self::forbidden();
         }
 
         return $user;
+    }
+
+    /**
+     * Step 1.1: authenticate, and additionally require the admin role for any
+     * write method (POST, PUT, PATCH, DELETE). GET/HEAD stay available to viewers.
+     *
+     * @param mysqli $conn Database connection
+     * @return array User data
+     */
+    public static function requireAdminForWrites($conn) {
+        $user = self::requireAuth($conn);
+
+        $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+        if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true) && $user['role'] !== 'admin') {
+            self::forbidden();
+        }
+
+        return $user;
+    }
+
+    /**
+     * Uniform 403: real status, JSON body, no role names or user details.
+     */
+    public static function forbidden() {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'forbidden']);
+        exit();
     }
 
     /**

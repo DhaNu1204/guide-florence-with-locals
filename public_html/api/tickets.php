@@ -4,7 +4,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/Middleware.php';
 
 // Require authentication for all ticket operations
-Middleware::requireAuth($conn);
+Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('tickets');

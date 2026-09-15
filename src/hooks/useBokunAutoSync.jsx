@@ -47,11 +47,14 @@ export const useBokunAutoSync = () => {
       setIsSyncing(true);
       setSyncError(null);
 
-      await bokunAutoSync.performSync(trigger);
+      const synced = await bokunAutoSync.performSync(trigger);
 
-      const newSyncTime = new Date();
-      setLastSync(newSyncTime);
-      localStorage.setItem(STORAGE_KEY, newSyncTime.toISOString());
+      // Step 1.1: only a completed sync moves lastSync; skipped/403/failed do not.
+      if (synced) {
+        const newSyncTime = new Date();
+        setLastSync(newSyncTime);
+        localStorage.setItem(STORAGE_KEY, newSyncTime.toISOString());
+      }
 
       setSyncStatus(bokunAutoSync.getStatus());
     } catch (error) {

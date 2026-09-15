@@ -59,8 +59,8 @@ try {
         // ---------------- PUBLIC (token) branch — NO auth ----------------
         handlePublic($conn, $method, $token, $hasMeetingPoint);
     } else {
-        // ---------------- OWNER branch — requires auth -------------------
-        Middleware::requireAuth($conn);
+        // ---------------- OWNER branch — requires auth (writes: admin, step 1.1) ----
+        Middleware::requireAdminForWrites($conn);
         handleOwner($conn, $method);
     }
 } catch (Exception $e) {

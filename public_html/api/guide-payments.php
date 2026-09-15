@@ -14,7 +14,7 @@ require_once 'config.php';
 require_once 'Middleware.php';
 
 // Require authentication for all guide payment operations
-Middleware::requireAuth($conn);
+Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
 
 // Apply rate limiting (read operations)
 applyRateLimit('read');

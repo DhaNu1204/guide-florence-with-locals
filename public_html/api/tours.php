@@ -5,7 +5,7 @@ require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
 
 // Require authentication for all tour operations
-Middleware::requireAuth($conn);
+Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('tours');

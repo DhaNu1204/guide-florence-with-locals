@@ -3,8 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocat
 import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './components/Toast/ToastProvider';
-import { SESSION_EXPIRED_EVENT, resetSessionExpiryGuard } from './services/sessionExpiry';
+import { SESSION_EXPIRED_EVENT, FORBIDDEN_EVENT, resetSessionExpiryGuard } from './services/sessionExpiry';
 import ModernLayout from './components/Layout/ModernLayout';
+import AdminRoute from './components/AdminRoute';
 import Dashboard from './components/Dashboard';
 import Guides from './pages/Guides';
 import Tours from './pages/Tours';
@@ -43,6 +44,21 @@ function SessionExpiryListener() {
     window.addEventListener(SESSION_EXPIRED_EVENT, handler);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
   }, [toast, navigate, location.pathname]);
+
+  return null;
+}
+
+// Step 1.1: bridges non-React 403 handling (axios interceptor + authFetch) to a
+// single toast. Nothing is cleared and nobody is redirected - the user simply
+// is not allowed to do that action.
+function ForbiddenListener() {
+  const toast = useToast();
+
+  useEffect(() => {
+    const handler = () => toast.error("You don't have permission for that");
+    window.addEventListener(FORBIDDEN_EVENT, handler);
+    return () => window.removeEventListener(FORBIDDEN_EVENT, handler);
+  }, [toast]);
 
   return null;
 }
@@ -138,9 +154,11 @@ function AppRoutes() {
         path="/bokun-integration"
         element={
           <ProtectedRoute>
-            <ModernLayout>
-              <BokunIntegration />
-            </ModernLayout>
+            <AdminRoute>
+              <ModernLayout>
+                <BokunIntegration />
+              </ModernLayout>
+            </AdminRoute>
           </ProtectedRoute>
         }
       />
@@ -148,9 +166,11 @@ function AppRoutes() {
         path="/daily-pnl"
         element={
           <ProtectedRoute>
-            <ModernLayout>
-              <DailyPnL />
-            </ModernLayout>
+            <AdminRoute>
+              <ModernLayout>
+                <DailyPnL />
+              </ModernLayout>
+            </AdminRoute>
           </ProtectedRoute>
         }
       />
@@ -191,6 +211,7 @@ function App() {
       <Router>
         <ToastProvider>
           <SessionExpiryListener />
+          <ForbiddenListener />
           <AuthProvider>
             <PageTitleProvider>
               <BokunAutoSyncProvider>

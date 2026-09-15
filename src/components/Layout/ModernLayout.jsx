@@ -17,6 +17,7 @@ import {
   FiTrendingUp
 } from 'react-icons/fi';
 import { BsBoxSeam } from 'react-icons/bs';
+import { useAuth } from '../../contexts/AuthContext';
 
 const ModernLayout = ({ children }) => {
   const location = useLocation();
@@ -24,7 +25,10 @@ const ModernLayout = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [userInfo, setUserInfo] = useState({ username: '', role: '' });
+  // Step 1.1: role and name come from AuthContext (verified against the server on load),
+  // not from localStorage, which anyone can edit in DevTools.
+  const { userRole, userName } = useAuth();
+  const userInfo = { username: userName || 'User', role: userRole || 'viewer' };
 
   useEffect(() => {
     // Check if mobile on mount and resize
@@ -40,11 +44,6 @@ const ModernLayout = ({ children }) => {
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
-
-    // Get user info from localStorage
-    const username = localStorage.getItem('username') || 'User';
-    const role = localStorage.getItem('userRole') || 'viewer';
-    setUserInfo({ username, role });
 
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
