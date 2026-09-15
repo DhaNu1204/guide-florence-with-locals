@@ -1,0 +1,20 @@
+# gitleaks configuration (step 0.3). Default rules, plus a narrow allowlist for known placeholders.
+# Run locally:  gitleaks detect --source . --redact          (full history)
+#               gitleaks protect --staged --redact           (what the pre-commit hook runs)
+title = "florence-with-locals"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentation placeholders that are not secrets"
+paths = [
+  # placeholder "-----BEGIN OPENSSH PRIVATE KEY----- ... (multiple lines)" in the GitHub secrets how-to
+  '''^docs/GITHUB_SECRETS\.md$''',
+]
+regexes = [
+  # sample DSN / key placeholders used in .env.example and docs
+  '''https://\{public_key\}@\{host\}/\{project_id\}''',
+  '''<see credentials file>''',
+  '''<your-(access|secret)-key>''',
+]
