@@ -19,7 +19,7 @@ Copy and paste this URL into your browser.
 
 When the page loads, you'll see an authorization form.
 
-**Secret Key**: `***REMOVED***`
+**Secret Key**: `<see credentials file>`
 
 1. Enter the secret key in the text box
 2. Click "Unlock Migration" button
@@ -119,7 +119,7 @@ If you want to undo the migration:
 ## ❓ TROUBLESHOOTING
 
 ### Issue 1: "Authorization Required"
-**Solution**: Make sure you entered the secret key exactly: `***REMOVED***`
+**Solution**: Make sure you entered the secret key exactly: `<see credentials file>`
 
 ### Issue 2: "Database Connection Failed"
 **Solution**: Check that the database credentials in `api/config.php` are correct
@@ -163,7 +163,7 @@ ALTER TABLE tours ADD KEY idx_rescheduled (rescheduled);
 ## ✅ QUICK CHECKLIST
 
 - [ ] Step 1: Open migration URL in browser
-- [ ] Step 2: Enter secret key: `***REMOVED***`
+- [ ] Step 2: Enter secret key: `<see credentials file>`
 - [ ] Step 3: Review changes on preview screen
 - [ ] Step 4: Click "Confirm and Run Migration"
 - [ ] Step 5: Wait for success message
