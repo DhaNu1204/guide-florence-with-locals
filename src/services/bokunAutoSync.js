@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { format } from 'date-fns';
 import { clearTourCache } from './mysqlDB';
+import { notifyForbidden } from './sessionExpiry';
 
 class BokunAutoSyncService {
   constructor() {
@@ -119,7 +120,9 @@ class BokunAutoSyncService {
     }
 
     if (!this.isAdmin()) {
-      // Viewer: skip silently, no request, no error, lastSync untouched.
+      // Viewer: no request, no error, lastSync untouched. Background triggers skip
+      // silently; an explicit click on "Sync now" gets the permission toast.
+      if (trigger === 'manual') notifyForbidden();
       this.notifyListeners({ type: 'sync_skipped', trigger, reason: 'not_allowed' });
       return false;
     }

@@ -8,6 +8,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('axios', () => ({ default: { get: vi.fn() } }));
 vi.mock('../mysqlDB', () => ({ clearTourCache: vi.fn() }));
+const notifyForbidden = vi.fn();
+vi.mock('../sessionExpiry', () => ({ notifyForbidden: (...a) => notifyForbidden(...a) }));
 
 import axios from 'axios';
 import bokunAutoSync from '../bokunAutoSync';
@@ -45,6 +47,18 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
     expect(bokunAutoSync.lastSyncTime).toBeNull();
     expect(bokunAutoSync.syncInterval).toBeNull();
     expect(events).toEqual([{ type: 'sync_skipped', trigger: 'periodic', reason: 'not_allowed' }]);
+    expect(notifyForbidden).not.toHaveBeenCalled();
+  });
+
+  it('viewer clicking "Sync now" (manual) gets the permission toast, still no request', async () => {
+    setStorage({ token: 't', userRole: 'viewer' });
+    notifyForbidden.mockClear();
+
+    const result = await bokunAutoSync.performSync('manual');
+
+    expect(result).toBe(false);
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(notifyForbidden).toHaveBeenCalledTimes(1);
   });
 
   it('admin: config + sync are requested and a successful sync resolves true', async () => {
