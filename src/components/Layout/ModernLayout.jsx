@@ -128,7 +128,8 @@ const ModernLayout = ({ children }) => {
       path: '/bokun-integration',
       color: 'text-renaissance-600',
       bgColor: 'bg-renaissance-50',
-      borderColor: 'border-renaissance-500'
+      borderColor: 'border-renaissance-500',
+      adminOnly: true // step 1.1: the page is AdminRoute-guarded, the menu must match
     }
   ].filter((item) => !item.adminOnly || userInfo.role === 'admin');
 
