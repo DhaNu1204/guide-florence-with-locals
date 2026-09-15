@@ -42,6 +42,32 @@ class Encryption {
             return false;
         }
 
+        self::$key = self::normalizeKey($key);
+        self::$initialized = true;
+
+        return true;
+    }
+
+    /**
+     * Initialize with an explicit key instead of the environment (step 0.3: used by
+     * tools/migrate_bokun_credentials.php --action=rekey to decrypt with the OLD key).
+     *
+     * @param string $key Raw or base64 key, same rules as ENCRYPTION_KEY
+     * @return bool
+     */
+    public static function initWithKey($key) {
+        if (empty($key)) {
+            return false;
+        }
+        self::$key = self::normalizeKey($key);
+        self::$initialized = true;
+        return true;
+    }
+
+    /**
+     * Turn the configured key into exactly 32 bytes for AES-256
+     */
+    private static function normalizeKey($key) {
         // Validate key length (must be 32 bytes for AES-256)
         if (strlen($key) < 32) {
             // If key is shorter, derive a proper key using hash
@@ -59,11 +85,7 @@ class Encryption {
                 $key = substr($key, 0, 32);
             }
         }
-
-        self::$key = $key;
-        self::$initialized = true;
-
-        return true;
+        return $key;
     }
 
     /**
