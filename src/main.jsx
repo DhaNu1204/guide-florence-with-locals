@@ -6,7 +6,7 @@ import './index.css';
 
 // Initialize Sentry for error monitoring
 Sentry.init({
-  dsn: "https://3b96e5f34918a6eeb1c50a23cfb6ba48@o4510711031201792.ingest.de.sentry.io/4510766649114704",
+  dsn: "https://507cab62a48d15caa7d1a535f389c36c@o4510711031201792.ingest.de.sentry.io/4510766649114704",
   integrations: [
     Sentry.browserTracingIntegration(),
     Sentry.replayIntegration(),
