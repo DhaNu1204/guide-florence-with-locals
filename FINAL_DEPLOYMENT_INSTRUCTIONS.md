@@ -6,7 +6,7 @@
 ```
 MySQL database name: u803853690_withlocals
 MySQL username: u803853690_withlocals
-Password: ***REMOVED***
+Password: <see credentials file>
 Host: localhost
 ```
 
@@ -50,7 +50,7 @@ cp public_html/api/config_final_production.php public_html/api/config.php
 <?php
 $db_host = 'localhost';
 $db_user = 'u803853690_withlocals';
-$db_pass = '***REMOVED***';
+$db_pass = '<see credentials file>';
 $db_name = 'u803853690_withlocals';
 
 // Rest of the configuration remains the same...
@@ -137,7 +137,7 @@ Error: "Database connection failed"
 Solution:
 1. Verify database credentials in config.php are exactly:
    - Username: u803853690_withlocals
-   - Password: ***REMOVED***
+   - Password: <see credentials file>
    - Database: u803853690_withlocals
 2. Check if database was imported successfully
 3. Verify database exists in Hostinger control panel

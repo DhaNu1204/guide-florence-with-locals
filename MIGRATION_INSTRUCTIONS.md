@@ -109,7 +109,7 @@ The migration script includes:
 
 If you want to undo the migration:
 
-1. Go to: https://withlocals.deetech.cc/migrate_production_database.php?secret=***REMOVED***
+1. Go to: https://withlocals.deetech.cc/migrate_production_database.php?secret=<see credentials file>
 2. Click "🔄 Rollback (Remove Columns)" button
 3. Confirm the rollback
 4. All added columns will be removed
