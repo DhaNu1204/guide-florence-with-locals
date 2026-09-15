@@ -17,7 +17,7 @@ Your Bokun integration is **technically working** but experiencing a **permissio
 ### 2. **Your Configuration** ✅
 ```
 Vendor ID: 96929
-Access Key: ***REMOVED***... (valid)
+Access Key: <see credentials file> (valid)
 Secret Key: [configured]
 Base URL: https://api.bokun.is
 Sync Enabled: Yes

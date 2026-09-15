@@ -8,7 +8,7 @@
 
 - **Live URL**: https://withlocals.deetech.cc/bokun-integration
 - **Vendor ID**: 96929
-- **API Access Key**: ***REMOVED***
+- **API Access Key**: <see credentials file>
 - **API Base URL**: https://api.bokun.is
 - **Booking Channel**: www.florencewithlocals.com
 - **Authentication**: HMAC-SHA1 signatures working ✅

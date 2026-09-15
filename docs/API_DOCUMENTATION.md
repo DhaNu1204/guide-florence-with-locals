@@ -168,8 +168,8 @@ All API endpoints (except login) require authentication via session token.
 
 ### Login Credentials
 
-- **Admin**: dhanu / ***REMOVED***
-- **Viewer**: ***REMOVED*** / ***REMOVED***
+- **Admin**: dhanu / <see credentials file>
+- **Viewer**: <see credentials file> / <see credentials file>
 
 ### Session Management
 

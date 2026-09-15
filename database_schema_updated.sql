@@ -175,30 +175,10 @@ CREATE TABLE IF NOT EXISTS `bokun_config` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Insert default admin user
-INSERT INTO `users` (`username`, `password`, `email`, `role`) VALUES
-('dhanu', '***REMOVED***', 'admin@florencewithlocals.com', 'admin'),
-('***REMOVED***', '***REMOVED***', '***REMOVED***', 'viewer')
-ON DUPLICATE KEY UPDATE username=username;
+-- seed users via tools/seed_admin.php
 
--- Insert sample guides
-INSERT INTO `guides` (`name`, `email`, `phone`, `languages`) VALUES
-('Sofia Romano', 'sofia@florenceguides.com', '+39 123 456 7890', 'Italian, English, French'),
-('Marco Benedetti', 'marco@florenceguides.com', '+39 123 456 7891', 'Italian, English, Spanish'),
-('Elena Rossi', 'elena@florenceguides.com', '+39 123 456 7892', 'Italian, English, German')
-ON DUPLICATE KEY UPDATE name=name;
 
--- Insert sample museum tickets
-INSERT INTO `tickets` (`museum`, `ticket_type`, `date`, `time`, `quantity`, `price`, `status`) VALUES
-('Uffizi Gallery', 'Priority Entrance Tickets', '2025-10-15', '09:00:00', 20, 25.00, 'available'),
-('Accademia Gallery', 'Skip the Line Entry Ticket', '2025-10-15', '10:30:00', 15, 18.00, 'available'),
-('Uffizi Gallery', 'Priority Entrance Tickets', '2025-10-16', '14:00:00', 25, 25.00, 'available')
-ON DUPLICATE KEY UPDATE museum=museum;
 
--- Insert Bokun configuration
-INSERT INTO `bokun_config` (`vendor_id`, `api_key`, `api_base_url`, `booking_channel`, `sync_enabled`) VALUES
-('96929', '***REMOVED***', 'https://api.bokun.is', 'www.florencewithlocals.com', 1)
-ON DUPLICATE KEY UPDATE vendor_id=vendor_id;
 
 -- ====================================================================================
 -- MIGRATION SCRIPT: Add missing columns to existing tours table

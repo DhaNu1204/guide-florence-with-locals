@@ -261,7 +261,7 @@ ALTER TABLE tours ADD COLUMN rescheduled_at DATETIME DEFAULT NULL;
 
 ### Step 1: Test Production URL
 1. Visit: https://withlocals.deetech.cc
-2. Login with admin credentials: `dhanu / ***REMOVED***`
+2. Login with admin credentials: `dhanu / <see credentials file>`
 
 ### Step 2: Verify New Features
 - [ ] Priority Tickets page loads correctly

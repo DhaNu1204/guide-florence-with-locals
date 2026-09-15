@@ -24,7 +24,7 @@ Our diagnostics confirm that the **BOOKINGS_READ** permission is not enabled for
 This redirect pattern clearly shows that Bokun recognizes our API credentials but the API key lacks the required permission scope to access booking data.
 
 ### 3. ❌ Booking Channel Access Not Configured
-- Our API key (`***REMOVED***`) is not associated with any booking channels
+- Our API key (`<see credentials file>`) is not associated with any booking channels
 - The `/booking-channel.json` endpoint returns an empty array
 - This prevents us from accessing bookings even with correct authentication
 
@@ -39,7 +39,7 @@ We have tested all recommended search parameter configurations:
 
 Based on our diagnostics, we need the Bokun API team to:
 
-1. **Enable BOOKINGS_READ permission** for API key: `***REMOVED***`
+1. **Enable BOOKINGS_READ permission** for API key: `<see credentials file>`
 
 2. **Associate our API key with booking channels** for Vendor ID 96929
    - We need access to all booking channels where our tours are sold
@@ -53,7 +53,7 @@ Based on our diagnostics, we need the Bokun API team to:
 
 ```
 Vendor ID: 96929
-API Access Key: ***REMOVED***
+API Access Key: <see credentials file>
 Booking Channel: www.florencewithlocals.com
 Current Issue: HTTP 303 redirects on /booking.json/search
 Expected Result: JSON array of bookings

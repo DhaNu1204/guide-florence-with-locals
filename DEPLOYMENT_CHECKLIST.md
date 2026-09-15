@@ -122,7 +122,7 @@
 ### **Basic Functionality Tests**
 - [ ] **Access production URL:** `https://yourdomain.com`
 - [ ] **Application loads correctly** (no 404 or loading errors)
-- [ ] **Login works:** Test with `dhanu` / `***REMOVED***`
+- [ ] **Login works:** Test with `dhanu` / `<see credentials file>`
 - [ ] **Navigation functional:** All sidebar links work
 - [ ] **Mobile responsive:** Test on mobile device
 
@@ -157,8 +157,8 @@
 - [ ] **Database credentials secure** (strong passwords used)
 
 ### **Access Control**
-- [ ] **Admin login working:** `dhanu` / `***REMOVED***`
-- [ ] **Viewer login working:** `***REMOVED***` / `***REMOVED***`
+- [ ] **Admin login working:** `dhanu` / `<see credentials file>`
+- [ ] **Viewer login working:** `<see credentials file>` / `<see credentials file>`
 - [ ] **Role-based permissions:** Admin vs Viewer access
 - [ ] **API endpoints protected** (authentication required)
 

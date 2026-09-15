@@ -58,5 +58,5 @@
 - **API Base URL**: http://localhost:8080/api/
 
 ## Authentication Credentials
-- **Admin**: dhanu / ***REMOVED***
-- **Viewer**: ***REMOVED*** / ***REMOVED***
+- **Admin**: dhanu / <see credentials file>
+- **Viewer**: <see credentials file> / <see credentials file>

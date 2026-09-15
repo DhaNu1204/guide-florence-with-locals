@@ -221,7 +221,7 @@ curl https://withlocals.deetech.cc
 
 1. **Login to Production**: https://withlocals.deetech.cc
    - Username: `dhanu`
-   - Password: `***REMOVED***`
+   - Password: `<see credentials file>`
 
 2. **Test Priority Tickets Page**:
    - Navigate to Priority Tickets

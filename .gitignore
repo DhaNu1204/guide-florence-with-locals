@@ -134,7 +134,7 @@ count_*.php
 !production_database_migration.sql
 !update_production_schema.sql
 
-# tools/ = CLI-only maintenance scripts (step 0.2): tracked even though their names match the dev-file patterns above (tools/legacy stays as-is until step 0.3)
+# tools/ = CLI-only maintenance scripts (step 0.2): tracked even though their names match the dev-file patterns above (tools/legacy removed in step 0.3; users are seeded with tools/seed_admin.php)
 !tools/*.php
 
 # Written by scripts/deploy.sh at deploy time (git sha of the release)

@@ -109,7 +109,7 @@ $allowed_origins = [
 3. **Login Test:**
    ```
    Username: dhanu
-   Password: ***REMOVED***
+   Password: <see credentials file>
    Expected: Successful login, access to dashboard
    ```
 

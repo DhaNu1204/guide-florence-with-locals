@@ -216,7 +216,7 @@ curl https://yourdomain.com/api/tours.php
 # Test authentication
 curl -X POST https://yourdomain.com/api/auth.php \
   -H "Content-Type: application/json" \
-  -d '{"username":"dhanu","password":"***REMOVED***"}'
+  -d '{"username":"dhanu","password":"<see credentials file>"}'
 ```
 
 ### **Step 3: Performance Verification**

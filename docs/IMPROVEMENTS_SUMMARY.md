@@ -42,8 +42,8 @@ A comprehensive analysis and improvement initiative was conducted on the Florenc
 **Before:**
 ```php
 // REMOVED - Hardcoded test credentials
-($username === 'dhanu' && $password === '***REMOVED***') ||
-($username === 'sudesh' && $password === '***REMOVED***')
+($username === 'dhanu' && $password === '<see credentials file>') ||
+($username === 'sudesh' && $password === '<see credentials file>')
 ```
 
 **After:**
@@ -291,7 +291,7 @@ define('ALLOW_LEGACY_AUTH', true);
 ### Step 3: Migrate Passwords
 Update users to use proper password hashes:
 ```php
-$hashedPassword = password_hash('user_password', PASSWORD_DEFAULT);
+$hashedPassword = password_hash($plainPassword, PASSWORD_DEFAULT);
 // Update in database
 ```
 

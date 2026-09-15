@@ -8,10 +8,6 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Insert admin user (password: ***REMOVED***)
-INSERT INTO users (email, password, role) VALUES 
-('dhanu', '***REMOVED***', 'admin');
+-- seed users via tools/seed_admin.php
 
--- Insert viewer user (password: ***REMOVED***)
-INSERT INTO users (email, password, role) VALUES 
-('***REMOVED***', '***REMOVED***', 'viewer'); 
+-- seed users via tools/seed_admin.php
