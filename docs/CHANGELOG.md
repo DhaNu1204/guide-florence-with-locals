@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 1.1 — SERVER-SIDE ROLES (2026-09-16)
+2026-09-16 step 1.1 — admin role enforced server-side: `Middleware::requireAdminForWrites()` on tours/guides/tickets/tour-groups/payments/guide-payments/payment-reports/guide-tour-report + guide-requests owner branch; `bokun_sync.php` admin-only except GET sync-info/unassigned; uniform 403 JSON; `AdminRoute` for /bokun-integration and /daily-pnl, role/name from `useAuth()`, one "You don't have permission for that" toast on 403 (session kept), viewer never triggers the 15-min sync — verified: staging + production smoke (viewer DELETE/POST/PUT/sync/config → 403, GET → 200, admin writes 200/201, public token route unchanged 404), vitest 99/99.
+
 ## ✅ STEP 0.3 — SECRET PURGE + CREDENTIAL ROTATION (2026-09-16)
 2026-09-16 step 0.3 — secrets, customer PII and stale artefacts removed from the tree (27 files) and from git history (`git filter-repo`, 15 secret strings, force-pushed; GitHub default branch is now `master`, `main` deleted — re-clone old copies); kept SQL files are DDL only; `tools/seed_admin.php` (CLI, `--password-stdin`); admin/viewer/DB/SSH/Bokun/ENCRYPTION_KEY/Sentry credentials rotated (`Encryption::initWithKey`, `migrate_bokun_credentials.php --action=rekey`); gitleaks guard: `.gitleaks.toml`, `scripts/pre-commit`, CI job in `main.yml` (history scan: 0 leaks).
 
