@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 1.6 — ENCRYPTION FAIL-CLOSED, PHASE 1 COMPLETE (2026-09-17)
+2026-09-17 step 1.6 — ciphertext prefixed `enc:v1:` with HKDF-derived cipher/MAC keys, `isEncrypted()` tests the prefix only, `encrypt()` throws without a key and saving Bokun config then returns 500 instead of storing plaintext; legacy values still decrypt; rows re-encrypted with `--action=prefix` on staging and production; `tools/encryption_check.php` — verified: check 200/200, unprefixed rows 0 on both, masked key unchanged, production manual sync 16489 completed 839/839, smoke green, vitest 109/109. Phase 1 (1.1–1.6) is complete.
+
 ## ✅ STEP 1.5 — REAL LOGOUT + HASHED SESSION TOKENS (2026-09-16)
 2026-09-16 step 1.5 — `POST auth.php?action=logout` deletes the session server-side; `sessions.token` now stores sha256(token) (marker `session_id = 'sha256:<hash>'`, raw rows rewritten in place on first use + migration `20260916_hash_session_tokens.sql`); `AuthContext.logout()` calls the endpoint before clearing, `ModernLayout` uses it and the header shows the context name; `ProtectedRoute` requires a stored token so Back after logout lands on /login — verified: staging + production login row is a 64-hex hash, tours 200 → logout 200 → same token 401, unmarked rows 0, existing sessions kept, smoke green, vitest 109/109.
 
