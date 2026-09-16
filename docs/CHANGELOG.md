@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 1.3 — RATE LIMITER THAT CANNOT BE BYPASSED (2026-09-16)
+2026-09-16 step 1.3 — client IP = REMOTE_ADDR (proxy headers only behind `TRUSTED_PROXIES`), atomic counting in `rate_limits`, `login_attempts` self-provisioned, failed logins limited per IP (5/min) and per username (10/15 min) with 429 + Retry-After and a neutral body, success clears the username counter; `tools/ratelimit_probe.php` for verification — verified: staging 6 forged-header logins → 429, 11th attempt on one username → 429 (734 s), correct login after the window → 200 + counter cleared; production table created on first login, smoke rows green, vitest 105/105.
+
 ## ✅ STEP 1.2 — BOKUN SECRET NO LONGER LEAVES THE SERVER (2026-09-16)
 2026-09-16 step 1.2 — `action=config` (GET and POST) answers only the masked shape {configured, sync_enabled, vendor_id, last_sync, api_key_masked, updated_at}; one config row (leftover plaintext rows backed up and deleted), saves update in place and empty key fields keep the stored keys; auto-sync calls `action=sync` directly and treats {success:false,error:'sync_disabled'} as a skip (attempt-throttled); Bokun Integration form shows the masked key with write-only key fields — verified: staging + production config/sync-info bodies contain no key or secret, 2 requests per 15 min in the browser, cron 848/848 after cleanup, vitest 106/106.
 
