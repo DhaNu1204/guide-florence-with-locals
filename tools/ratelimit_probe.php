@@ -18,7 +18,7 @@ if (php_sapi_name() !== 'cli') { http_response_code(404); exit; } // CLI-only ve
  * Every request carries a random X-Forwarded-For (and X-Real-IP) unless --no-forward,
  * so a server that trusted those headers would hand out a fresh bucket each time.
  */
-$opts = getopt('', ['host:', 'count::', 'username::', 'password::', 'password-stdin', 'pause-every::', 'pause::', 'no-forward']);
+$opts = getopt('', ['host:', 'count::', 'username::', 'password::', 'password-stdin', 'pause-every::', 'pause::', 'delay::', 'no-forward']);
 $host = rtrim($opts['host'] ?? '', '/');
 if ($host === '') { fwrite(STDERR, "usage: --host=https://... [--count=N] [--username=U] [--password=P|--password-stdin] [--pause-every=N --pause=S] [--no-forward]\n"); exit(2); }
 $count = max(1, (int) ($opts['count'] ?? 6));
@@ -27,6 +27,7 @@ $password = $opts['password'] ?? 'wrong-password';
 if (isset($opts['password-stdin'])) { $password = rtrim((string) stream_get_contents(STDIN), "\r\n"); }
 $pauseEvery = (int) ($opts['pause-every'] ?? 0);
 $pause = (int) ($opts['pause'] ?? 0);
+$delay = (int) ($opts['delay'] ?? 0);
 $forward = !isset($opts['no-forward']);
 
 $codes = [];
@@ -55,6 +56,7 @@ for ($n = 1; $n <= $count; $n++) {
     $msg = is_array($json) ? ($json['message'] ?? ($json['error'] ?? '')) : substr(trim($body), 0, 40);
     $codes[] = $code;
     printf("%2d  %s  HTTP %d  retry-after=%s  remaining=%s  xff=%s  %s\n", $n, date('H:i:s'), $code, $retry, $remaining, $forward ? $fake : '-', $msg);
+    if ($delay > 0 && $n < $count) { sleep($delay); }
     if ($pauseEvery > 0 && $pause > 0 && $n % $pauseEvery === 0 && $n < $count) {
         printf("    ... pausing %d s\n", $pause);
         sleep($pause);
