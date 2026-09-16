@@ -4,6 +4,24 @@ require_once 'config.php';
 // Apply rate limiting for webhooks (30 per minute)
 applyRateLimit('webhook');
 
+require_once __DIR__ . '/webhook_helpers.php';
+
+// Step 1.4: shared secret. WEBHOOK_SECRET comes from the server .env (EnvLoader,
+// like every other env var). Missing/empty -> 503 and stop: never fall open.
+// Wrong or missing ?key -> 401, one error_log line, and NO bokun_webhook_logs row.
+$webhookSecret = (string) EnvLoader::get('WEBHOOK_SECRET', '');
+if ($webhookSecret === '') {
+    http_response_code(503);
+    echo json_encode(['success' => false, 'error' => 'webhook_not_configured']);
+    exit();
+}
+if (!webhookKeyMatches($_GET['key'] ?? null, $webhookSecret)) {
+    error_log('bokun_webhook: rejected request with a missing or wrong key from ' . RateLimiter::getClientIp());
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'unauthorized']);
+    exit();
+}
+
 // Self-provision the webhook log table so payloads are captured even before
 // any migration is run (same pattern tours.php uses for the products table).
 // Non-fatal: a provisioning failure must never abort a webhook request.
@@ -22,6 +40,11 @@ function ensureWebhookLogTable() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ");
+        // Step 1.4: how many distinct dates the event carried and how many were synced (cap 3)
+        $col = $conn->query("SHOW COLUMNS FROM bokun_webhook_logs LIKE 'dates_found'");
+        if ($col && $col->num_rows === 0) {
+            $conn->query("ALTER TABLE bokun_webhook_logs ADD COLUMN dates_found INT NULL, ADD COLUMN dates_processed INT NULL");
+        }
     } catch (Throwable $e) {
         error_log("bokun_webhook: failed to ensure bokun_webhook_logs table: " . $e->getMessage());
     }
@@ -33,21 +56,22 @@ ensureWebhookLogTable();
 // Returns the inserted log row id (or null on failure) so the caller can later
 // mark it processed. Bokun's X-Bokun-* headers arrive empty, so booking_id falls
 // back to the body's bookingId.
-function logWebhook($topic, $data, $error = null) {
+function logWebhook($topic, $data, $error = null, $payloadJson = null, $datesFound = null, $datesProcessed = null) {
     global $conn;
 
     try {
-        $stmt = $conn->prepare("INSERT INTO bokun_webhook_logs (topic, booking_id, experience_booking_id, payload, error_message) VALUES (?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO bokun_webhook_logs (topic, booking_id, experience_booking_id, payload, error_message, dates_found, dates_processed) VALUES (?, ?, ?, ?, ?, ?, ?)");
         if (!$stmt) {
             error_log("bokun_webhook: logWebhook prepare failed: " . $conn->error);
             return null;
         }
         $bookingId = $_SERVER['HTTP_X_BOKUN_BOOKING_ID'] ?? (is_array($data) ? ($data['bookingId'] ?? null) : null);
         $experienceBookingId = $_SERVER['HTTP_X_BOKUN_EXPERIENCEBOOKING_ID'] ?? null;
-        $payload = json_encode($data);
+        // Step 1.4: the caller passes the capped payload text (<= 64 KB raw + marker, always valid JSON)
+        $payload = $payloadJson !== null ? $payloadJson : json_encode($data);
         $bookingId = $bookingId !== null ? (string)$bookingId : null;
 
-        $stmt->bind_param("sssss", $topic, $bookingId, $experienceBookingId, $payload, $error);
+        $stmt->bind_param("sssssii", $topic, $bookingId, $experienceBookingId, $payload, $error, $datesFound, $datesProcessed);
         $stmt->execute();
         $insertId = $stmt->insert_id;
         $stmt->close();
@@ -108,10 +132,11 @@ function webhookExtractDate($ab) {
 $rawBody = file_get_contents('php://input');
 $data = json_decode($rawBody, true);
 
-// Step zero: always capture the raw webhook first (non-fatal). Store the
-// booking status in the topic column for at-a-glance debugging.
+// Step 1.4: what gets stored - the decoded event up to 64 KB, a cut+marker wrapper above.
+$storedPayload = webhookStorablePayload($rawBody, $data);
+
+// Collect the affected dates first so the log row carries the counters.
 $topic = is_array($data) ? ($data['status'] ?? null) : null;
-$logId = logWebhook($topic, $data);
 
 // Real-time apply: re-sync just the affected day(s) through the proven
 // syncBookings() path. That single path already handles new bookings,
@@ -130,7 +155,15 @@ if (is_array($data) && isset($data['activityBookings']) && is_array($data['activ
         }
     }
 }
-$uniqueDates = array_keys($dates);
+// Step 1.4: de-duplicate, sort, and process at most WEBHOOK_MAX_DATES (3) dates per event.
+$capped = webhookCapDates(array_keys($dates));
+$datesFound = $capped['found'];
+$uniqueDates = $capped['processed'];
+$datesProcessed = count($uniqueDates);
+
+// Step zero: always capture the webhook first (non-fatal). Store the booking
+// status in the topic column for at-a-glance debugging.
+$logId = logWebhook($topic, $data, null, $storedPayload, $datesFound, $datesProcessed);
 
 $syncError = null;
 $skipped = false;
@@ -158,7 +191,7 @@ if (empty($uniqueDates)) {
         // enter a retry storm. The raw payload is already captured above.
         $syncError = $e->getMessage();
         error_log("bokun_webhook: sync failed for booking " . ($bookingId ?? 'unknown') . ": " . $syncError);
-        logWebhook($topic, $data, "sync failed: " . $syncError);
+        logWebhook($topic, $data, "sync failed: " . $syncError, $storedPayload, $datesFound, $datesProcessed);
     }
 }
 
@@ -182,6 +215,8 @@ echo json_encode([
     'message' => $skipped
         ? 'Webhook received (no booking date — sync skipped)'
         : ($syncError === null ? 'Webhook processed (real-time sync)' : 'Webhook received (sync deferred)'),
-    'synced_dates' => $uniqueDates
+    'synced_dates' => $uniqueDates,
+    'dates_found' => $datesFound,
+    'dates_processed' => $datesProcessed
 ]);
 ?>
