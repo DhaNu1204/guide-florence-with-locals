@@ -6,6 +6,8 @@
  * Protects against brute force, spam, and abuse.
  *
  * SECURITY: Uses database storage (Hostinger-compatible, no Redis required)
+ * Step 1.3: client IP = REMOTE_ADDR (proxy headers only behind TRUSTED_PROXIES);
+ * counting is one atomic INSERT ... ON DUPLICATE KEY UPDATE on MySQL's clock.
  *
  * Usage:
  *   $limiter = new RateLimiter($conn);
@@ -21,6 +23,7 @@ class RateLimiter {
     private $windowSeconds;
     private $currentCount = 0;
     private $windowStart = null;
+    private $elapsedSeconds = 0; // step 1.3: seconds since window_start, computed by MySQL (one clock)
 
     // Predefined rate limits for different endpoint types
     const LIMITS = [
@@ -54,7 +57,7 @@ class RateLimiter {
      */
     public function __construct($conn, $ip = null) {
         $this->conn = $conn;
-        $this->ip = $ip ?? $this->getClientIp();
+        $this->ip = $ip ?? self::getClientIp();
         $this->ensureTableExists();
     }
 
@@ -79,17 +82,18 @@ class RateLimiter {
             $this->cleanup();
         }
 
-        // Get or create rate limit record
-        $this->loadOrCreateRecord();
+        // Step 1.3: one atomic statement instead of read-then-increment. A new window
+        // starts at count 1; an expired window is reset to 1; otherwise the count grows.
+        // request_count is assigned before window_start on purpose: MySQL evaluates the
+        // assignments left to right, so the IF() still sees the OLD window_start.
+        $this->touchRecord();
 
-        // Check if within limit
-        if ($this->currentCount >= $this->limit) {
+        // Check if within limit (the attempt itself is counted, so > not >=)
+        if ($this->currentCount > $this->limit) {
             $this->sendRateLimitHeaders(true);
             return false;
         }
 
-        // Increment counter
-        $this->incrementCounter();
         $this->sendRateLimitHeaders(false);
 
         return true;
@@ -107,9 +111,9 @@ class RateLimiter {
         $this->limit = $config['limit'];
         $this->windowSeconds = $config['window'];
 
-        $this->loadOrCreateRecord();
+        $this->readRecord();
 
-        return $this->currentCount >= $this->limit;
+        return $this->elapsedSeconds < $this->windowSeconds && $this->currentCount >= $this->limit;
     }
 
     /**
@@ -131,10 +135,7 @@ class RateLimiter {
             return 0;
         }
 
-        $windowEnd = strtotime($this->windowStart) + $this->windowSeconds;
-        $remaining = $windowEnd - time();
-
-        return max(0, $remaining);
+        return max(0, $this->windowSeconds - $this->elapsedSeconds);
     }
 
     /**
@@ -153,14 +154,30 @@ class RateLimiter {
     }
 
     /**
-     * Load existing record or create new one
+     * Step 1.3: count this request atomically (INSERT ... ON DUPLICATE KEY UPDATE) and
+     * load the resulting count. All timestamps come from MySQL's clock.
      */
-    private function loadOrCreateRecord() {
-        $now = time();
-
-        // Try to get existing record
+    private function touchRecord() {
         $stmt = $this->conn->prepare("
-            SELECT request_count, window_start
+            INSERT INTO rate_limits (ip_address, endpoint, request_count, window_start)
+            VALUES (?, ?, 1, NOW())
+            ON DUPLICATE KEY UPDATE
+                request_count = IF(window_start <= NOW() - INTERVAL ? SECOND, 1, request_count + 1),
+                window_start  = IF(window_start <= NOW() - INTERVAL ? SECOND, NOW(), window_start)
+        ");
+        $stmt->bind_param("ssii", $this->ip, $this->endpoint, $this->windowSeconds, $this->windowSeconds);
+        $stmt->execute();
+        $stmt->close();
+
+        $this->readRecord();
+    }
+
+    /**
+     * Load the current record without touching it
+     */
+    private function readRecord() {
+        $stmt = $this->conn->prepare("
+            SELECT request_count, window_start, TIMESTAMPDIFF(SECOND, window_start, NOW()) AS elapsed
             FROM rate_limits
             WHERE ip_address = ? AND endpoint = ?
         ");
@@ -169,74 +186,16 @@ class RateLimiter {
         $result = $stmt->get_result();
 
         if ($row = $result->fetch_assoc()) {
-            $windowStart = strtotime($row['window_start']);
-
-            // Check if window has expired
-            if ($now - $windowStart >= $this->windowSeconds) {
-                // Reset the window
-                $this->resetWindow();
-                $this->currentCount = 0;
-                $this->windowStart = date('Y-m-d H:i:s', $now);
-            } else {
-                $this->currentCount = (int)$row['request_count'];
-                $this->windowStart = $row['window_start'];
-            }
+            $this->currentCount = (int) $row['request_count'];
+            $this->windowStart = $row['window_start'];
+            $this->elapsedSeconds = max(0, (int) $row['elapsed']);
         } else {
-            // Create new record
-            $this->createRecord();
             $this->currentCount = 0;
-            $this->windowStart = date('Y-m-d H:i:s', $now);
+            $this->windowStart = null;
+            $this->elapsedSeconds = 0;
         }
 
         $stmt->close();
-    }
-
-    /**
-     * Create new rate limit record
-     */
-    private function createRecord() {
-        $windowStart = date('Y-m-d H:i:s');
-
-        $stmt = $this->conn->prepare("
-            INSERT INTO rate_limits (ip_address, endpoint, request_count, window_start)
-            VALUES (?, ?, 0, ?)
-            ON DUPLICATE KEY UPDATE request_count = 0, window_start = ?
-        ");
-        $stmt->bind_param("ssss", $this->ip, $this->endpoint, $windowStart, $windowStart);
-        $stmt->execute();
-        $stmt->close();
-    }
-
-    /**
-     * Reset window for existing record
-     */
-    private function resetWindow() {
-        $windowStart = date('Y-m-d H:i:s');
-
-        $stmt = $this->conn->prepare("
-            UPDATE rate_limits
-            SET request_count = 0, window_start = ?
-            WHERE ip_address = ? AND endpoint = ?
-        ");
-        $stmt->bind_param("sss", $windowStart, $this->ip, $this->endpoint);
-        $stmt->execute();
-        $stmt->close();
-    }
-
-    /**
-     * Increment request counter
-     */
-    private function incrementCounter() {
-        $stmt = $this->conn->prepare("
-            UPDATE rate_limits
-            SET request_count = request_count + 1
-            WHERE ip_address = ? AND endpoint = ?
-        ");
-        $stmt->bind_param("ss", $this->ip, $this->endpoint);
-        $stmt->execute();
-        $stmt->close();
-
-        $this->currentCount++;
     }
 
     /**
@@ -251,36 +210,44 @@ class RateLimiter {
     }
 
     /**
-     * Get client IP address (handles proxies)
+     * Step 1.3: the client IP is REMOTE_ADDR. Proxy headers (CF-Connecting-IP,
+     * X-Forwarded-For, X-Real-IP) are honoured ONLY when REMOTE_ADDR is one of the
+     * addresses listed in the TRUSTED_PROXIES env variable (comma-separated, empty by
+     * default). Anyone else can send any header they like and stays in their own bucket.
      *
      * @return string Client IP
      */
-    private function getClientIp() {
-        // Check for proxy headers (in order of preference)
-        $headers = [
-            'HTTP_CF_CONNECTING_IP',     // Cloudflare
-            'HTTP_X_FORWARDED_FOR',      // Standard proxy header
-            'HTTP_X_REAL_IP',            // Nginx proxy
-            'HTTP_CLIENT_IP',            // Shared internet
-            'REMOTE_ADDR'                // Fallback
-        ];
+    public static function getClientIp() {
+        $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+        if (!filter_var($remote, FILTER_VALIDATE_IP)) {
+            return '0.0.0.0';
+        }
 
-        foreach ($headers as $header) {
-            if (!empty($_SERVER[$header])) {
-                // X-Forwarded-For can contain multiple IPs, take the first
-                $ip = $_SERVER[$header];
-                if (strpos($ip, ',') !== false) {
-                    $ip = trim(explode(',', $ip)[0]);
-                }
-
-                // Validate IP format
-                if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                    return $ip;
-                }
+        $trusted = [];
+        $raw = class_exists('EnvLoader') ? EnvLoader::get('TRUSTED_PROXIES', '') : (getenv('TRUSTED_PROXIES') ?: '');
+        foreach (explode(',', (string) $raw) as $entry) {
+            $entry = trim($entry);
+            if ($entry !== '') {
+                $trusted[] = $entry;
             }
         }
 
-        return '0.0.0.0';
+        if (!in_array($remote, $trusted, true)) {
+            return $remote;
+        }
+
+        foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP'] as $header) {
+            if (empty($_SERVER[$header])) {
+                continue;
+            }
+            // X-Forwarded-For can contain multiple IPs, take the first (the client)
+            $ip = trim(explode(',', $_SERVER[$header])[0]);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+
+        return $remote;
     }
 
     /**

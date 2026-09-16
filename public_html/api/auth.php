@@ -42,63 +42,107 @@ function verifyPassword($inputPassword, $hashedPassword) {
     return password_verify($inputPassword, $hashedPassword);
 }
 
-// Rate limiting check to prevent brute force attacks
-function checkRateLimit($conn, $identifier) {
-    $maxAttempts = 5;
-    $windowSeconds = 300; // 5 minutes
+// ---------------------------------------------------------------------------
+// Step 1.3: failed-login limiter. Self-provisioned table (like rate_limits), two
+// counters: per client IP (5 failed logins per minute) and per username (10 per
+// 15 minutes, so a distributed attack on one account is slowed too). A successful
+// login clears the username counter. Both limits answer 429 + Retry-After with the
+// same body, which never says whether the username exists.
+// ---------------------------------------------------------------------------
+const LOGIN_IP_MAX_ATTEMPTS = 5;
+const LOGIN_IP_WINDOW_SECONDS = 60;
+const LOGIN_USER_MAX_ATTEMPTS = 10;
+const LOGIN_USER_WINDOW_SECONDS = 900;
 
-    // Check if login_attempts table exists (graceful degradation)
-    $tableCheck = $conn->query("SHOW TABLES LIKE 'login_attempts'");
-    if (!$tableCheck || $tableCheck->num_rows === 0) {
-        // Table doesn't exist - skip rate limiting but allow login
-        return true;
-    }
-
+function ensureLoginAttemptsTable($conn) {
+    static $done = false;
+    if ($done) return;
     try {
-        // Clean old attempts
-        $stmt = $conn->prepare("DELETE FROM login_attempts WHERE attempt_time < DATE_SUB(NOW(), INTERVAL ? SECOND)");
-        if ($stmt) {
-            $stmt->bind_param("i", $windowSeconds);
-            $stmt->execute();
-        }
-
-        // Check current attempts
-        $stmt = $conn->prepare("SELECT COUNT(*) as attempts FROM login_attempts WHERE identifier = ? AND attempt_time > DATE_SUB(NOW(), INTERVAL ? SECOND)");
-        if ($stmt) {
-            $stmt->bind_param("si", $identifier, $windowSeconds);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $row = $result->fetch_assoc();
-
-            if ($row['attempts'] >= $maxAttempts) {
-                return false; // Rate limited
-            }
-        }
-    } catch (Exception $e) {
-        // On any error, allow the request but log it
-        error_log("Rate limiting error: " . $e->getMessage());
+        $conn->query("
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                identifier VARCHAR(190) NOT NULL,
+                attempt_time DATETIME NOT NULL,
+                INDEX idx_identifier_time (identifier, attempt_time),
+                INDEX idx_attempt_time (attempt_time)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+        $done = true;
+    } catch (Throwable $e) {
+        error_log('login_attempts self-provision failed: ' . $e->getMessage());
     }
-
-    return true; // Allow request
 }
 
-// Record failed login attempt
-function recordFailedAttempt($conn, $identifier) {
-    // Check if table exists first (graceful degradation)
-    $tableCheck = $conn->query("SHOW TABLES LIKE 'login_attempts'");
-    if (!$tableCheck || $tableCheck->num_rows === 0) {
-        return; // Skip if table doesn't exist
-    }
+function loginUserIdentifier($username) {
+    return 'user:' . mb_substr(mb_strtolower(trim((string) $username)), 0, 180);
+}
 
-    try {
-        $stmt = $conn->prepare("INSERT INTO login_attempts (identifier, attempt_time) VALUES (?, NOW())");
-        if ($stmt) {
-            $stmt->bind_param("s", $identifier);
-            $stmt->execute();
-        }
-    } catch (Exception $e) {
-        error_log("Failed to record login attempt: " . $e->getMessage());
+function loginIpIdentifier($ip) {
+    return 'ip:' . $ip;
+}
+
+/**
+ * @return int 0 when allowed, otherwise the number of seconds until the window frees up
+ */
+function loginRetryAfter($conn, $identifier, $maxAttempts, $windowSeconds) {
+    ensureLoginAttemptsTable($conn);
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) AS attempts,
+               TIMESTAMPDIFF(SECOND, MIN(attempt_time), NOW()) AS oldest_age
+        FROM login_attempts
+        WHERE identifier = ? AND attempt_time > DATE_SUB(NOW(), INTERVAL ? SECOND)
+    ");
+    $stmt->bind_param('si', $identifier, $windowSeconds);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if ((int) $row['attempts'] < $maxAttempts) {
+        return 0;
     }
+    return max(1, $windowSeconds - (int) $row['oldest_age']);
+}
+
+// Record failed login attempt (both counters)
+function recordFailedAttempt($conn, $clientIP, $username) {
+    ensureLoginAttemptsTable($conn);
+    try {
+        $stmt = $conn->prepare("INSERT INTO login_attempts (identifier, attempt_time) VALUES (?, NOW()), (?, NOW())");
+        $ipId = loginIpIdentifier($clientIP);
+        $userId = loginUserIdentifier($username);
+        $stmt->bind_param('ss', $ipId, $userId);
+        $stmt->execute();
+        $stmt->close();
+        // Keep the table small: drop rows older than the longest window
+        if (mt_rand(1, 20) === 1) {
+            $conn->query("DELETE FROM login_attempts WHERE attempt_time < DATE_SUB(NOW(), INTERVAL " . (int) LOGIN_USER_WINDOW_SECONDS . " SECOND)");
+        }
+    } catch (Throwable $e) {
+        error_log('Failed to record login attempt: ' . $e->getMessage());
+    }
+}
+
+// A successful login clears the username counter
+function clearUserAttempts($conn, $username) {
+    try {
+        $stmt = $conn->prepare("DELETE FROM login_attempts WHERE identifier = ?");
+        $userId = loginUserIdentifier($username);
+        $stmt->bind_param('s', $userId);
+        $stmt->execute();
+        $stmt->close();
+    } catch (Throwable $e) {
+        error_log('Failed to clear login attempts: ' . $e->getMessage());
+    }
+}
+
+function sendLoginTooManyAttempts($retryAfter) {
+    http_response_code(429);
+    header('Retry-After: ' . (int) $retryAfter);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Too many login attempts. Please try again later.',
+        'retry_after' => (int) $retryAfter
+    ]);
+    exit();
 }
 
 // Login endpoint
@@ -117,9 +161,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $data['password'];
 
     try {
-        // Rate limiting check
-        $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        if (!checkRateLimit($conn, $clientIP)) {
+        // Rate limiting check (step 1.3: IP counter AND username counter)
+        $clientIP = RateLimiter::getClientIp();
+        ensureLoginAttemptsTable($conn);
+        $retryAfter = max(
+            loginRetryAfter($conn, loginIpIdentifier($clientIP), LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS),
+            loginRetryAfter($conn, loginUserIdentifier($username), LOGIN_USER_MAX_ATTEMPTS, LOGIN_USER_WINDOW_SECONDS)
+        );
+        if ($retryAfter > 0) {
             // Log rate limit events to Sentry for security monitoring
             if (class_exists('SentryLogger') && SentryLogger::getInstance()->isEnabled()) {
                 sentry_capture_message("Rate limit exceeded for login attempts", 'warning', [
@@ -129,12 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
 
-            http_response_code(429);
-            echo json_encode([
-                'success' => false,
-                'message' => 'Too many login attempts. Please try again in 5 minutes.'
-            ]);
-            exit();
+            sendLoginTooManyAttempts($retryAfter);
         }
 
         // Query user from database - check both username and email fields
@@ -159,6 +203,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param("ssi", $sessionToken, $sessionToken, $user['id']);
                 $stmt->execute();
 
+                // Step 1.3: a successful login clears the username counter
+                clearUserAttempts($conn, $username);
+
                 // Cleanup expired sessions probabilistically
                 cleanupExpiredSessions($conn);
 
@@ -171,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             } else {
                 // Record failed attempt for rate limiting
-                recordFailedAttempt($conn, $clientIP);
+                recordFailedAttempt($conn, $clientIP, $username);
 
                 http_response_code(401);
                 echo json_encode([
@@ -181,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } else {
             // Record failed attempt for rate limiting
-            recordFailedAttempt($conn, $clientIP);
+            recordFailedAttempt($conn, $clientIP, $username);
 
             http_response_code(401);
             echo json_encode([
