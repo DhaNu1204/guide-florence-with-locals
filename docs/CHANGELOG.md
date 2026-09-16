@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 1.2 — BOKUN SECRET NO LONGER LEAVES THE SERVER (2026-09-16)
+2026-09-16 step 1.2 — `action=config` (GET and POST) answers only the masked shape {configured, sync_enabled, vendor_id, last_sync, api_key_masked, updated_at}; one config row (leftover plaintext rows backed up and deleted), saves update in place and empty key fields keep the stored keys; auto-sync calls `action=sync` directly and treats {success:false,error:'sync_disabled'} as a skip (attempt-throttled); Bokun Integration form shows the masked key with write-only key fields — verified: staging + production config/sync-info bodies contain no key or secret, 2 requests per 15 min in the browser, cron 848/848 after cleanup, vitest 106/106.
+
 ## ✅ STEP 1.1 — SERVER-SIDE ROLES (2026-09-16)
 2026-09-16 step 1.1 — admin role enforced server-side: `Middleware::requireAdminForWrites()` on tours/guides/tickets/tour-groups/payments/guide-payments/payment-reports/guide-tour-report + guide-requests owner branch; `bokun_sync.php` admin-only except GET sync-info/unassigned; uniform 403 JSON; `AdminRoute` for /bokun-integration and /daily-pnl, role/name from `useAuth()`, one "You don't have permission for that" toast on 403 (session kept), viewer never triggers the 15-min sync — verified: staging + production smoke (viewer DELETE/POST/PUT/sync/config → 403, GET → 200, admin writes 200/201, public token route unchanged 404), vitest 99/99.
 
