@@ -10,6 +10,9 @@
  * - Encryption key must be 32 bytes (256 bits)
  * - Key should be stored in environment variable, never in code
  * - Encrypted values are base64 encoded for safe database storage
+ * - Step 1.6: ciphertext is prefixed 'enc:v1:' (unambiguous), cipher and MAC keys are
+ *   derived from ENCRYPTION_KEY with HKDF, encrypt() throws without a key (fail closed);
+ *   un-prefixed legacy ciphertext is still decrypted during the transition
  * - Includes HMAC verification to detect tampering
  *
  * @see https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html
@@ -20,8 +23,12 @@ class Encryption {
     private const CIPHER = 'aes-256-cbc';
     private const HASH_ALGO = 'sha256';
 
-    private static $key = null;
+    const PREFIX = 'enc:v1:';
+    private static $key = null;          // legacy: the normalised master key (cipher AND mac before step 1.6)
+    private static $encKey = null;       // step 1.6: HKDF-derived cipher key
+    private static $macKey = null;       // step 1.6: HKDF-derived MAC key
     private static $initialized = false;
+    private static $noKey = false;       // step 1.6: initWithKey('') forces the fail-closed state
 
     /**
      * Initialize encryption with key from environment
@@ -33,6 +40,9 @@ class Encryption {
         if (self::$initialized) {
             return true;
         }
+        if (self::$noKey) {
+            return false; // step 1.6: explicitly configured without a key - stay closed
+        }
 
         // Get key from environment
         $key = self::getKeyFromEnv();
@@ -42,7 +52,7 @@ class Encryption {
             return false;
         }
 
-        self::$key = self::normalizeKey($key);
+        self::setKeys(self::normalizeKey($key));
         self::$initialized = true;
 
         return true;
@@ -56,12 +66,24 @@ class Encryption {
      * @return bool
      */
     public static function initWithKey($key) {
+        self::reset();
         if (empty($key)) {
+            self::$noKey = true; // step 1.6: encrypt() must throw from now on
             return false;
         }
-        self::$key = self::normalizeKey($key);
+        self::setKeys(self::normalizeKey($key));
         self::$initialized = true;
         return true;
+    }
+
+    /**
+     * Step 1.6: separate cipher and MAC keys derived from the master key with HKDF;
+     * the raw master key is kept only for the legacy (un-prefixed) decrypt path.
+     */
+    private static function setKeys($masterKey) {
+        self::$key = $masterKey;
+        self::$encKey = hash_hkdf(self::HASH_ALGO, $masterKey, 32, 'florence-with-locals enc v1');
+        self::$macKey = hash_hkdf(self::HASH_ALGO, $masterKey, 32, 'florence-with-locals mac v1');
     }
 
     /**
@@ -138,52 +160,37 @@ class Encryption {
      */
     public static function encrypt($plaintext) {
         if (!self::init()) {
-            error_log("Encryption: Cannot encrypt - not initialized");
-            return false;
+            // Step 1.6: fail closed. Never hand plaintext back to a caller that wanted ciphertext.
+            throw new RuntimeException('encryption_unavailable');
         }
-
-        if (empty($plaintext)) {
+        if ($plaintext === '' || $plaintext === null) {
             return '';
         }
-
-        try {
-            // Generate random IV
-            $ivLength = openssl_cipher_iv_length(self::CIPHER);
-            $iv = openssl_random_pseudo_bytes($ivLength);
-
-            if ($iv === false) {
-                error_log("Encryption: Failed to generate IV");
-                return false;
-            }
-
-            // Encrypt the data
-            $encrypted = openssl_encrypt(
-                $plaintext,
-                self::CIPHER,
-                self::$key,
-                OPENSSL_RAW_DATA,
-                $iv
-            );
-
-            if ($encrypted === false) {
-                error_log("Encryption: openssl_encrypt failed - " . openssl_error_string());
-                return false;
-            }
-
-            // Create HMAC for integrity verification
-            $hmac = hash_hmac(self::HASH_ALGO, $iv . $encrypted, self::$key, true);
-
-            // Combine: HMAC + IV + Encrypted data
-            // Format: [32 bytes HMAC][16 bytes IV][encrypted data]
-            $combined = $hmac . $iv . $encrypted;
-
-            // Base64 encode for safe storage
-            return base64_encode($combined);
-
-        } catch (Exception $e) {
-            error_log("Encryption: Exception during encrypt - " . $e->getMessage());
-            return false;
+        $ivLength = openssl_cipher_iv_length(self::CIPHER);
+        $iv = random_bytes($ivLength);
+        $encrypted = openssl_encrypt((string) $plaintext, self::CIPHER, self::$encKey, OPENSSL_RAW_DATA, $iv);
+        if ($encrypted === false) {
+            error_log("Encryption: openssl_encrypt failed - " . openssl_error_string());
+            throw new RuntimeException('encryption_failed');
         }
+        $hmac = hash_hmac(self::HASH_ALGO, $iv . $encrypted, self::$macKey, true);
+        // Format: enc:v1: + base64([32 bytes HMAC][16 bytes IV][ciphertext])
+        return self::PREFIX . base64_encode($hmac . $iv . $encrypted);
+    }
+
+    /**
+     * Legacy format (before step 1.6): base64([HMAC][IV][ciphertext]) with the single
+     * master key for cipher and MAC, no prefix. Kept for the transition and for tests.
+     */
+    public static function encryptLegacy($plaintext) {
+        if (!self::init()) {
+            throw new RuntimeException('encryption_unavailable');
+        }
+        $ivLength = openssl_cipher_iv_length(self::CIPHER);
+        $iv = random_bytes($ivLength);
+        $encrypted = openssl_encrypt((string) $plaintext, self::CIPHER, self::$key, OPENSSL_RAW_DATA, $iv);
+        $hmac = hash_hmac(self::HASH_ALGO, $iv . $encrypted, self::$key, true);
+        return base64_encode($hmac . $iv . $encrypted);
     }
 
     /**
@@ -197,62 +204,57 @@ class Encryption {
             error_log("Encryption: Cannot decrypt - not initialized");
             return false;
         }
-
-        if (empty($ciphertext)) {
+        if ($ciphertext === '' || $ciphertext === null) {
             return '';
         }
+        if (!self::isEncrypted($ciphertext)) {
+            return self::decryptLegacy($ciphertext);
+        }
+        return self::unpackAndDecrypt(substr($ciphertext, strlen(self::PREFIX)), self::$encKey, self::$macKey);
+    }
 
-        try {
-            // Decode from base64
-            $combined = base64_decode($ciphertext, true);
-
-            if ($combined === false) {
-                // Not base64 encoded - might be plain text (backward compatibility)
-                return false;
-            }
-
-            // Extract components
-            $hmacLength = 32; // SHA-256 produces 32 bytes
-            $ivLength = openssl_cipher_iv_length(self::CIPHER);
-
-            // Minimum length check: HMAC + IV + at least 1 byte of data
-            if (strlen($combined) < $hmacLength + $ivLength + 1) {
-                // Too short to be encrypted data - might be plain text
-                return false;
-            }
-
-            $hmac = substr($combined, 0, $hmacLength);
-            $iv = substr($combined, $hmacLength, $ivLength);
-            $encrypted = substr($combined, $hmacLength + $ivLength);
-
-            // Verify HMAC (prevent tampering)
-            $expectedHmac = hash_hmac(self::HASH_ALGO, $iv . $encrypted, self::$key, true);
-
-            if (!hash_equals($expectedHmac, $hmac)) {
-                error_log("Encryption: HMAC verification failed - data may be corrupted or tampered");
-                return false;
-            }
-
-            // Decrypt
-            $decrypted = openssl_decrypt(
-                $encrypted,
-                self::CIPHER,
-                self::$key,
-                OPENSSL_RAW_DATA,
-                $iv
-            );
-
-            if ($decrypted === false) {
-                error_log("Encryption: openssl_decrypt failed - " . openssl_error_string());
-                return false;
-            }
-
-            return $decrypted;
-
-        } catch (Exception $e) {
-            error_log("Encryption: Exception during decrypt - " . $e->getMessage());
+    /**
+     * Legacy (un-prefixed) ciphertext: single master key for cipher and MAC.
+     * Returns false when the value is not legacy ciphertext (e.g. old plaintext rows).
+     */
+    public static function decryptLegacy($ciphertext) {
+        if (!self::init()) {
             return false;
         }
+        if (!is_string($ciphertext) || $ciphertext === '') {
+            return false;
+        }
+        return self::unpackAndDecrypt($ciphertext, self::$key, self::$key, true);
+    }
+
+    private static function unpackAndDecrypt($b64, $cipherKey, $macKey, $quiet = false) {
+        $combined = base64_decode($b64, true);
+        if ($combined === false) {
+            return false;
+        }
+        $hmacLength = 32; // SHA-256 produces 32 bytes
+        $ivLength = openssl_cipher_iv_length(self::CIPHER);
+        if (strlen($combined) < $hmacLength + $ivLength + 1) {
+            return false;
+        }
+        $hmac = substr($combined, 0, $hmacLength);
+        $iv = substr($combined, $hmacLength, $ivLength);
+        $encrypted = substr($combined, $hmacLength + $ivLength);
+        $expectedHmac = hash_hmac(self::HASH_ALGO, $iv . $encrypted, $macKey, true);
+        if (!hash_equals($expectedHmac, $hmac)) {
+            if (!$quiet) {
+                error_log("Encryption: HMAC verification failed - data may be corrupted or tampered");
+            }
+            return false;
+        }
+        $decrypted = openssl_decrypt($encrypted, self::CIPHER, $cipherKey, OPENSSL_RAW_DATA, $iv);
+        if ($decrypted === false) {
+            if (!$quiet) {
+                error_log("Encryption: openssl_decrypt failed - " . openssl_error_string());
+            }
+            return false;
+        }
+        return $decrypted;
     }
 
     /**
@@ -264,35 +266,8 @@ class Encryption {
      * @return bool True if the value appears to be encrypted
      */
     public static function isEncrypted($value) {
-        if (empty($value) || !is_string($value)) {
-            return false;
-        }
-
-        // Check if it's valid base64
-        if (!self::isBase64($value)) {
-            return false;
-        }
-
-        $decoded = base64_decode($value, true);
-        if ($decoded === false) {
-            return false;
-        }
-
-        // Check minimum length for our format: HMAC(32) + IV(16) + data(1+)
-        $hmacLength = 32;
-        $ivLength = openssl_cipher_iv_length(self::CIPHER);
-
-        if (strlen($decoded) < $hmacLength + $ivLength + 1) {
-            return false;
-        }
-
-        // Additional heuristic: encrypted data shouldn't contain common plain text patterns
-        // API keys typically start with alphanumeric characters
-        if (preg_match('/^[a-zA-Z0-9]{8,}$/', $value)) {
-            return false; // Looks like a plain API key
-        }
-
-        return true;
+        // Step 1.6: the prefix is the only test. No base64 guessing, no regex heuristics.
+        return is_string($value) && strncmp($value, self::PREFIX, strlen(self::PREFIX)) === 0;
     }
 
     /**
@@ -302,35 +277,29 @@ class Encryption {
      * @return string The encrypted value (or original if already encrypted)
      */
     public static function ensureEncrypted($value) {
-        if (empty($value)) {
+        if ($value === '' || $value === null) {
             return $value;
         }
-
         if (self::isEncrypted($value)) {
-            return $value; // Already encrypted
+            return $value; // Already in the current format
         }
-
-        $encrypted = self::encrypt($value);
-        return $encrypted !== false ? $encrypted : $value;
+        return self::encrypt($value); // throws when no key is configured
     }
 
     /**
-     * Decrypt if encrypted, return as-is if plain text (backward compatibility)
-     *
-     * @param string $value The value to potentially decrypt
-     * @return string The decrypted value (or original if not encrypted)
+     * Step 1.6: prefixed -> decrypt (false when the key does not match);
+     * un-prefixed -> try the legacy format, and if that fails the value is an old
+     * plaintext row and is returned as-is.
      */
     public static function ensureDecrypted($value) {
-        if (empty($value)) {
+        if ($value === '' || $value === null) {
             return $value;
         }
-
-        if (!self::isEncrypted($value)) {
-            return $value; // Already plain text
+        if (self::isEncrypted($value)) {
+            return self::decrypt($value);
         }
-
-        $decrypted = self::decrypt($value);
-        return $decrypted !== false ? $decrypted : $value;
+        $legacy = self::decryptLegacy($value);
+        return $legacy !== false ? $legacy : $value;
     }
 
     /**
@@ -377,7 +346,10 @@ class Encryption {
      */
     public static function reset() {
         self::$key = null;
+        self::$encKey = null;
+        self::$macKey = null;
         self::$initialized = false;
+        self::$noKey = false;
     }
 }
 

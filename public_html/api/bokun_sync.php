@@ -140,26 +140,22 @@ function saveBokunConfig($data) {
     $vendorId = $data['vendor_id'] ?? '';
     $syncEnabled = !empty($data['sync_enabled']) && $data['sync_enabled'] !== 'false' ? 1 : 0; // step 1.2: JSON false really disables
 
-    // Encrypt sensitive credentials before storing
-    if (class_exists('Encryption') && Encryption::init()) {
-        if (!empty($accessKey)) {
-            $encryptedKey = Encryption::encrypt($accessKey);
-            if ($encryptedKey !== false) {
-                $accessKey = $encryptedKey;
-            } else {
-                error_log("saveBokunConfig: Failed to encrypt access_key");
-            }
+    // Step 1.6: fail closed. Without a usable ENCRYPTION_KEY nothing is written - the
+    // caller gets 500 {success:false, error:'encryption_unavailable'} and the row is untouched.
+    try {
+        if (!class_exists('Encryption') || !Encryption::init()) {
+            throw new RuntimeException('encryption_unavailable');
         }
-        if (!empty($secretKey)) {
-            $encryptedSecret = Encryption::encrypt($secretKey);
-            if ($encryptedSecret !== false) {
-                $secretKey = $encryptedSecret;
-            } else {
-                error_log("saveBokunConfig: Failed to encrypt secret_key");
-            }
+        if ($accessKey !== '') {
+            $accessKey = Encryption::encrypt($accessKey);
         }
-    } else {
-        error_log("saveBokunConfig: Encryption not available - storing credentials in plain text");
+        if ($secretKey !== '') {
+            $secretKey = Encryption::encrypt($secretKey);
+        }
+    } catch (Throwable $e) {
+        error_log('saveBokunConfig: ' . $e->getMessage() . ' - nothing stored');
+        http_response_code(500);
+        return ['success' => false, 'error' => 'encryption_unavailable'];
     }
 
     // Step 1.2 guard: there is exactly one config row (lowest id). It is updated in place;
@@ -1151,7 +1147,8 @@ switch ($method) {
         switch ($action) {
             case 'config':
                 $saved = saveBokunConfig($data);
-                echo json_encode(array_merge($saved, maskedBokunConfig())); // step 1.2: same masked shape as GET
+                // step 1.2: same masked shape as GET on success; step 1.6: the bare error on failure
+                echo json_encode(empty($saved['success']) ? $saved : array_merge($saved, maskedBokunConfig()));
                 break;
 
             case 'sync':
