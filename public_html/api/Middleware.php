@@ -70,6 +70,42 @@ class Middleware {
             return false;
         }
 
+        return self::findSessionUser($conn, $token);
+    }
+
+    /**
+     * Step 1.5: sessions.token holds sha256(token). The presented token is hashed
+     * before the lookup. Transition: a row that still holds the raw value is found
+     * by its raw value and rewritten to the hash in place, so nobody is logged out.
+     * Hashed rows are marked by session_id = 'sha256:<hash>' (raw tokens are also
+     * 64 hex characters, so length cannot tell the two apart).
+     *
+     * @param mysqli $conn
+     * @param string $token Raw Bearer token as presented by the client
+     * @return array|false User data (id, role, username, email) or false
+     */
+    public static function findSessionUser($conn, $token) {
+        $token = (string) $token;
+        if ($token === '') {
+            return false;
+        }
+        $hash = self::hashToken($token);
+
+        $stmt = $conn->prepare("
+            SELECT u.id, u.role, u.username, u.email
+            FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.token = ? AND s.expires_at > NOW()
+        ");
+        $stmt->bind_param("s", $hash);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($user) {
+            return $user;
+        }
+
+        // Transition path: row still stores the raw token -> rewrite it to the hash
         $stmt = $conn->prepare("
             SELECT u.id, u.role, u.username, u.email
             FROM sessions s
@@ -78,13 +114,45 @@ class Middleware {
         ");
         $stmt->bind_param("s", $token);
         $stmt->execute();
-        $result = $stmt->get_result();
-
-        if ($result->num_rows === 1) {
-            return $result->fetch_assoc();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$user) {
+            return false;
         }
+        try {
+            $marker = self::SESSION_ID_PREFIX . $hash;
+            $upd = $conn->prepare("UPDATE sessions SET token = ?, session_id = ? WHERE token = ?");
+            $upd->bind_param("sss", $hash, $marker, $token);
+            $upd->execute();
+            $upd->close();
+        } catch (Throwable $e) {
+            error_log('sessions: in-place hash rewrite failed: ' . $e->getMessage());
+        }
+        return $user;
+    }
 
-        return false;
+    const SESSION_ID_PREFIX = 'sha256:';
+
+    public static function hashToken($token) {
+        return hash('sha256', (string) $token);
+    }
+
+    /**
+     * Step 1.5: server-side logout. Deletes the session row of the presented token
+     * (hashed or, during the transition, raw). Returns the number of rows removed.
+     */
+    public static function deleteSession($conn, $token) {
+        $token = (string) $token;
+        if ($token === '') {
+            return 0;
+        }
+        $hash = self::hashToken($token);
+        $stmt = $conn->prepare("DELETE FROM sessions WHERE token = ? OR token = ?");
+        $stmt->bind_param("ss", $hash, $token);
+        $stmt->execute();
+        $n = $stmt->affected_rows;
+        $stmt->close();
+        return $n;
     }
 
     /**

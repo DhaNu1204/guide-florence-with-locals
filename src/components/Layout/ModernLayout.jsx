@@ -27,7 +27,7 @@ const ModernLayout = ({ children }) => {
   const [isMobile, setIsMobile] = useState(false);
   // Step 1.1: role and name come from AuthContext (verified against the server on load),
   // not from localStorage, which anyone can edit in DevTools.
-  const { userRole, userName } = useAuth();
+  const { userRole, userName, logout } = useAuth();
   const userInfo = { username: userName || 'User', role: userRole || 'viewer' };
 
   useEffect(() => {
@@ -48,11 +48,11 @@ const ModernLayout = ({ children }) => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('username');
-    navigate('/login');
+  // Step 1.5: the context logout deletes the server session and clears storage/state;
+  // replace:true so the Back button cannot return to a protected page.
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
   };
 
   // Tuscan-themed menu items

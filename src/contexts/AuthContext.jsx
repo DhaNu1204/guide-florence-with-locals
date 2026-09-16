@@ -85,7 +85,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  // Step 1.5: real logout. The server deletes the session row first (so the token
+  // is dead everywhere), then local state/storage are cleared - even if the call
+  // failed (offline, already expired). Callers navigate to /login afterwards.
+  const logout = async () => {
+    const current = token || localStorage.getItem('token');
+    if (current) {
+      try {
+        const API_BASE = import.meta.env.VITE_API_URL || '/api';
+        await fetch(`${API_BASE}/auth.php?action=logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${current}` },
+        });
+      } catch (error) {
+        console.error('Logout call failed (clearing locally anyway):', error);
+      }
+    }
     localStorage.removeItem('token');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
