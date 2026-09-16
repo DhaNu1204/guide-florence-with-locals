@@ -123,6 +123,10 @@ $environment = detectEnvironment();
 $appEnv = strtolower(trim((string) EnvLoader::get('APP_ENV', '')));
 if ($appEnv === 'staging') {
     $environment = 'staging';
+} elseif ($appEnv === 'local' || $appEnv === 'development') {
+    $environment = 'development'; // step 2.1: explicit local env
+} elseif ($appEnv === 'production') {
+    $environment = 'production';
 }
 
 // Load environment-specific configuration
@@ -136,10 +140,9 @@ if ($environment === 'production' || $environment === 'staging') {
     $db_pass = EnvLoader::get('DB_PASS', '');  // REQUIRED: Set in .env file
     $db_name = EnvLoader::get('DB_NAME', 'u803853690_withlocals');
 
-    // Production CORS settings
+    // Production CORS settings (step 2.1: https only, no plain-http origin)
     $allowed_origins = [
-        'https://withlocals.deetech.cc',
-        'http://withlocals.deetech.cc'
+        'https://withlocals.deetech.cc'
     ];
     if ($environment === 'staging') {
         $allowed_origins[] = 'https://stagingwithlocals.deetech.cc';
@@ -179,31 +182,16 @@ if ($environment === 'production' || $environment === 'staging') {
     // DEVELOPMENT CONFIGURATION
     // =====================================
 
-    // First, check if there's a .env.local file for custom local settings
-    $envFile = __DIR__ . '/../../.env.local';
-    if (file_exists($envFile)) {
-        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            if (strpos($line, '=') !== false && strpos($line, '#') !== 0) {
-                list($key, $value) = explode('=', $line, 2);
-                $_ENV[trim($key)] = trim($value);
-            }
-        }
-    }
+    // Step 2.1: exactly one env parser. EnvLoader already reads .env.local first
+    // (project root), then .env, so local dev needs nothing else.
+    $db_host = EnvLoader::get('DB_HOST', 'localhost');
+    $db_user = EnvLoader::get('DB_USER', 'root');
+    $db_pass = EnvLoader::get('DB_PASS', '');
+    $db_name = EnvLoader::get('DB_NAME', 'florence_guides');
 
-    // Use environment variables if available, otherwise use defaults
-    $db_host = isset($_ENV['DB_HOST']) ? $_ENV['DB_HOST'] : 'localhost';
-    $db_user = isset($_ENV['DB_USER']) ? $_ENV['DB_USER'] : 'root';
-    $db_pass = isset($_ENV['DB_PASS']) ? $_ENV['DB_PASS'] : '';
-    $db_name = isset($_ENV['DB_NAME']) ? $_ENV['DB_NAME'] : 'florence_guides';
-
-    // Development CORS settings - allow all local ports
+    // Development CORS: the Vite dev server only (step 2.1)
     $allowed_origins = [
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:5175',
-        'http://localhost:3000',
-        'http://127.0.0.1:5173'
+        'http://localhost:5173'
     ];
 
     // Development environment flags
@@ -236,30 +224,64 @@ if ($environment === 'production' || $environment === 'staging') {
 // COMMON CONFIGURATION (Both Environments)
 // =====================================
 
+// Step 2.1: PHP error log OUTSIDE the web root. FWL_LOG_DIR (server .env) wins; the
+// default is <home>/logs (never inside public_html), with a per-environment file so
+// staging and production on the same account do not share one log. The first request
+// that creates the file writes one startup line so the path can be verified.
+function fwlResolveLogDir() {
+    $configured = trim((string) EnvLoader::get('FWL_LOG_DIR', ''));
+    if ($configured !== '') {
+        return rtrim($configured, '/\\');
+    }
+    $home = getenv('HOME');
+    if (!$home && function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
+        $pw = @posix_getpwuid(posix_geteuid());
+        $home = $pw['dir'] ?? '';
+    }
+    if (!$home) {
+        // Hostinger layout: <home>/domains/<domain>/public_html/<site>/api -> five levels up
+        $candidate = dirname(__DIR__, 5);
+        if (is_dir($candidate . '/domains')) {
+            $home = $candidate;
+        }
+    }
+    if ($home && strpos(__DIR__, 'public_html') !== false && strpos($home, 'public_html') === false) {
+        return rtrim($home, '/\\') . '/logs';
+    }
+    return rtrim(sys_get_temp_dir(), '/\\') . '/fwl-logs';
+}
+$fwlLogDir = fwlResolveLogDir();
+$fwlLogFile = $fwlLogDir . '/api-error' . ($environment === 'production' ? '' : '-' . $environment) . '.log';
+if (!is_dir($fwlLogDir)) {
+    @mkdir($fwlLogDir, 0700, true);
+}
+if (is_dir($fwlLogDir) && is_writable($fwlLogDir)) {
+    $fwlLogIsNew = !file_exists($fwlLogFile);
+    ini_set('log_errors', 1);
+    ini_set('error_log', $fwlLogFile);
+    if ($fwlLogIsNew) {
+        error_log('api log started (env=' . $environment . ', php=' . PHP_VERSION . ', sapi=' . php_sapi_name() . ')');
+    }
+}
+
+
 // Security headers
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-// CORS configuration
+// CORS configuration (step 2.1): an origin is either in the list or gets NO
+// Access-Control-Allow-Origin header at all - no echo, no fallback, no '*'.
 $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
-if (in_array($origin, $allowed_origins)) {
+$originAllowed = ($origin !== '' && in_array($origin, $allowed_origins, true));
+header('Vary: Origin');
+if ($originAllowed) {
     header("Access-Control-Allow-Origin: $origin");
-} else {
-    // Use environment-specific fallback
-    if ($environment === 'production') {
-        $fallback = 'https://withlocals.deetech.cc';
-    } elseif ($environment === 'staging') {
-        $fallback = 'https://stagingwithlocals.deetech.cc';
-    } else {
-        $fallback = 'http://localhost:5173';
-    }
-    header("Access-Control-Allow-Origin: $fallback");
+    header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+    header("Access-Control-Allow-Credentials: true");
+    header("Access-Control-Max-Age: 600");
 }
-
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header("Access-Control-Allow-Credentials: true");
 header("Content-Type: application/json");
 
 // Security headers (prevent common attacks)
@@ -279,9 +301,9 @@ if ($environment === 'production' || $environment === 'staging') {
     header("Content-Security-Policy: default-src 'self' http://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:*; style-src 'self' 'unsafe-inline' http://localhost:*; img-src 'self' data: http://localhost:*; connect-src 'self' http://localhost:* https://api.bokun.is;");
 }
 
-// Handle preflight OPTIONS request
+// Handle preflight OPTIONS request (step 2.1: 204, CORS headers only for an allowed origin)
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
+    http_response_code(204);
     exit();
 }
 
