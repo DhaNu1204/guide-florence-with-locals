@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 1.5 — REAL LOGOUT + HASHED SESSION TOKENS (2026-09-16)
+2026-09-16 step 1.5 — `POST auth.php?action=logout` deletes the session server-side; `sessions.token` now stores sha256(token) (marker `session_id = 'sha256:<hash>'`, raw rows rewritten in place on first use + migration `20260916_hash_session_tokens.sql`); `AuthContext.logout()` calls the endpoint before clearing, `ModernLayout` uses it and the header shows the context name; `ProtectedRoute` requires a stored token so Back after logout lands on /login — verified: staging + production login row is a 64-hex hash, tours 200 → logout 200 → same token 401, unmarked rows 0, existing sessions kept, smoke green, vitest 109/109.
+
 ## ✅ STEP 1.4 — BOKUN WEBHOOK SECRET + CAPS (2026-09-16)
 2026-09-16 step 1.4 — `bokun_webhook.php` requires `?key=<WEBHOOK_SECRET>` (hash_equals; 503 when unset, 401 when wrong, no log row), processes at most 3 distinct dates per event (`dates_found`/`dates_processed`), stores at most 64 KB of payload (`...[truncated]` marker in a JSON wrapper); helpers in `webhook_helpers.php` + CLI check — verified: staging 401/401/200/200(50→3)/200(65536+marker), production 401/401, smoke green on both, vitest 105/105.
 
