@@ -2,14 +2,21 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
 import { filterToursOnly } from '../utils/tourFilters';
+import { maskedConfigFromResponse } from '../utils/bokunConfig';
 
 const BokunSync = () => {
+  // Step 1.2: access_key/secret_key are write-only form fields (always empty after load/save).
+  // What the server tells us is the masked shape: configured, sync_enabled, vendor_id,
+  // last_sync, api_key_masked, updated_at. The secret never reaches this component.
   const [config, setConfig] = useState({
     access_key: '',
     secret_key: '',
     vendor_id: '',
     sync_enabled: false,
-    auto_assign_guides: false
+    auto_assign_guides: false,
+    configured: false,
+    api_key_masked: '',
+    last_sync: null
   });
   const [unassignedTours, setUnassignedTours] = useState([]);
   const [syncing, setSyncing] = useState(false);
@@ -37,9 +44,8 @@ const BokunSync = () => {
       const response = await axios.get(`${API_BASE}/bokun_sync.php?action=config`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (response.data && response.data.configured !== false) {
-        setConfig(response.data);
-      }
+      const masked = maskedConfigFromResponse(response.data);
+      setConfig((prev) => ({ ...prev, ...masked, vendor_id: masked.vendor_id || '', access_key: '', secret_key: '' }));
     } catch (error) {
       console.error('Error loading Bokun config:', error);
     }
@@ -63,12 +69,24 @@ const BokunSync = () => {
   const saveConfig = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_BASE}/bokun_sync.php?action=config`, config, {
+      const payload = {
+        access_key: config.access_key,
+        secret_key: config.secret_key,
+        vendor_id: config.vendor_id,
+        sync_enabled: config.sync_enabled
+      };
+      const response = await axios.post(`${API_BASE}/bokun_sync.php?action=config`, payload, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
+      if (response.data && response.data.success === false) {
+        throw new Error(response.data.error || 'save failed');
+      }
+      // The server answers with the masked shape; the key fields are cleared, never kept.
+      const masked = maskedConfigFromResponse(response.data);
+      setConfig((prev) => ({ ...prev, ...masked, vendor_id: masked.vendor_id || prev.vendor_id, access_key: '', secret_key: '' }));
       setMessageDuration(3000);
       setMessage('Configuration saved successfully');
       setShowConfig(false);
@@ -193,7 +211,7 @@ const BokunSync = () => {
           >
             {showConfig ? 'Hide' : 'Configure'}
           </button>
-          {config.access_key && (
+          {config.configured && (
             <button
               onClick={testConnection}
               className="flex-1 md:flex-initial min-h-[44px] px-3 md:px-4 py-2 bg-gold-600 text-white text-sm rounded-tuscan hover:bg-gold-700 touch-manipulation"
@@ -227,6 +245,13 @@ const BokunSync = () => {
         <div className="bg-stone-50 p-4 rounded-tuscan-lg mb-4">
           <h3 className="font-semibold mb-3 text-stone-800">Bokun API Configuration</h3>
           <div className="space-y-3">
+            {config.configured && (
+              <p className="text-sm text-stone-600" data-testid="bokun-current-key">
+                Current access key: <span className="font-mono">{config.api_key_masked}</span>
+                {config.last_sync ? ` \u00b7 last sync ${config.last_sync}` : ''}
+                {' \u2014 leave both key fields empty to keep it.'}
+              </p>
+            )}
             <div>
               <label className="block text-sm font-medium text-stone-700">Access Key</label>
               <input
@@ -234,7 +259,8 @@ const BokunSync = () => {
                 value={config.access_key}
                 onChange={(e) => setConfig({...config, access_key: e.target.value})}
                 className="mt-1 block w-full rounded-tuscan border-stone-300 shadow-tuscan-sm focus:ring-terracotta-500 focus:border-terracotta-500"
-                placeholder="Your Bokun Access Key"
+                placeholder={config.configured ? 'New access key (optional)' : 'Your Bokun Access Key'}
+                autoComplete="off"
               />
             </div>
             <div>
@@ -244,7 +270,8 @@ const BokunSync = () => {
                 value={config.secret_key}
                 onChange={(e) => setConfig({...config, secret_key: e.target.value})}
                 className="mt-1 block w-full rounded-tuscan border-stone-300 shadow-tuscan-sm focus:ring-terracotta-500 focus:border-terracotta-500"
-                placeholder="Your Bokun Secret Key"
+                placeholder={config.configured ? 'New secret key (optional)' : 'Your Bokun Secret Key'}
+                autoComplete="new-password"
               />
             </div>
             <div>

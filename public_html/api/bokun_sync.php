@@ -80,7 +80,7 @@ function ensureSyncLogsTable($conn) {
 function getBokunConfig() {
     global $conn;
 
-    $result = $conn->query("SELECT * FROM bokun_config LIMIT 1");
+    $result = $conn->query("SELECT * FROM bokun_config ORDER BY id ASC LIMIT 1"); // step 1.2: always the single (lowest-id) row
     if ($result && $result->num_rows > 0) {
         $config = $result->fetch_assoc();
 
@@ -107,6 +107,30 @@ function getBokunConfig() {
     return null;
 }
 
+// Step 1.2: the only config shape that may leave the server. Never the row, never a key.
+function maskedBokunConfig() {
+    global $conn;
+    $empty = ['configured' => false, 'sync_enabled' => false, 'vendor_id' => null,
+              'last_sync' => null, 'api_key_masked' => null, 'updated_at' => null];
+    $result = $conn->query("SELECT vendor_id, sync_enabled, last_sync, updated_at, api_key FROM bokun_config ORDER BY id ASC LIMIT 1");
+    if (!$result || $result->num_rows === 0) {
+        return $empty;
+    }
+    $row = $result->fetch_assoc();
+    $key = (string) $row['api_key'];
+    if (class_exists('Encryption') && $key !== '') {
+        $key = (string) Encryption::ensureDecrypted($key);
+    }
+    return [
+        'configured' => $key !== '',
+        'sync_enabled' => bokunSyncEnabledByEnv() && (bool) $row['sync_enabled'],
+        'vendor_id' => $row['vendor_id'],
+        'last_sync' => $row['last_sync'],
+        'api_key_masked' => $key !== '' ? substr($key, 0, 4) . "\xE2\x80\xA6" : null,
+        'updated_at' => $row['updated_at'],
+    ];
+}
+
 // Save Bokun configuration
 function saveBokunConfig($data) {
     global $conn;
@@ -114,7 +138,7 @@ function saveBokunConfig($data) {
     $accessKey = $data['access_key'] ?? '';
     $secretKey = $data['secret_key'] ?? '';
     $vendorId = $data['vendor_id'] ?? '';
-    $syncEnabled = isset($data['sync_enabled']) ? 1 : 0;
+    $syncEnabled = !empty($data['sync_enabled']) && $data['sync_enabled'] !== 'false' ? 1 : 0; // step 1.2: JSON false really disables
 
     // Encrypt sensitive credentials before storing
     if (class_exists('Encryption') && Encryption::init()) {
@@ -138,19 +162,27 @@ function saveBokunConfig($data) {
         error_log("saveBokunConfig: Encryption not available - storing credentials in plain text");
     }
 
-    // Check if config exists
-    $result = $conn->query("SELECT id FROM bokun_config LIMIT 1");
+    // Step 1.2 guard: there is exactly one config row (lowest id). It is updated in place;
+    // a second row is never inserted, and empty key fields keep the stored (encrypted) values
+    // so saving vendor/flags alone cannot wipe the credentials.
+    $result = $conn->query("SELECT id, api_key, api_secret FROM bokun_config ORDER BY id ASC LIMIT 1");
 
     if ($result && $result->num_rows > 0) {
-        // Update existing - use correct column names from production database
+        $row = $result->fetch_assoc();
+        $rowId = (int) $row['id'];
+        if ($accessKey === '') { $accessKey = $row['api_key']; }
+        if ($secretKey === '') { $secretKey = $row['api_secret']; }
         $stmt = $conn->prepare("
             UPDATE bokun_config
             SET api_key = ?, api_secret = ?, vendor_id = ?,
                 sync_enabled = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = (SELECT id FROM bokun_config LIMIT 1)
+            WHERE id = ?
         ");
-        $stmt->bind_param("sssi", $accessKey, $secretKey, $vendorId, $syncEnabled);
+        $stmt->bind_param("sssii", $accessKey, $secretKey, $vendorId, $syncEnabled, $rowId);
     } else {
+        if ($accessKey === '' || $secretKey === '') {
+            return ['success' => false, 'error' => 'access_key and secret_key are required for the first configuration'];
+        }
         // Insert new - use correct column names from production database
         $stmt = $conn->prepare("
             INSERT INTO bokun_config (api_key, api_secret, vendor_id, sync_enabled, api_base_url, booking_channel)
@@ -269,7 +301,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
 
     $config = getBokunConfig();
     if (!$config || !$config['sync_enabled']) {
-        return ['error' => 'Bokun sync is not configured or disabled'];
+        return ['success' => false, 'error' => 'sync_disabled']; // step 1.2: client treats this as skip
     }
 
     // Make sure the private-tour flag column exists before we write to it.
@@ -451,7 +483,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         }
 
         // Update last sync timestamp
-        $conn->query("UPDATE bokun_config SET last_sync = NOW()");
+        $conn->query("UPDATE bokun_config SET last_sync = NOW() ORDER BY id ASC LIMIT 1");
 
         // Auto-group tours after sync (only if we synced any bookings)
         $groupingResult = null;
@@ -1075,8 +1107,8 @@ switch ($method) {
     case 'GET':
         switch ($action) {
             case 'config':
-                $config = getBokunConfig();
-                echo json_encode($config ?: ['configured' => false]);
+                // step 1.2: masked shape only, never the row
+                echo json_encode(maskedBokunConfig());
                 break;
 
             case 'unassigned':
@@ -1118,7 +1150,8 @@ switch ($method) {
 
         switch ($action) {
             case 'config':
-                echo json_encode(saveBokunConfig($data));
+                $saved = saveBokunConfig($data);
+                echo json_encode(array_merge($saved, maskedBokunConfig())); // step 1.2: same masked shape as GET
                 break;
 
             case 'sync':

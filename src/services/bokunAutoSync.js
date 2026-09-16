@@ -2,11 +2,15 @@ import axios from 'axios';
 import { format } from 'date-fns';
 import { clearTourCache } from './mysqlDB';
 import { notifyForbidden } from './sessionExpiry';
+import { isSyncDisabledResponse } from '../utils/bokunConfig';
 
 class BokunAutoSyncService {
   constructor() {
     this.syncInterval = null;
     this.lastSyncTime = null;
+    // Step 1.2: when the server answers sync_disabled, lastSync must stay untouched but
+    // focus/visibility must not re-attempt every few seconds: the attempt time is throttled.
+    this.lastAttemptTime = null;
     this.syncInProgress = false;
     this.userRole = null;
     this.listeners = new Set();
@@ -101,9 +105,10 @@ class BokunAutoSyncService {
   // Check if we should sync on focus (avoid too frequent syncs)
   // Uses 15-minute interval as specified in requirements
   shouldSyncOnFocus() {
-    if (!this.lastSyncTime) return true;
+    const reference = this.lastAttemptTime || this.lastSyncTime;
+    if (!reference) return true;
 
-    const lastSync = new Date(this.lastSyncTime);
+    const lastSync = new Date(reference);
     const now = new Date();
     const minutesSinceLastSync = (now - lastSync) / (1000 * 60);
 
@@ -139,23 +144,11 @@ class BokunAutoSyncService {
       }
 
       console.log(`Starting Bokun sync (trigger: ${trigger})`);
+      this.lastAttemptTime = new Date().toISOString();
       this.notifyListeners({ type: 'sync_started', trigger });
 
-      // Check if sync is enabled
-      const configResponse = await axios.get(`${API_BASE}/bokun_sync.php?action=config`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!configResponse.data?.sync_enabled) {
-        console.log('Bokun sync is disabled');
-        this.notifyListeners({
-          type: 'sync_skipped',
-          trigger,
-          reason: 'Sync is disabled in configuration'
-        });
-        return false;
-      }
-
+      // Step 1.2: no config round-trip. action=sync answers {success:false, error:'sync_disabled'}
+      // when the server has sync switched off, and that is a skip, not a failure.
       // Perform the sync using GET as specified in the requirements
       // GET /api/bokun_sync.php?action=sync
       // Pass sync type for proper logging (auto/manual/startup/periodic)
@@ -195,6 +188,10 @@ class BokunAutoSyncService {
           this.showNewBookingsNotification(synced_count);
         }
         return true;
+      } else if (isSyncDisabledResponse(response.data)) {
+        console.log('Bokun sync is disabled on the server');
+        this.notifyListeners({ type: 'sync_skipped', trigger, reason: 'sync_disabled' });
+        return false;
       } else {
         console.log('Bokun sync failed:', response.data.error);
         this.notifyListeners({
