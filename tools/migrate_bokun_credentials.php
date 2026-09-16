@@ -9,6 +9,7 @@ if (php_sapi_name() !== 'cli') { http_response_code(404); exit; } // CLI-only ma
  * USAGE (CLI only):
  *   php tools/migrate_bokun_credentials.php --action=status
  *   php tools/migrate_bokun_credentials.php --action=rekey --old-key-env=OLD_ENCRYPTION_KEY --confirm=yes
+ *   php tools/migrate_bokun_credentials.php --action=prefix --confirm=yes   (step 1.6: re-encrypt into the enc:v1: format)
  *   FWL_API_DIR=/path/to/api overrides the location of config.php (running the copy on the server)
  *
  * ACTIONS:
@@ -319,6 +320,61 @@ function rekeyCredentials($conn, $oldKeyEnv) {
     ];
 }
 
+// Step 1.6: re-encrypt every bokun_config row into the prefixed format. Legacy ciphertext is
+// decrypted with the old path, old plaintext is taken as-is, already-prefixed values are
+// skipped (idempotent). One transaction per row. Prints counts only.
+function prefixCredentials($conn) {
+    if (!Encryption::init()) {
+        return ['success' => false, 'error' => 'ENCRYPTION_KEY is not set'];
+    }
+    $rows = $conn->query("SELECT id, api_key, api_secret FROM bokun_config ORDER BY id");
+    $seen = 0; $updated = 0; $skipped = 0; $fields = 0; $fromLegacy = 0; $fromPlain = 0;
+    while ($row = $rows->fetch_assoc()) {
+        $seen++;
+        $new = [];
+        foreach (['api_key', 'api_secret'] as $col) {
+            $v = (string) $row[$col];
+            if ($v === '' || Encryption::isEncrypted($v)) {
+                continue;
+            }
+            $plain = Encryption::decryptLegacy($v);
+            if ($plain === false) {
+                $plain = $v; $fromPlain++;
+            } else {
+                $fromLegacy++;
+            }
+            $enc = Encryption::encrypt($plain);
+            if (Encryption::decrypt($enc) !== $plain) {
+                return ['success' => false, 'error' => "round-trip failed for row {$row['id']} $col - nothing changed for that row"];
+            }
+            $new[$col] = $enc;
+        }
+        if (!$new) {
+            $skipped++;
+            continue;
+        }
+        $conn->begin_transaction();
+        try {
+            $key = $new['api_key'] ?? $row['api_key'];
+            $secret = $new['api_secret'] ?? $row['api_secret'];
+            $stmt = $conn->prepare("UPDATE bokun_config SET api_key = ?, api_secret = ?, updated_at = NOW() WHERE id = ?");
+            $stmt->bind_param("ssi", $key, $secret, $row['id']);
+            $stmt->execute();
+            $stmt->close();
+            $conn->commit();
+            $updated++;
+            $fields += count($new);
+        } catch (Throwable $e) {
+            $conn->rollback();
+            return ['success' => false, 'error' => 'Database update failed for row ' . $row['id'], 'rows_updated_before_failure' => $updated];
+        }
+    }
+    $left = (int) $conn->query("SELECT COUNT(*) AS c FROM bokun_config WHERE api_key NOT LIKE 'enc:v1:%' OR api_secret NOT LIKE 'enc:v1:%'")->fetch_assoc()['c'];
+    return ['success' => true, 'rows_seen' => $seen, 'rows_updated' => $updated, 'rows_skipped_already_prefixed' => $skipped,
+            'fields_reencrypted' => $fields, 'fields_from_legacy_ciphertext' => $fromLegacy, 'fields_from_plaintext' => $fromPlain,
+            'rows_still_unprefixed' => $left, 'timestamp' => date('Y-m-d H:i:s')];
+}
+
 // Handle actions
 switch ($action) {
     case 'status':
@@ -337,7 +393,9 @@ switch ($action) {
                 'to_proceed' => 'Add ?action=migrate&confirm=yes to the URL'
             ], JSON_PRETTY_PRINT);
         } else {
-            $result = migrateCredentials($conn);
+            // Step 1.6: 'migrate' now means 'bring every value into the enc:v1: format' - the
+            // legacy path would treat old ciphertext as plaintext and encrypt it twice.
+            $result = prefixCredentials($conn);
             echo json_encode($result, JSON_PRETTY_PRINT);
         }
         break;
@@ -345,6 +403,15 @@ switch ($action) {
     case 'verify':
         $result = verifyCredentials($conn);
         echo json_encode($result, JSON_PRETTY_PRINT);
+        break;
+
+    case 'prefix':
+        if ($confirm !== 'yes') {
+            echo json_encode(['action' => 'prefix', 'status' => 'confirmation_required',
+                'message' => 'Re-encrypts every bokun_config value into the enc:v1: format (idempotent). Add --confirm=yes.'], JSON_PRETTY_PRINT);
+        } else {
+            echo json_encode(prefixCredentials($conn), JSON_PRETTY_PRINT);
+        }
         break;
 
     case 'rekey':
@@ -377,6 +444,7 @@ switch ($action) {
             'available_actions' => [
                 'status' => 'Check encryption status',
                 'rekey' => 'Re-encrypt with a new ENCRYPTION_KEY (--old-key-env=NAME --confirm=yes)',
+                'prefix' => 'Re-encrypt into the enc:v1: format (--confirm=yes, idempotent)',
                 'migrate' => 'Encrypt plain text credentials',
                 'verify' => 'Verify encrypted credentials work',
                 'rollback' => 'Decrypt back to plain text (emergency)'
