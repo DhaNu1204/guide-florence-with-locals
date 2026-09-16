@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 1.4 — BOKUN WEBHOOK SECRET + CAPS (2026-09-16)
+2026-09-16 step 1.4 — `bokun_webhook.php` requires `?key=<WEBHOOK_SECRET>` (hash_equals; 503 when unset, 401 when wrong, no log row), processes at most 3 distinct dates per event (`dates_found`/`dates_processed`), stores at most 64 KB of payload (`...[truncated]` marker in a JSON wrapper); helpers in `webhook_helpers.php` + CLI check — verified: staging 401/401/200/200(50→3)/200(65536+marker), production 401/401, smoke green on both, vitest 105/105.
+
 ## ✅ STEP 1.3 — RATE LIMITER THAT CANNOT BE BYPASSED (2026-09-16)
 2026-09-16 step 1.3 — client IP = REMOTE_ADDR (proxy headers only behind `TRUSTED_PROXIES`), atomic counting in `rate_limits`, `login_attempts` self-provisioned, failed logins limited per IP (5/min) and per username (10/15 min) with 429 + Retry-After and a neutral body, success clears the username counter; `tools/ratelimit_probe.php` for verification — verified: staging 6 forged-header logins → 429, 11th attempt on one username → 429 (734 s), correct login after the window → 200 + counter cleared; production table created on first login, smoke rows green, vitest 105/105.
 
