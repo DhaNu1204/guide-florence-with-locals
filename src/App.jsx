@@ -66,9 +66,17 @@ function ForbiddenListener() {
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/login" />;
+  // Step 1.5: no token in storage (logged out in this or another tab) -> never render
+  // a protected page, whatever the in-memory flag says.
+  let hasToken = false;
+  try {
+    hasToken = Boolean(localStorage.getItem('token'));
+  } catch (_) {
+    hasToken = false;
+  }
+
+  if (!isAuthenticated || !hasToken) {
+    return <Navigate to="/login" replace />;
   }
 
   return children;

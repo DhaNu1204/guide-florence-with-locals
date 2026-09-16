@@ -43,17 +43,10 @@ if (ENVIRONMENT === 'production' && php_sapi_name() !== 'cli') {
 
     $isAdmin = false;
     if ($token) {
-        $stmt = $conn->prepare("
-            SELECT u.role FROM sessions s
-            JOIN users u ON s.user_id = u.id
-            WHERE s.token = ? AND s.expires_at > NOW()
-        ");
-        $stmt->bind_param("s", $token);
-        $stmt->execute();
-        $result = $stmt->get_result();
-
-        if ($result->num_rows === 1) {
-            $user = $result->fetch_assoc();
+        // Step 1.5: sessions hold sha256(token); use the shared lookup (hash first, raw fallback)
+        require_once __DIR__ . '/../public_html/api/Middleware.php';
+        $user = Middleware::findSessionUser($conn, $token);
+        if ($user) {
             $isAdmin = ($user['role'] === 'admin');
         }
     }

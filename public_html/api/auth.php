@@ -6,6 +6,7 @@
  * SECURITY: CORS headers handled by config.php
  */
 require_once 'config.php';
+require_once __DIR__ . '/Middleware.php'; // step 1.5: hashed session tokens
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -145,6 +146,19 @@ function sendLoginTooManyAttempts($retryAfter) {
     exit();
 }
 
+// Step 1.5: server-side logout. POST auth.php?action=logout with a valid Bearer token
+// deletes that session row; an already-invalid token gets the usual 401.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action']) && $_GET['action'] === 'logout') {
+    applyRateLimit('auth');
+    require_once __DIR__ . '/Middleware.php';
+    Middleware::requireAuth($conn);
+    $headers = getallheaders();
+    $bearer = isset($headers['Authorization']) ? str_replace('Bearer ', '', $headers['Authorization']) : '';
+    Middleware::deleteSession($conn, $bearer);
+    echo json_encode(['success' => true]);
+    exit();
+}
+
 // Login endpoint
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Apply centralized rate limiting (stricter: 5 requests per minute)
@@ -198,9 +212,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Generate a session token
                 $sessionToken = bin2hex(random_bytes(32));
 
-                // Store session in database (session_id and token are the same)
+                // Step 1.5: only sha256(token) is stored; session_id carries the 'sha256:' marker
+                $tokenHash = Middleware::hashToken($sessionToken);
+                $sessionId = Middleware::SESSION_ID_PREFIX . $tokenHash;
                 $stmt = $conn->prepare("INSERT INTO sessions (session_id, token, user_id, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))");
-                $stmt->bind_param("ssi", $sessionToken, $sessionToken, $user['id']);
+                $stmt->bind_param("ssi", $sessionId, $tokenHash, $user['id']);
                 $stmt->execute();
 
                 // Step 1.3: a successful login clears the username counter
@@ -267,19 +283,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
     }
 
     try {
-        // Verify token and get user role
-        $stmt = $conn->prepare("
-            SELECT u.role, u.username, u.email
-            FROM sessions s
-            JOIN users u ON s.user_id = u.id
-            WHERE s.token = ? AND s.expires_at > NOW()
-        ");
-        $stmt->bind_param("s", $token);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows === 1) {
-            $user = $result->fetch_assoc();
+        // Step 1.5: shared lookup (hashed token, raw fallback with in-place rewrite)
+        require_once __DIR__ . '/Middleware.php';
+        $user = Middleware::findSessionUser($conn, $token);
+        if ($user) {
             echo json_encode([
                 'success' => true,
                 'role' => $user['role'],
