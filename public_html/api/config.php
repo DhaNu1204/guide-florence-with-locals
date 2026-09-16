@@ -326,6 +326,12 @@ try {
     // Set UTF-8 encoding
     $conn->set_charset("utf8mb4");
 
+    // Step 2.1: the database clock is pinned to UTC (NOW(), CURRENT_TIMESTAMP, expires_at, sync_logs,
+    // rate limits) even if the host ever changes its system zone; PHP deliberately stays on
+    // Europe/Rome (date_default_timezone_set at the top) because reminder scheduling and tour day
+    // boundaries are business-local. Split on purpose: DB stores UTC, PHP works in Europe/Rome.
+    $conn->query("SET time_zone = '+00:00'");
+
 } catch (Exception $e) {
     $errorMessage = DEBUG
         ? "Database error: " . $e->getMessage()
