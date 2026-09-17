@@ -14,6 +14,8 @@ class EnvLoader {
 
     private static $loaded = false;
     private static $values = [];
+    private static $loadedFrom = null;   // step 2.2: the file that won
+    private static $source = 'none';     // step 2.2: outside_webroot | inside_webroot | none
 
     /**
      * Load environment variables from .env file
@@ -27,8 +29,28 @@ class EnvLoader {
             return true;
         }
 
-        // Default paths to check
         if ($paths === null) {
+            // Step 2.2 search order - the FIRST file found wins, nothing is merged:
+            //  (a) FWL_ENV_FILE from the process environment
+            //  (b) the per-site file outside the web root (see outsideWebrootPath())
+            //  (c) legacy locations inside the tree (local dev, and hosts not migrated yet):
+            //      these keep their old merging behaviour so nothing breaks in transition.
+            $forced = getenv('FWL_ENV_FILE');
+            if ($forced && is_file($forced)) {
+                self::parseFile($forced, $override);
+                self::$loadedFrom = realpath($forced) ?: $forced;
+                self::$source = self::isInsideWebroot($forced) ? 'inside_webroot' : 'outside_webroot';
+                self::$loaded = true;
+                return true;
+            }
+            $outside = self::outsideWebrootPath();
+            if ($outside && is_file($outside)) {
+                self::parseFile($outside, $override);
+                self::$loadedFrom = $outside;
+                self::$source = 'outside_webroot';
+                self::$loaded = true;
+                return true;
+            }
             $paths = [
                 __DIR__ . '/../../.env.local',    // Project root .env.local (highest priority)
                 __DIR__ . '/../../.env',          // Project root .env
@@ -45,12 +67,60 @@ class EnvLoader {
         foreach ($paths as $path) {
             if (file_exists($path)) {
                 self::parseFile($path, $override);
+                if (self::$loadedFrom === null) {
+                    self::$loadedFrom = realpath($path) ?: $path;
+                    self::$source = self::isInsideWebroot(self::$loadedFrom) ? 'inside_webroot' : 'outside_webroot';
+                }
                 $loaded = true;
             }
         }
 
         self::$loaded = $loaded;
         return $loaded;
+    }
+
+    /**
+     * Step 2.2: where the server .env should live - outside every web root.
+     * Hostinger layout <home>/domains/<domain>/public_html/<site>/api: the parent of the
+     * site's document root is the domain's own web root and is shared by all sites, so
+     * the file goes to <home>/env/<site>/.env instead. On a host with the classic
+     * <site>/public_html layout the parent of the document root is used.
+     * Returns null when no sensible location can be derived (local dev).
+     */
+    public static function outsideWebrootPath() {
+        $docroot = isset($_SERVER['DOCUMENT_ROOT']) && $_SERVER['DOCUMENT_ROOT'] !== ''
+            ? rtrim(str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT']), '/')
+            : str_replace('\\', '/', dirname(__DIR__)); // CLI: the api folder's parent
+        if ($docroot === '' || $docroot === '/') {
+            return null;
+        }
+        $site = basename($docroot);
+        $pos = strpos($docroot, '/domains/');
+        if ($pos !== false && strpos($docroot, '/public_html/') !== false) {
+            $home = substr($docroot, 0, $pos);
+            return $home . '/env/' . $site . '/.env';
+        }
+        // Classic <site>/public_html layout: only for real web requests (DOCUMENT_ROOT set).
+        // From the CLI on a dev machine this would point at the repo root and shadow .env.local.
+        if (!empty($_SERVER['DOCUMENT_ROOT']) && basename(dirname($docroot)) !== 'public_html' && $site === 'public_html') {
+            return dirname($docroot) . '/.env';
+        }
+        return null;
+    }
+
+    private static function isInsideWebroot($path) {
+        $p = str_replace('\\', '/', (string) $path);
+        return strpos($p, '/public_html/') !== false || strpos($p, '/public_html') === strlen($p) - strlen('/public_html');
+    }
+
+    /** Step 2.2: which file was loaded (path) - for logs and the CLI tool only, never for clients. */
+    public static function loadedFrom() {
+        return self::$loadedFrom;
+    }
+
+    /** Step 2.2: outside_webroot | inside_webroot | none */
+    public static function source() {
+        return self::$source;
     }
 
     /**
