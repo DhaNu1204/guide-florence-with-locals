@@ -41,7 +41,7 @@
   # own origin for scripts/styles/fonts/images/API, Sentry ingest for connect-src,
   # blob: workers for Sentry Replay, inline styles for React style attributes.
   <FilesMatch "^index\.html$">
-    Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://o4510711031201792.ingest.de.sentry.io; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://o4510711031201792.ingest.de.sentry.io; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   </FilesMatch>
 
   # ---- Caching -----------------------------------------------------------------
