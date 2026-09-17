@@ -20,50 +20,8 @@ if (!function_exists('getallheaders')) {
     }
 }
 
-/**
- * GZIP Compression (PHP Fallback)
- *
- * Enables gzip compression for API responses when:
- * 1. Client accepts gzip encoding
- * 2. zlib extension is available
- * 3. Output buffering is not already active
- *
- * This is a fallback in case mod_deflate is not available on the server.
- * Reduces JSON response sizes by 70-80%.
- */
-function initGzipCompression() {
-    // Skip if CLI mode
-    if (php_sapi_name() === 'cli') {
-        return false;
-    }
-
-    // Check if client accepts gzip
-    $acceptEncoding = isset($_SERVER['HTTP_ACCEPT_ENCODING']) ? $_SERVER['HTTP_ACCEPT_ENCODING'] : '';
-    if (strpos($acceptEncoding, 'gzip') === false) {
-        return false;
-    }
-
-    // Check if zlib is available
-    if (!function_exists('ob_gzhandler')) {
-        return false;
-    }
-
-    // Check if output buffering is not already active with a callback
-    if (ob_get_level() > 0 && ob_get_length() > 0) {
-        return false;
-    }
-
-    // Start gzip output buffering
-    // Note: ob_gzhandler automatically sets Content-Encoding header
-    if (ob_start('ob_gzhandler')) {
-        return true;
-    }
-
-    return false;
-}
-
-// Initialize gzip compression
-$gzipEnabled = initGzipCompression();
+// Step 2.3: no PHP-side compression. mod_deflate (site .htaccess) gzips API responses;
+// ob_gzhandler on top of it produced double compression and a second Vary header.
 
 /**
  * Smart Configuration File
@@ -265,9 +223,9 @@ if (is_dir($fwlLogDir) && is_writable($fwlLogDir)) {
 }
 
 
-// Security headers
+// API responses are never cached (step 2.3: ONE Cache-Control header, set here and not
+// in .htaccess; the second post-check/pre-check line used to make it two headers).
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
 // CORS configuration (step 2.1): an origin is either in the list or gets NO
@@ -284,22 +242,9 @@ if ($originAllowed) {
 }
 header("Content-Type: application/json");
 
-// Security headers (prevent common attacks)
-header("X-Content-Type-Options: nosniff");
-header("X-Frame-Options: DENY");
-header("X-XSS-Protection: 1; mode=block");
-header("Referrer-Policy: strict-origin-when-cross-origin");
-
-// Environment-specific security headers
-if ($environment === 'production' || $environment === 'staging') {
-    // HSTS - enforce HTTPS for 1 year
-    header("Strict-Transport-Security: max-age=31536000; includeSubDomains");
-    // CSP - restrict resource loading
-    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.bokun.is https://*.sentry.io;");
-} else {
-    // Development CSP - more permissive but still protective
-    header("Content-Security-Policy: default-src 'self' http://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:*; style-src 'self' 'unsafe-inline' http://localhost:*; img-src 'self' data: http://localhost:*; connect-src 'self' http://localhost:* https://api.bokun.is;");
-}
+// Step 2.3: nosniff, X-Frame-Options, Referrer-Policy, Permissions-Policy and HSTS are
+// set exactly once by the site .htaccess (inherited by /api/); the Content-Security-Policy
+// lives there too and applies to the HTML document only - a CSP on JSON does nothing.
 
 // Handle preflight OPTIONS request (step 2.1: 204, CORS headers only for an allowed origin)
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
