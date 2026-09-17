@@ -370,7 +370,11 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
 
                     if (($existing['date'] !== $tourData['date']) || ($existing['time'] !== $tourData['time'])) {
                         $isRescheduled = true;
-                        error_log("Rescheduling detected for {$tourData['external_id']}: {$existing['date']} {$existing['time']} → {$tourData['date']} {$tourData['time']}");
+                        // Step 2.4: per-booking line only with BOKUN_DEBUG_LOG=true - today it fires for every
+                        // booking on every sync (seconds vs HH:MM compare, plan step 3.2), ~28 KB per sync.
+                        if (EnvLoader::getBool('BOKUN_DEBUG_LOG', false)) {
+                            error_log("Rescheduling detected for {$tourData['external_id']}: {$existing['date']} {$existing['time']} → {$tourData['date']} {$tourData['time']}");
+                        }
 
                         // If this is the first rescheduling, save the original date/time
                         if (!$existing['rescheduled']) {

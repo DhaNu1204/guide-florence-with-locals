@@ -7,6 +7,22 @@ if (file_exists(__DIR__ . '/SentryLogger.php')) {
 }
 
 class BokunAPI {
+    /**
+     * Step 2.4: per-request / per-response chatter goes to the error log only when
+     * BOKUN_DEBUG_LOG=true in the server .env (~54 KB per sync otherwise). Errors,
+     * warnings and the per-sync summary in bokun_sync.php stay unconditional.
+     */
+    private static $debugLogEnabled = null;
+
+    private static function debugLog($message) {
+        if (self::$debugLogEnabled === null) {
+            self::$debugLogEnabled = class_exists('EnvLoader') && EnvLoader::getBool('BOKUN_DEBUG_LOG', false);
+        }
+        if (self::$debugLogEnabled) {
+            error_log($message);
+        }
+    }
+
     private $accessKey;
     private $secretKey;
     private $vendorId;
@@ -73,7 +89,7 @@ class BokunAPI {
         ];
         
         // Step 0.2: log method + path only - never the headers (they carry the access key + signature).
-        error_log("BokunAPI: {$method} {$endpoint}");
+        self::debugLog("BokunAPI: {$method} {$endpoint}");
         
         try {
             // Use cURL if available, fallback to HttpClient
@@ -93,7 +109,7 @@ class BokunAPI {
                 if ($data && ($method === 'POST' || $method === 'PUT')) {
                     $requestData = json_encode($data);
                     curl_setopt($ch, CURLOPT_POSTFIELDS, $requestData);
-                    error_log("BokunAPI: Request data: " . $requestData);
+                    self::debugLog("BokunAPI: Request data: " . $requestData);
                 }
                 
                 $responseBody = curl_exec($ch);
@@ -111,7 +127,7 @@ class BokunAPI {
                 
                 if ($data && ($method === 'POST' || $method === 'PUT')) {
                     $requestData = json_encode($data);
-                    error_log("BokunAPI: Request data: " . $requestData);
+                    self::debugLog("BokunAPI: Request data: " . $requestData);
                 }
                 
                 $response = $httpClient->request($method, $url, $headers, $requestData);
@@ -119,7 +135,7 @@ class BokunAPI {
                 $responseBody = $response['body'];
             }
             
-            error_log("BokunAPI: {$method} {$endpoint} -> HTTP {$httpCode}");
+            self::debugLog("BokunAPI: {$method} {$endpoint} -> HTTP {$httpCode}");
             
             $decodedResponse = json_decode($responseBody, true);
             
@@ -200,7 +216,7 @@ class BokunAPI {
 
         foreach ($roles as $role) {
             try {
-                error_log("BokunAPI: Fetching bookings with role: $role, pageSize: $actualPageSize");
+                self::debugLog("BokunAPI: Fetching bookings with role: $role, pageSize: $actualPageSize");
 
                 // Fetch with pagination to get all bookings
                 $pageNum = 0;
@@ -221,7 +237,7 @@ class BokunAPI {
                     ]);
 
                     if ($result && isset($result['items']) && count($result['items']) > 0) {
-                        error_log("BokunAPI: Page $pageNum - Found " . count($result['items']) . " bookings with role $role");
+                        self::debugLog("BokunAPI: Page $pageNum - Found " . count($result['items']) . " bookings with role $role");
                         foreach ($result['items'] as $booking) {
                             $bookingId = $booking['id'] ?? null;
                             if ($bookingId && !isset($seenIds[$bookingId])) {
@@ -249,7 +265,7 @@ class BokunAPI {
         }
 
         if (count($allBookings) > 0) {
-            error_log("BokunAPI: Total unique bookings found: " . count($allBookings));
+            self::debugLog("BokunAPI: Total unique bookings found: " . count($allBookings));
             return $allBookings;
         }
 
@@ -268,13 +284,13 @@ class BokunAPI {
         $lastError = null;
         foreach ($requests as list($method, $endpoint, $data)) {
             try {
-                error_log("BokunAPI: Trying $method $endpoint");
+                self::debugLog("BokunAPI: Trying $method $endpoint");
                 if ($data) {
-                    error_log("BokunAPI: With data: " . json_encode($data));
+                    self::debugLog("BokunAPI: With data: " . json_encode($data));
                 }
                 $result = $this->makeRequest($method, $endpoint, $data);
                 if ($result !== null) {
-                    error_log("BokunAPI: Success with $method $endpoint");
+                    self::debugLog("BokunAPI: Success with $method $endpoint");
                     // Extract items array from the response for booking-search endpoint
                     if (strpos($endpoint, 'booking-search') !== false && isset($result['items'])) {
                         return $result['items'];
@@ -670,12 +686,12 @@ class BokunAPI {
     public function testConnection() {
         try {
             // Log the test attempt
-            error_log("BokunAPI: Testing connection to " . $this->baseUrl);
-            error_log("BokunAPI: Access Key: " . substr($this->accessKey, 0, 8) . "...");
-            error_log("BokunAPI: Vendor ID: " . $this->vendorId);
+            self::debugLog("BokunAPI: Testing connection to " . $this->baseUrl);
+            self::debugLog("BokunAPI: Access Key: " . substr($this->accessKey, 0, 8) . "...");
+            self::debugLog("BokunAPI: Vendor ID: " . $this->vendorId);
             
             $result = $this->searchActivities(1, 1);
-            error_log("BokunAPI: Connection test successful");
+            self::debugLog("BokunAPI: Connection test successful");
             
             return [
                 'success' => true, 
