@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 2.2 — SERVER .ENV OUTSIDE THE WEB ROOT (2026-09-17)
+2026-09-17 step 2.2 — `EnvLoader` reads `FWL_ENV_FILE`, then the per-site file outside every web root (`~/env/<site>/.env` on Hostinger, because the parent of the document root is the domain's shared web root), then the legacy locations; first file wins; `health.php` shows `env_source`; `tools/env_which.php` — verified: staging and production switched inside_webroot → outside_webroot with zero downtime (copy first, verify, then move the in-tree files to `~/backups`), smoke green at each stage, app loads, `/.env` and `/api/.env` 403, cron path resolves the new file.
+
 ## ✅ STEP 2.1 — CONFIG HARDENING (2026-09-17)
 2026-09-17 step 2.1 — `config.php`: PHP error log outside the web root (`FWL_LOG_DIR` / `<home>/logs/api-error[-env].log`), EnvLoader is the only env parser, strict CORS (allowed origins only, no fallback header, plain-http origin dropped, preflight 204, `Vary: Origin`), MySQL session pinned to UTC after connect while PHP stays Europe/Rome on purpose — verified: staging + production evil origin → no ACAO, own-origin preflight 204 with headers, log files receiving lines, staging counts identical before/after (402 tours, 439 unassigned, 42 reminders), smoke green, app loads and syncs, vitest 109/109.
 
