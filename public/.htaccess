@@ -1,10 +1,20 @@
-# Florence with Locals - React Router SPA Configuration
-# This file enables client-side routing for React Router
+# Florence with Locals - site .htaccess (step 2.3: the ONE source of truth).
+# Vite copies this file to dist/.htaccess and deploy.sh ships it to the site root.
+# It applies to the whole site INCLUDING /api/ (a sub-folder .htaccess inherits it),
+# so every security header is set exactly once, here, with "set" - never "add".
+# public_html/api/.htaccess holds rewrites and deny rules only; config.php sets
+# only what PHP must (CORS, Content-Type, Cache-Control: no-store).
 
-# Enable rewrite engine
+# ---- HTTPS redirect + React Router SPA fallback ------------------------------
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+
+  # Force HTTPS. Skipped when the request is already https, and when the Hostinger
+  # edge terminated TLS and says so via X-Forwarded-Proto (avoids a redirect loop).
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
   # Don't rewrite files or directories
   RewriteCond %{REQUEST_FILENAME} !-f
@@ -17,12 +27,37 @@
   RewriteRule . /index.html [L]
 </IfModule>
 
-# Security Headers
+# ---- Security headers: one copy each ("always set" replaces, never appends) -----
 <IfModule mod_headers.c>
-  Header always set X-Content-Type-Options nosniff
-  Header always set X-Frame-Options DENY
-  Header always set X-XSS-Protection "1; mode=block"
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+  Header always unset X-Powered-By
+
+  # Content-Security-Policy on the HTML document only (index.html is also what
+  # "/" and every SPA route resolve to). Built from what the app actually loads:
+  # own origin for scripts/styles/fonts/images/API, Sentry ingest for connect-src,
+  # blob: workers for Sentry Replay, inline styles for React style attributes.
+  <FilesMatch "^index\.html$">
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://o4510711031201792.ingest.de.sentry.io; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  </FilesMatch>
+
+  # ---- Caching -----------------------------------------------------------------
+  # Hashed build output under /assets/ never changes: cache it for a year.
+  SetEnvIf Request_URI "^/assets/" FWL_IMMUTABLE=1
+  Header always set Cache-Control "public, max-age=31536000, immutable" env=FWL_IMMUTABLE
+
+  # The app shell is never cached, so a deploy is picked up on the next normal load.
+  <FilesMatch "^index\.html$">
+    Header always set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+
+  # Service worker and manifest: always revalidate (the browser must see a new sw.js).
+  <FilesMatch "^(sw\.js|manifest\.webmanifest)$">
+    Header always set Cache-Control "no-cache"
+  </FilesMatch>
 </IfModule>
 
 # Prevent directory listing
@@ -39,29 +74,10 @@ Options -Indexes
   </IfModule>
 </FilesMatch>
 
-# PWA: correct MIME for the web app manifest + never cache the service worker
+# PWA: correct MIME for the web app manifest
 AddType application/manifest+json .webmanifest
-<Files "sw.js">
-  <IfModule mod_headers.c>
-    Header set Cache-Control "no-cache, no-store, must-revalidate"
-  </IfModule>
-</Files>
 
-# Enable compression
+# Compression: the server does it (mod_deflate); PHP no longer runs ob_gzhandler (step 2.3)
 <IfModule mod_deflate.c>
-  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
-</IfModule>
-
-# Browser caching for static assets
-<IfModule mod_expires.c>
-  ExpiresActive On
-  ExpiresByType image/jpg "access plus 1 year"
-  ExpiresByType image/jpeg "access plus 1 year"
-  ExpiresByType image/gif "access plus 1 year"
-  ExpiresByType image/png "access plus 1 year"
-  ExpiresByType image/svg+xml "access plus 1 year"
-  ExpiresByType text/css "access plus 1 month"
-  ExpiresByType application/javascript "access plus 1 month"
-  ExpiresByType application/pdf "access plus 1 month"
-  ExpiresByType text/html "access plus 0 seconds"
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json application/manifest+json image/svg+xml
 </IfModule>

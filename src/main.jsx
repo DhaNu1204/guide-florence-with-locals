@@ -20,6 +20,7 @@ Sentry.init({
   sendDefaultPii: true,
   // Environment tag
   environment: import.meta.env.MODE,
+  release: `fwl@${__APP_VERSION__}`, // step 2.3: from package.json via vite define
 });
 
 // PWA: register the service worker (production only — never in dev, so

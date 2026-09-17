@@ -14,37 +14,6 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="FwL Tours" />
-    <style>
-      /* Force card view and hide table view */
-      #tours-list table, 
-      #tours-list thead, 
-      #tours-list tbody, 
-      #tours-list tr, 
-      #tours-list th, 
-      #tours-list td {
-        display: none !important;
-      }
-      
-      /* Ensure card layout is visible */
-      .card-view-container {
-        display: block !important;
-      }
-      
-      /* Make sure grid layout works */
-      .grid {
-        display: grid !important;
-      }
-      
-      .grid-cols-1 {
-        grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
-      }
-      
-      @media (min-width: 768px) {
-        .md\:grid-cols-2 {
-          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-      }
-    </style>
   </head>
   <body>
     <div id="root"></div>
