@@ -1,6 +1,7 @@
 # Changelog - Recent Major Updates
 
 ## ✅ STEP 2.2 — SERVER .ENV OUTSIDE THE WEB ROOT (2026-09-17)
+2026-09-17 step 2.3 — one site `.htaccess` (`public/` → `dist/`, inherited by `/api/`): HTTPS redirect, HSTS, nosniff, `X-Frame-Options: DENY`, Referrer-Policy, Permissions-Policy set once with `Header always set`, enforcing CSP on `index.html` only, `/assets/*` immutable, `index.html` no-store, `sw.js`/manifest no-cache; API `.htaccess` trimmed to deny + rewrites; `config.php` without `ob_gzhandler` and duplicate header calls; `index.html` inline `<style>` removed; package version baked into the bundle as the Sentry release — verified: curl on `/`, `/index.html`, `/assets/index-*.js`, `/api/health.php` shows every header ×1 on staging and production, CSP walk-through (report-only then enforcing) with 0 violations, normal reload after a deploy loads the new `index-*.js` hash on both environments, smoke 12/12 ×2
 2026-09-17 step 2.2 — `EnvLoader` reads `FWL_ENV_FILE`, then the per-site file outside every web root (`~/env/<site>/.env` on Hostinger, because the parent of the document root is the domain's shared web root), then the legacy locations; first file wins; `health.php` shows `env_source`; `tools/env_which.php` — verified: staging and production switched inside_webroot → outside_webroot with zero downtime (copy first, verify, then move the in-tree files to `~/backups`), smoke green at each stage, app loads, `/.env` and `/api/.env` 403, cron path resolves the new file.
 
 ## ✅ STEP 2.1 — CONFIG HARDENING (2026-09-17)
