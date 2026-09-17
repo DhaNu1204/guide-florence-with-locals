@@ -1,5 +1,8 @@
 # Changelog - Recent Major Updates
 
+## ✅ STEP 2.1 — CONFIG HARDENING (2026-09-17)
+2026-09-17 step 2.1 — `config.php`: PHP error log outside the web root (`FWL_LOG_DIR` / `<home>/logs/api-error[-env].log`), EnvLoader is the only env parser, strict CORS (allowed origins only, no fallback header, plain-http origin dropped, preflight 204, `Vary: Origin`), MySQL session pinned to UTC after connect while PHP stays Europe/Rome on purpose — verified: staging + production evil origin → no ACAO, own-origin preflight 204 with headers, log files receiving lines, staging counts identical before/after (402 tours, 439 unassigned, 42 reminders), smoke green, app loads and syncs, vitest 109/109.
+
 ## ✅ STEP 1.6 — ENCRYPTION FAIL-CLOSED, PHASE 1 COMPLETE (2026-09-17)
 2026-09-17 step 1.6 — ciphertext prefixed `enc:v1:` with HKDF-derived cipher/MAC keys, `isEncrypted()` tests the prefix only, `encrypt()` throws without a key and saving Bokun config then returns 500 instead of storing plaintext; legacy values still decrypt; rows re-encrypted with `--action=prefix` on staging and production; `tools/encryption_check.php` — verified: check 200/200, unprefixed rows 0 on both, masked key unchanged, production manual sync 16489 completed 839/839, smoke green, vitest 109/109. Phase 1 (1.1–1.6) is complete.
 
