@@ -1,5 +1,9 @@
 # GitHub Secrets Configuration
 
+> **Step 2.4 (2026-09-17): `.github/workflows/deploy.yml` was deleted; nothing in CI uses secrets any more.**
+> The secrets below (`SSH_HOST`, `SSH_PORT`, `SSH_USERNAME`, `SSH_PRIVATE_KEY`) can be removed from the repository settings.
+> Deploys run from the owner's PC with `scripts/deploy.sh`. This file is kept for history only.
+
 This document explains how to configure GitHub Secrets for automated deployment.
 
 ## Required Secrets
