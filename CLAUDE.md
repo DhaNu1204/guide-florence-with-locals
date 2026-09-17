@@ -29,7 +29,7 @@ Hard rules:
 
 ## 3. Credentials & environment
 - **No credentials in this repo, ever.** Admin/staging logins, SSH host/port/user, DB names and API keys live in the untracked file `~/.florence/credentials.md` on the owner's PC (ask the owner if it is missing). Server secrets live only in the server `.env` (outside the web root after step 2.2).
-- Secret scanning (step 0.3): `gitleaks` runs in CI (`.github/workflows/main.yml`) and as a pre-commit hook - install it once per clone: `cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`.
+- Secret scanning (step 0.3): `gitleaks` runs in CI (`.github/workflows/ci.yml`) and as a pre-commit hook - install it once per clone: `cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`.
 - `.env.example` is the only env file in git. `EnvLoader.php` reads the server env; `config.php` picks the environment from `APP_ENV` (production by default after step 2.1).
 - Bokun credentials are stored AES-encrypted in `bokun_config` (`Encryption.php`); they must never be returned by any endpoint (step 1.2).
 
