@@ -3,7 +3,7 @@
  * health.php - unauthenticated deploy / uptime probe (step 0.2).
  *
  * GET only, no auth, no rate limit. Returns
- *   {ok:true|false, db:true|false, env:<APP_ENV>, sha:<git sha>, time:<UTC>}
+ *   {ok:true|false, db:true|false, env:<APP_ENV>, sha:<git sha>, env_source:<where .env was read>, time:<UTC>}
  * - db  = a "SELECT 1" on the configured database succeeds.
  * - sha = contents of public_html/api/VERSION (written by scripts/deploy.sh at
  *         deploy time, git rev-parse HEAD); "unknown" when the file is missing.
@@ -64,5 +64,6 @@ echo json_encode([
     'db'   => $db,
     'env'  => $env,
     'sha'  => $sha,
+    'env_source' => EnvLoader::source(), // step 2.2: outside_webroot | inside_webroot | none (no path)
     'time' => gmdate('Y-m-d\TH:i:s\Z'),
 ]);

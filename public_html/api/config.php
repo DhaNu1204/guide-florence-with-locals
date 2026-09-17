@@ -260,7 +260,7 @@ if (is_dir($fwlLogDir) && is_writable($fwlLogDir)) {
     ini_set('log_errors', 1);
     ini_set('error_log', $fwlLogFile);
     if ($fwlLogIsNew) {
-        error_log('api log started (env=' . $environment . ', php=' . PHP_VERSION . ', sapi=' . php_sapi_name() . ')');
+        error_log('api log started (env=' . $environment . ', php=' . PHP_VERSION . ', sapi=' . php_sapi_name() . ', env_file=' . (EnvLoader::loadedFrom() ?: 'none') . ')'); // step 2.2: path only, never values
     }
 }
 
