@@ -150,3 +150,67 @@ if (!function_exists('isPrivateBooking')) {
         return ['adults' => $total, 'children' => 0, 'infants' => 0];
     }
 }
+
+if (!function_exists('deriveListFields')) {
+    /**
+     * Step 4.2: the fields the Tours list used to dig out of bokun_data in the browser,
+     * derived once on the server so tours.php?view=list can drop the JSON blob.
+     * Mirrors getParticipantCount(), getBookingTime() and getTourLanguage() in
+     * src/pages/Tours.jsx. Pure — no DB.
+     *
+     * @param mixed $bokunData    decoded array or JSON string (may be null)
+     * @param mixed $participants tours.participants
+     * @param mixed $language     tours.language (wins when set)
+     * @param mixed $title        tours.title (last-resort language keyword source)
+     * @return array ['total_participants'=>int, 'start_time_str'=>?string, 'language'=>?string]
+     */
+    function deriveListFields($bokunData, $participants = 0, $language = null, $title = '') {
+        if (is_string($bokunData)) {
+            $bokunData = json_decode($bokunData, true);
+        }
+        $booking = (is_array($bokunData) && isset($bokunData['productBookings'][0]) && is_array($bokunData['productBookings'][0]))
+            ? $bokunData['productBookings'][0] : null;
+        $fields = ($booking && isset($booking['fields']) && is_array($booking['fields'])) ? $booking['fields'] : null;
+
+        $total = 0;
+        if ($fields && !empty($fields['totalParticipants'])) {
+            $total = (int) $fields['totalParticipants'];
+        }
+        if ($total <= 0) $total = (int) $participants;
+        if ($total <= 0) $total = 1;
+
+        $startTimeStr = ($fields && !empty($fields['startTimeStr']) && is_string($fields['startTimeStr']))
+            ? $fields['startTimeStr'] : null;
+
+        $lang = ($language !== null && $language !== '') ? $language : null;
+        if ($lang === null && $booking) {
+            if (isset($booking['notes']) && is_array($booking['notes'])) {
+                foreach ($booking['notes'] as $note) {
+                    $body = (is_array($note) && isset($note['body']) && is_string($note['body'])) ? $note['body'] : '';
+                    if ($body === '') continue;
+                    if (preg_match('/GUIDE\s*:\s*([A-Za-z]+)/i', $body, $m)
+                        || preg_match('/Booking languages.*?:\s*([A-Za-z]+)/is', $body, $m)) {
+                        $lang = ucfirst(strtolower($m[1]));
+                        break;
+                    }
+                }
+            }
+            if ($lang === null && $fields && !empty($fields['language']) && is_string($fields['language'])) {
+                $lang = $fields['language'];
+            }
+            if ($lang === null && !empty($booking['product']['language']) && is_string($booking['product']['language'])) {
+                $lang = $booking['product']['language'];
+            }
+            if ($lang === null) {
+                $t = !empty($booking['product']['title']) ? $booking['product']['title']
+                    : (!empty($booking['title']) ? $booking['title'] : $title);
+                $t = strtolower(is_string($t) ? $t : '');
+                foreach (['italian' => 'Italian', 'spanish' => 'Spanish', 'french' => 'French', 'german' => 'German', 'english' => 'English'] as $needle => $name) {
+                    if (strpos($t, $needle) !== false) { $lang = $name; break; }
+                }
+            }
+        }
+
+        return ['total_participants' => $total, 'start_time_str' => $startTimeStr, 'language' => $lang];
+    }
+}

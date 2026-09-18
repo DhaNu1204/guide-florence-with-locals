@@ -50,6 +50,10 @@ const isFutureDate = (tourDate) => {
 // Helper function to extract participant count from bokun_data
 const getParticipantCount = (tour) => {
   try {
+    // Step 4.2: list rows (view=list) carry the server-derived count, no bokun_data
+    if (tour.total_participants != null) {
+      return parseInt(tour.total_participants) || 1;
+    }
     if (tour.bokun_data) {
       const bokunData = JSON.parse(tour.bokun_data);
       if (bokunData.productBookings && bokunData.productBookings[0] && bokunData.productBookings[0].fields) {
@@ -143,6 +147,10 @@ const ParticipantNamesCompact = ({ tour }) => {
 // Helper function to extract booking time from bokun_data
 const getBookingTime = (tour) => {
   try {
+    // Step 4.2: list rows (view=list) carry the server-derived startTimeStr
+    if (tour.start_time_str) {
+      return tour.start_time_str;
+    }
     if (tour.bokun_data) {
       const bokunData = JSON.parse(tour.bokun_data);
       if (bokunData.productBookings && bokunData.productBookings[0] && bokunData.productBookings[0].fields) {
@@ -347,8 +355,10 @@ const Tours = () => {
       setError(null);
 
       // Build filters for the API
+      // Step 4.2: light rows — the details modal fetches the full record on open
       const apiFilters = {
-        ...filters
+        ...filters,
+        view: 'list'
       };
 
       // Build group filters matching tour filters

@@ -326,6 +326,10 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
     if (filters.product_type) {
       url += `&product_type=${encodeURIComponent(filters.product_type)}`;
     }
+    // Step 4.2: { view: 'list' } asks for light rows (no bokun_data) for list screens
+    if (filters.view) {
+      url += `&view=${encodeURIComponent(filters.view)}`;
+    }
 
     const response = await axios.get(addCacheBuster(url));
 
@@ -364,6 +368,13 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
       return [];
     }
   }
+};
+
+// Step 4.2: one full tour row (incl. bokun_data) for the booking details modal.
+// The list uses { view: 'list' } rows that do not carry the Bokun JSON.
+export const getTourById = async (tourId) => {
+  const response = await axios.get(addCacheBuster(`${API_BASE_URL}/tours.php/${tourId}?view=full`));
+  return response.data && response.data.data ? response.data.data : null;
 };
 
 export const addTour = async (tourData) => {
@@ -725,6 +736,7 @@ export const savePnlCosts = async (payload) => {
 const mysqlDB = {
   // Tours operations
   fetchTours: getTours,
+  getTourById,
   addTour,
   deleteTour,
   updateTour,
