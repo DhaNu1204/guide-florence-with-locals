@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiSave, FiX, FiUsers, FiChevronDown } from 'react-icons/fi';
 import { getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
+import { isGuidePaid } from '../utils/paymentBadges';
 
 const getChannelColor = (channel) => {
   if (!channel) return 'bg-stone-100 text-stone-600';
@@ -231,16 +232,16 @@ const TourCardMobile = ({
         )}
 
         {/* Status badges */}
-        {(Number(tour.is_private) === 1 || tour.paid || tour.cancelled || tour.rescheduled) && (
+        {(Number(tour.is_private) === 1 || isGuidePaid(tour) || tour.cancelled || tour.rescheduled) && (
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             {Number(tour.is_private) === 1 && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                 Private
               </span>
             )}
-            {tour.paid && (
+            {isGuidePaid(tour) && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-olive-100 text-olive-800">
-                Paid
+                Guide paid
               </span>
             )}
             {tour.cancelled && (

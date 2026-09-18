@@ -14,6 +14,7 @@ import DateFilter from '../components/DateFilter';
 import { useToast } from '../components/Toast/ToastProvider';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { getMaxPax, countActivePax, tourCategory, getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
+import { isGuidePaid } from '../utils/paymentBadges';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -1530,9 +1531,9 @@ const Tours = () => {
                                           Private
                                         </span>
                                       )}
-                                      {tour.paid && (
+                                      {isGuidePaid(tour) && (
                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-olive-100 text-olive-800">
-                                          Paid
+                                          Guide paid
                                         </span>
                                       )}
                                       {tour.cancelled && (

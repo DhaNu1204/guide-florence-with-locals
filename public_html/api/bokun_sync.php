@@ -37,6 +37,63 @@ function ensureIsPrivateColumn($conn) {
     }
 }
 
+// Step 3.1: Bokun's customer price gets its own columns (tours.paid / payment_status /
+// total_amount_paid / expected_amount are local state and are no longer written by the sync
+// UPDATE). Adds the columns when missing and backfills them once from the stored bokun_data.
+// Returns the number of rows backfilled, or null when the columns were already there.
+// Also in database/migrations/20260918_tours_bokun_total_price.sql.
+function ensureBokunPriceColumns($conn) {
+    $c = $conn->query("SHOW COLUMNS FROM tours LIKE 'bokun_total_price'");
+    if (!$c || $c->num_rows > 0) {
+        return null;
+    }
+    try {
+        $conn->query("ALTER TABLE tours
+                        ADD COLUMN `bokun_total_price` DECIMAL(10,2) NULL DEFAULT NULL AFTER `expected_amount`,
+                        ADD COLUMN `bokun_currency` VARCHAR(3) NULL DEFAULT NULL AFTER `bokun_total_price`");
+        $conn->query(bokunPriceBackfillSql());
+        $rows = $conn->affected_rows;
+        error_log("Bokun Sync: added tours.bokun_total_price / bokun_currency, backfilled $rows rows (step 3.1)");
+        return $rows;
+    } catch (mysqli_sql_exception $e) {
+        // e.g. a concurrent sync added them a moment ago ("Duplicate column name")
+        error_log("Bokun Sync: ensureBokunPriceColumns: " . $e->getMessage());
+        return null;
+    }
+}
+
+// One UPDATE: customer price + currency from bokun_data, for rows that have no price yet.
+// Same JSON paths in the same order as bokunCustomerPrice() in tour_classification.php.
+function bokunPriceBackfillSql() {
+    $bases = ['$', '$.productBookings[0]', '$.activityBookings[0]'];
+    $rootCurrency = "JSON_UNQUOTE(JSON_EXTRACT(bokun_data, '$.currency'))";
+    $price = [];
+    $currency = [];
+    foreach (['resellerInvoice', 'customerInvoice'] as $inv) {
+        foreach ($bases as $base) {
+            $total = "JSON_EXTRACT(bokun_data, '" . $base . "." . $inv . ".total')";
+            $price[] = "JSON_UNQUOTE($total)";
+            $currency[] = "IF($total IS NULL, NULL, COALESCE("
+                . "JSON_UNQUOTE(JSON_EXTRACT(bokun_data, '" . $base . "." . $inv . ".currency')), "
+                . "JSON_UNQUOTE(JSON_EXTRACT(bokun_data, '" . $base . ".currency')), $rootCurrency))";
+        }
+    }
+    foreach ($bases as $base) {
+        $total = "(JSON_UNQUOTE(JSON_EXTRACT(bokun_data, '" . $base . ".totalPrice')) + 0)";
+        $price[] = "NULLIF($total, 0)";
+        $currency[] = "IF(COALESCE($total, 0) = 0, NULL, COALESCE("
+            . "JSON_UNQUOTE(JSON_EXTRACT(bokun_data, '" . $base . ".currency')), $rootCurrency))";
+    }
+    $priceExpr = "COALESCE(" . implode(", ", $price) . ")";
+    $currencyExpr = "COALESCE(" . implode(", ", $currency) . ")";
+    return "UPDATE tours
+               SET bokun_total_price = ROUND($priceExpr, 2),
+                   bokun_currency = UPPER(LEFT($currencyExpr, 3))
+             WHERE bokun_total_price IS NULL
+               AND bokun_data IS NOT NULL AND JSON_VALID(bokun_data)
+               AND $priceExpr IS NOT NULL";
+}
+
 // Self-provision the unique index that makes the booking upsert race-safe.
 // NULLs are allowed (manual tours have no external_id). The ALTER fails if legacy
 // duplicate rows still exist — those must be cleaned up manually first; the sync
@@ -307,6 +364,9 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
     // or two clients' 15-min timers firing together) must not double-insert.
     ensureExternalIdUniqueIndex($conn);
 
+    // Step 3.1: columns for Bokun's customer price (the UPDATE/INSERT below write them).
+    ensureBokunPriceColumns($conn);
+
     // Default to past 7 days and next 4 MONTHS (120 days) to catch advance bookings
     // This allows guide assignment for tours booked months in advance
     if (!$startDate) {
@@ -383,13 +443,15 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         }
                     }
 
-                    // Update existing tour with rescheduling information
+                    // Update existing tour with rescheduling information.
+                    // Step 3.1: paid, payment_status, total_amount_paid and expected_amount are LOCAL
+                    // state - they are deliberately NOT in this column list (INSERT only, below).
                     $stmt = $conn->prepare("
                         UPDATE tours SET
                         title = ?, date = ?, time = ?, duration = ?, language = ?,
                         customer_name = ?, customer_email = ?, customer_phone = ?,
-                        participants = ?, participant_names = ?, booking_channel = ?, total_amount_paid = ?,
-                        expected_amount = ?, payment_status = ?, paid = ?,
+                        participants = ?, participant_names = ?, booking_channel = ?,
+                        bokun_total_price = ?, bokun_currency = ?,
                         cancelled = ?, bokun_data = ?, last_sync = ?,
                         rescheduled = ?, original_date = ?, original_time = ?,
                         product_id = ?,
@@ -398,11 +460,11 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         WHERE id = ?
                     ");
                     $rescheduledFlag = ($isRescheduled || $existing['rescheduled']) ? 1 : 0;
-                    $stmt->bind_param("ssssssssissddsiississii",
+                    $stmt->bind_param("ssssssssissdsississii",
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
-                        $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'], $tourData['total_amount_paid'],
-                        $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
+                        $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'],
+                        $tourData['bokun_total_price'], $tourData['bokun_currency'],
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'],
                         $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $existing['id']
                     );
@@ -416,21 +478,25 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                             external_id, bokun_booking_id, bokun_confirmation_code, title, date, time, duration, language,
                             customer_name, customer_email, customer_phone, participants, participant_names,
                             booking_channel, total_amount_paid, expected_amount, payment_status, paid,
+                            bokun_total_price, bokun_currency,
                             external_source, needs_guide_assignment, guide_id, cancelled,
                             bokun_data, last_sync, product_id, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                         ON DUPLICATE KEY UPDATE
                             id = LAST_INSERT_ID(id),
+                            bokun_total_price = VALUES(bokun_total_price),
+                            bokun_currency = VALUES(bokun_currency),
                             bokun_data = VALUES(bokun_data),
                             last_sync = VALUES(last_sync),
                             updated_at = NOW()
                     ");
-                    $stmt->bind_param("sssssssssssissddsisiiissi",
+                    $stmt->bind_param("sssssssssssissddsidssiiissi",
                         $tourData['external_id'], $tourData['bokun_booking_id'], $tourData['bokun_confirmation_code'],
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'], $tourData['total_amount_paid'],
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
+                        $tourData['bokun_total_price'], $tourData['bokun_currency'],
                         $tourData['external_source'], $tourData['needs_guide_assignment'], $tourData['guide_id'],
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'], $tourData['product_id']
                     );

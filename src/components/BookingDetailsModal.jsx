@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getTourById } from '../services/mysqlDB';
+import { formatCustomerPrice } from '../utils/paymentBadges';
 import { FiX, FiCalendar, FiClock, FiUser, FiUsers, FiTag, FiMail, FiPhone, FiFileText, FiDollarSign, FiCheckCircle, FiSave, FiCopy, FiCheck } from 'react-icons/fi';
 
 // Helper function to extract booking details from bokun_data
@@ -23,7 +24,9 @@ const extractBookingDetails = (ticket) => {
       externalReference: ticket.external_id || '',
       status: ticket.cancelled ? 'CANCELLED' : 'CONFIRMED',
       totalPrice: '',
-      currency: ''
+      currency: '',
+      // Step 3.1: what the CUSTOMER paid Bokun / the OTA (tours.bokun_total_price) - not a guide payment
+      customerPaid: formatCustomerPrice(ticket)
     },
     tour: {
       title: ticket.title || '',
@@ -527,6 +530,12 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
                       <div>
                         <span className="text-sm font-medium text-stone-600">External Reference:</span>
                         <p className="text-stone-900 font-mono text-sm">{details.booking.externalReference}</p>
+                      </div>
+                    )}
+                    {details.booking.customerPaid && (
+                      <div>
+                        <span className="text-sm font-medium text-stone-600">Customer paid:</span>
+                        <p className="text-stone-900 font-medium">{details.booking.customerPaid}</p>
                       </div>
                     )}
                   </div>

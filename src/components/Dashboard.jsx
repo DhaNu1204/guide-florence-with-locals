@@ -20,6 +20,7 @@ import Button from './UI/Button';
 import { getTours, getAllGuides, getRecentGuideResponses } from '../services/mysqlDB';
 import { authFetch } from '../services/authFetch';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
+import { isGuidePaid, guidePaymentState } from '../utils/paymentBadges';
 import { useBokunSync } from '../hooks/useBokunAutoSync';
 import { useToast } from './Toast/ToastProvider';
 import AskGuideModal from './AskGuideModal';
@@ -236,12 +237,8 @@ const Dashboard = () => {
       return tourDate < now; // Past tours only
     });
 
-    const paidTours = pastTours.filter(tour => {
-      if (tour.payment_status) {
-        return tour.payment_status === 'paid';
-      }
-      return tour.paid === 1 || tour.paid === true || tour.paid === '1';
-    }).length;
+    // Step 3.1: "paid" = the guide has been paid (server guide_paid, from the payments table)
+    const paidTours = pastTours.filter(tour => isGuidePaid(tour)).length;
 
     // Use API count for unpaid tours (authoritative source - checks payments table)
     setStats({
@@ -570,15 +567,15 @@ const Dashboard = () => {
                         {tour.title}
                       </h3>
                       <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0 ${
-                        tour.payment_status === 'paid' || tour.paid
+                        guidePaymentState(tour) === 'paid'
                           ? 'bg-olive-100 text-olive-700'
-                          : tour.payment_status === 'partial'
+                          : guidePaymentState(tour) === 'partial'
                           ? 'bg-gold-100 text-gold-700'
                           : 'bg-terracotta-100 text-terracotta-700'
                       }`}>
-                        {tour.payment_status === 'paid' || tour.paid
-                          ? 'Paid'
-                          : tour.payment_status === 'partial'
+                        {guidePaymentState(tour) === 'paid'
+                          ? 'Guide paid'
+                          : guidePaymentState(tour) === 'partial'
                           ? 'Partial'
                           : 'Unpaid'}
                       </span>

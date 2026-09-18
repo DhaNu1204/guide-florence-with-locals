@@ -65,6 +65,25 @@ describe('BookingDetailsModal', () => {
     expect(getTourById).not.toHaveBeenCalled();
   });
 
+  // Step 3.1: the customer's Bokun amount is a labelled value from bokun_total_price, not a badge
+  it('shows "Customer paid" from bokun_total_price / bokun_currency of the full row', async () => {
+    getTourById.mockResolvedValue({ ...fullRow, bokun_total_price: 116.46, bokun_currency: 'EUR', paid: false, guide_paid: false });
+
+    render(<BookingDetailsModal isOpen={true} onClose={() => {}} ticket={listRow} onUpdateNotes={() => {}} />);
+
+    expect(await screen.findByText('Customer paid:')).toBeInTheDocument();
+    expect(screen.getByText('€116.46')).toBeInTheDocument();
+  });
+
+  it('shows no "Customer paid" line when Bokun gave no amount', async () => {
+    getTourById.mockResolvedValue({ ...fullRow, bokun_total_price: null, bokun_currency: null });
+
+    render(<BookingDetailsModal isOpen={true} onClose={() => {}} ticket={listRow} onUpdateNotes={() => {}} />);
+
+    expect(await screen.findByText('Wheelchair access please')).toBeInTheDocument();
+    expect(screen.queryByText('Customer paid:')).not.toBeInTheDocument();
+  });
+
   it('falls back to the list row with a notice when the fetch fails', async () => {
     getTourById.mockRejectedValue(new Error('network'));
 
