@@ -341,6 +341,18 @@ function reminderPlan($wanted, $creatable, $existsStatus, $guideMatches, $sendAt
  * @return array
  */
 function reconcileGuideReminders($conn) {
+    // STEP 3.10 (2026-09-18, go-live): the "~60 minutes before" reminder is RETIRED. It was
+    // one message per departure - up to 5 a day for one guide - and it arrived too late to
+    // organise anything. It is replaced by the evening digest (guide_digest.php): ONE message
+    // per guide at 21:30 Europe/Rome listing the next day's departures.
+    //
+    // This entry point stays (bokun_sync.php, tours.php PUT, tour-groups.php and
+    // guide-requests.php still call it) but schedules NOTHING: no Twilio call, no writes.
+    // The 33 scheduled messages it had already booked were cancelled at go-live.
+    // The machinery below is left in place so the step can be reverted in one commit;
+    // it is dead code and goes away with the 3.9 cleanup.
+    return ['skipped' => 'retired_step_3_10'];
+
     $cfg = guideReminderConfig();
 
     // FLAG GATE - complete no-op when disabled. No Twilio calls, no writes.
