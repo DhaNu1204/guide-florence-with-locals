@@ -208,6 +208,8 @@ class BokunAPI {
         // Collect all bookings from both SUPPLIER (OTA) and SELLER (direct) roles
         $allBookings = [];
         $seenIds = [];
+        // Step 3.3: roles whose search ANSWERED properly (a well-formed response, even with no items).
+        $rolesAnswered = 0;
 
         // Use larger page size to get more bookings per request
         $actualPageSize = max($pageSize, 200);
@@ -236,6 +238,15 @@ class BokunAPI {
                             'includeUpper' => true
                         ]
                     ]);
+
+                    // Step 3.3: a well-formed answer has an `items` array - possibly empty. Anything else
+                    // (null, no `items`, not an array) is a malformed response = a failure for this role.
+                    if (!is_array($result) || !array_key_exists('items', $result) || !is_array($result['items'])) {
+                        throw new Exception("malformed booking-search response for role $role (no items array)");
+                    }
+                    if ($pageNum === 0) {
+                        $rolesAnswered++;
+                    }
 
                     if ($result && isset($result['items']) && count($result['items']) > 0) {
                         self::debugLog("BokunAPI: Page $pageNum - Found " . count($result['items']) . " bookings with role $role");
@@ -268,6 +279,16 @@ class BokunAPI {
         if (count($allBookings) > 0) {
             self::debugLog("BokunAPI: Total unique bookings found: " . count($allBookings));
             return $allBookings;
+        }
+
+        // Step 3.3: BOTH roles answered and neither has a booking in this window - that is a
+        // successful, empty search (a quiet day, or the only booking moved away), not an error.
+        // Only when a role threw (HTTP error, auth failure, malformed response) do we fall through
+        // to the legacy endpoints below, which throw if they fail too - so a real failure is
+        // still reported as 'failed' by syncBookings().
+        if ($rolesAnswered === count($roles)) {
+            self::debugLog("BokunAPI: no bookings between $startDate and $endDate (both roles answered)");
+            return [];
         }
 
         // Fallback to legacy endpoints if new method fails

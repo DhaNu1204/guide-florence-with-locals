@@ -428,13 +428,14 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                     $originalDate = $existing['original_date'] ?: $existing['date'];
                     $originalTime = $existing['original_time'] ?: $existing['time'];
 
-                    if (($existing['date'] !== $tourData['date']) || ($existing['time'] !== $tourData['time'])) {
+                    // Step 3.2: compare normalised values. MySQL TIME is '10:00:00', Bokun's startTimeStr
+                    // is '10:00' - the old `!==` was therefore always true and every booking was flagged
+                    // rescheduled (and rescheduled_at rewritten) on every sync.
+                    if (bokunIsRescheduled($existing['date'], $existing['time'], $tourData['date'], $tourData['time'])) {
                         $isRescheduled = true;
-                        // Step 2.4: per-booking line only with BOKUN_DEBUG_LOG=true - today it fires for every
-                        // booking on every sync (seconds vs HH:MM compare, plan step 3.2), ~28 KB per sync.
-                        if (EnvLoader::getBool('BOKUN_DEBUG_LOG', false)) {
-                            error_log("Rescheduling detected for {$tourData['external_id']}: {$existing['date']} {$existing['time']} → {$tourData['date']} {$tourData['time']}");
-                        }
+                        // Unconditional again (it was gated in step 2.4 only because of that bug): it now
+                        // fires for real reschedules only.
+                        error_log("Rescheduling detected for {$tourData['external_id']}: {$existing['date']} {$existing['time']} → {$tourData['date']} {$tourData['time']}");
 
                         // If this is the first rescheduling, save the original date/time
                         if (!$existing['rescheduled']) {
@@ -551,9 +552,11 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         // Update last sync timestamp
         $conn->query("UPDATE bokun_config SET last_sync = NOW() ORDER BY id ASC LIMIT 1");
 
-        // Auto-group tours after sync (only if we synced any bookings)
+        // Auto-group tours after sync: when bookings were synced, and (step 3.3) also when Bokun
+        // legitimately has NO bookings in the window - the only booking of a date may have moved
+        // away, and its now-empty auto group must be cleaned up. Not run when every booking failed.
         $groupingResult = null;
-        if ($createdCount > 0 || $updatedCount > 0) {
+        if ($createdCount > 0 || $updatedCount > 0 || $apiBookingsCount === 0) {
             $groupingResult = autoGroupAfterSync($conn, $startDate, $endDate);
             if ($groupingResult) {
                 error_log("Bokun Sync: Auto-grouped " . ($groupingResult['tours_grouped'] ?? 0) . " tours into " . ($groupingResult['groups_created'] ?? 0) . " groups");
