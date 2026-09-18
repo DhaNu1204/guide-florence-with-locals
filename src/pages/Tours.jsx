@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast/ToastProvider';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { getMaxPax, countActivePax, tourCategory, getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 import { isGuidePaid } from '../utils/paymentBadges';
+import { buildUnassignedReportText } from '../utils/unassignedReport';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -1044,7 +1045,9 @@ const Tours = () => {
   };
 
   // Download unassigned tours report as .txt
-  const downloadUnassignedReport = () => {
+  // Step 3.5: WHAT is unassigned is decided by the server (one row per departure, effective guide
+  // of the group or the tour, the page's current filter) - not by whatever groups this page has loaded.
+  const downloadUnassignedReport = async () => {
     // Determine current filter label
     let filterLabel = '';
     if (showDateRange && rangeStartDate && rangeEndDate) {
@@ -1058,84 +1061,18 @@ const Tours = () => {
     }
 
     const now = new Date();
-    const generated = format(now, 'dd MMM yyyy, HH:mm');
-
-    const lines = [];
-    lines.push('UNASSIGNED TOURS REPORT');
-    lines.push(`Generated: ${generated}`);
-    lines.push(`Filter: ${filterLabel}`);
-    lines.push('========================');
-    lines.push('');
-
-    // Extract location from tour title by keyword matching
-    const getLocation = (title) => {
-      if (!title) return 'Florence';
-      const t = title.toLowerCase();
-      if (t.includes('uffizi') && t.includes('accademia')) return 'Uffizi + Accademia';
-      if (t.includes('uffizi')) return 'Uffizi';
-      if (t.includes('accademia')) return 'Accademia';
-      if (t.includes('duomo') || t.includes('cathedral')) return 'Duomo';
-      if (t.includes('pitti')) return 'Pitti';
-      if (t.includes('boboli')) return 'Boboli';
-      if (t.includes('palazzo vecchio')) return 'Palazzo Vecchio';
-      if (t.includes('san lorenzo') || t.includes('medici chapel')) return 'San Lorenzo';
-      if (t.includes('santa croce')) return 'Santa Croce';
-      if (t.includes('ponte vecchio')) return 'Ponte Vecchio';
-      if (t.includes('bargello')) return 'Bargello';
-      if (t.includes('vasari')) return 'Vasari Corridor';
-      return 'Florence';
-    };
-
-    let totalUnassigned = 0;
-
-    groupedTours.forEach(dateGroup => {
-      const unassignedItems = [];
-
-      dateGroup.periods.forEach(periodGroup => {
-        periodGroup.items.forEach(item => {
-          if (item._isGroup) {
-            const g = item.group;
-            if (!g.guide_id) {
-              const time = g.group_time ? g.group_time.substring(0, 5) : '00:00';
-              const location = getLocation(g.display_name);
-              unassignedItems.push({ time, location });
-              totalUnassigned++;
-            }
-          } else {
-            if (item.cancelled) return;
-            if (!item.guide_id) {
-              const time = getBookingTime(item).substring(0, 5);
-              const location = getLocation(item.title);
-              unassignedItems.push({ time, location });
-              totalUnassigned++;
-            }
-          }
-        });
-      });
-
-      if (unassignedItems.length > 0) {
-        const dateObj = new Date(dateGroup.date + 'T00:00:00');
-        const dateLabel = format(dateObj, 'EEEE, dd MMMM yyyy');
-        lines.push(`--- ${dateLabel} ---`);
-        lines.push('');
-        unassignedItems
-          .sort((a, b) => a.time.localeCompare(b.time))
-          .forEach(entry => {
-            lines.push(`  ${entry.time}  ${entry.location}`);
-          });
-        lines.push('');
-      }
-    });
-
-    if (totalUnassigned === 0) {
-      lines.push('No unassigned tours found.');
-      lines.push('');
+    let report;
+    try {
+      const { guide_id: _ignoredGuideFilter, ...reportFilters } = getCurrentFilters();
+      report = await mysqlDB.getUnassignedReport(reportFilters);
+    } catch (err) {
+      console.error('Unassigned report failed:', err);
+      setError('Could not build the unassigned report. Please try again.');
+      setTimeout(() => setError(null), 5000);
+      return;
     }
 
-    lines.push('========================');
-    lines.push(`Total: ${totalUnassigned} unassigned tours`);
-
-    const content = lines.join('\n');
+    const content = buildUnassignedReportText(report.departures, { filterLabel, now });
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

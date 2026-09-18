@@ -2,6 +2,7 @@
 require_once 'config.php';
 require_once 'BokunAPI.php';
 require_once __DIR__ . '/tour_classification.php';
+require_once __DIR__ . '/group_helpers.php'; // step 3.5: fillMissingGroupGuide()
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -640,8 +641,11 @@ function getUnassignedTours() {
         SELECT t.*, g.name as guide_name 
         FROM tours t
         LEFT JOIN guides g ON t.guide_id = g.id
+        LEFT JOIN tour_groups tg ON t.group_id = tg.id
         WHERE t.external_source = 'bokun' 
-        AND t.needs_guide_assignment = 1
+        -- step 3.5: unassigned = no EFFECTIVE guide (tour's own or its group's). The old test,
+        -- needs_guide_assignment = 1, is never cleared by a single-tour assignment.
+        AND t.guide_id IS NULL AND tg.guide_id IS NULL
         AND t.cancelled = 0
         AND t.date >= CURDATE()
         ORDER BY t.date, t.time
@@ -917,6 +921,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
 
     $groupsCreated = 0;
     $toursGrouped = 0;
+    $guidesFilled = 0; // step 3.5: member tours that received their group's guide
 
     $conn->begin_transaction();
     try {
@@ -1060,6 +1065,12 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
                     $updateGuideStmt->bind_param('isi', $guideRow['guide_id'], $guideRow['guide_name'], $newGroupId);
                     $updateGuideStmt->execute();
                     $updateGuideStmt->close();
+
+                    // Step 3.5: the group inherited that guide, but a booking that joined an already
+                    // assigned departure still had guide_id NULL / needs_guide_assignment = 1 and showed
+                    // up as "unassigned" everywhere tours are looked at one by one. Give the guide to the
+                    // members that have none (a member with a different guide is never overwritten).
+                    $guidesFilled += fillMissingGroupGuide($conn, $newGroupId, $guideRow['guide_id']);
                 }
 
                 $groupsCreated++;
@@ -1086,6 +1097,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
     $conn->query("SELECT RELEASE_LOCK('auto_group')");
 
     return [
+        'guides_filled' => $guidesFilled, // step 3.5
         'groups_created' => $groupsCreated,
         'tours_grouped' => $toursGrouped,
         'date_range' => ['start' => $startDate, 'end' => $endDate]

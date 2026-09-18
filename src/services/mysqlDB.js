@@ -377,6 +377,21 @@ export const getTourById = async (tourId) => {
   return response.data && response.data.data ? response.data.data : null;
 };
 
+// Step 3.5: unassigned departures, decided on the server (effective guide = group's or tour's).
+// Takes the same filters as getTours (upcoming | past | date | start_date + end_date).
+export const getUnassignedReport = async (filters = {}) => {
+  let url = `${API_BASE_URL}/tours.php?action=unassigned-report`;
+  if (filters.start_date && filters.end_date) {
+    url += `&start_date=${encodeURIComponent(filters.start_date)}&end_date=${encodeURIComponent(filters.end_date)}`;
+  } else if (filters.date) {
+    url += `&date=${encodeURIComponent(filters.date)}`;
+  }
+  if (filters.upcoming) url += `&upcoming=true`;
+  if (filters.past) url += `&past=true`;
+  const response = await axios.get(addCacheBuster(url));
+  return response.data && response.data.data ? response.data.data : { total: 0, departures: [] };
+};
+
 export const addTour = async (tourData) => {
   try {
     const response = await axios.post(`${API_BASE_URL}/tours.php`, tourData);
@@ -737,6 +752,7 @@ const mysqlDB = {
   // Tours operations
   fetchTours: getTours,
   getTourById,
+  getUnassignedReport,
   addTour,
   deleteTour,
   updateTour,

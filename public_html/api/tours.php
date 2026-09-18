@@ -263,6 +263,70 @@ switch ($method) {
             $whereTypes = "i";
         }
 
+        // Step 3.5: unassigned-departures report, computed on the server.
+        //   GET tours.php?action=unassigned-report + the same filters as the list
+        //   (upcoming | past | date | start_date+end_date, product_type, guide_id is ignored).
+        // One row per DEPARTURE (tour unit: a group, or a single ungrouped tour), cancelled bookings
+        // excluded, and a departure counts as unassigned only when its EFFECTIVE guide is missing:
+        // neither the group nor any of its member tours has a guide. The old report was assembled in
+        // the browser from whatever groups the page happened to have loaded (tour-groups.php returns
+        // 50 per page and knows no date range), so members of a missing group showed up one by one
+        // with their own NULL guide_id.
+        if (isset($_GET['action']) && $_GET['action'] === 'unassigned-report') {
+            $reportConditions = [];
+            $reportParams = [];
+            $reportTypes = "";
+            // same conditions and bound values as the list, minus the guide filter (meaningless here)
+            $cursor = 0;
+            foreach ($whereConditions as $cond) {
+                $n = substr_count($cond, '?');
+                if ($cond !== "t.guide_id = ?") {
+                    $reportConditions[] = $cond;
+                    for ($k = 0; $k < $n; $k++) {
+                        $reportParams[] = $whereParams[$cursor + $k];
+                        $reportTypes .= $whereTypes[$cursor + $k];
+                    }
+                }
+                $cursor += $n;
+            }
+            $reportConditions[] = "t.cancelled = 0";
+            $reportWhere = "WHERE " . implode(" AND ", $reportConditions);
+
+            $reportSql = "SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit,
+                                 COALESCE(MAX(tg.group_date), MIN(t.date)) AS unit_date,
+                                 LEFT(COALESCE(MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
+                                 COALESCE(MAX(tg.display_name), MIN(t.title)) AS unit_title,
+                                 COUNT(*) AS bookings,
+                                 SUM(COALESCE(t.participants, 0)) AS pax
+                          FROM tours t
+                          LEFT JOIN tour_groups tg ON t.group_id = tg.id
+                          LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+                          $reportWhere
+                          GROUP BY tour_unit
+                          HAVING MAX(tg.guide_id) IS NULL AND MAX(t.guide_id) IS NULL
+                          ORDER BY unit_date ASC, unit_time ASC, tour_unit ASC";
+            $reportStmt = $conn->prepare($reportSql);
+            if (count($reportParams) > 0) {
+                $reportStmt->bind_param($reportTypes, ...$reportParams);
+            }
+            $reportStmt->execute();
+            $reportResult = $reportStmt->get_result();
+            $departures = [];
+            while ($r = $reportResult->fetch_assoc()) {
+                $departures[] = [
+                    'tour_unit' => $r['tour_unit'],
+                    'date' => $r['unit_date'],
+                    'time' => $r['unit_time'] ?: '00:00',
+                    'title' => $r['unit_title'],
+                    'bookings' => intval($r['bookings']),
+                    'pax' => intval($r['pax']),
+                ];
+            }
+            $reportStmt->close();
+            echo json_encode(['success' => true, 'data' => ['total' => count($departures), 'departures' => $departures]]);
+            break;
+        }
+
         // Get total count for pagination metadata (with filters)
         $countSql = "SELECT COUNT(*) as total FROM tours t LEFT JOIN products pr ON t.product_id = pr.bokun_product_id $whereClause";
         if (count($whereParams) > 0) {
