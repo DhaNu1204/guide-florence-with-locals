@@ -309,6 +309,11 @@ const Tours = () => {
 
   const [tours, setTours] = useState([]);
   const [tourGroups, setTourGroups] = useState([]);
+  // Step 5.2: departures without a guide for the current filter - the server's number (same query as
+  // the unassigned report). null = not shown (a guide filter is active, or the count could not be read).
+  const [needGuideCount, setNeedGuideCount] = useState(null);
+  // Step 5.2: set when the list could not be loaded completely - shown instead of a misleading list.
+  const [loadError, setLoadError] = useState(null);
   const [guides, setGuides] = useState([]);
   const [selectedGuideId, setSelectedGuideId] = useState('all');
   const [filterDate, setFilterDate] = useState(initialDateParam || new Date()); // Default to today (or ?date= deep link)
@@ -373,11 +378,19 @@ const Tours = () => {
       else if (filters.date) groupFilters.date = filters.date;
       if (filters.guide_id) groupFilters.guide_id = filters.guide_id;
 
-      const [toursResponse, guidesData, groupsResponse] = await Promise.all([
+      // Step 5.2: ALL groups for the same date filter as the tours (paged through on the client,
+      // 100 per request, total checked). A failed or incomplete group request is an error - it is
+      // no longer swallowed, because bookings would then silently render as loose, ungrouped rows.
+      const { guide_id: _guideFilter, view: _view, ...countFilters } = apiFilters;
+      const [toursResponse, guidesData, groupsResponse, unassignedTotal] = await Promise.all([
         mysqlDB.fetchTours(forceRefresh, page, toursPerPage, apiFilters),
         mysqlDB.getAllGuides(),
-        tourGroupsAPI.list(groupFilters).catch(() => ({ data: [] }))
+        tourGroupsAPI.listAll(groupFilters),
+        // the banner number: the unassigned report's own total (null = do not show a number)
+        filters.guide_id ? Promise.resolve(null) : mysqlDB.getUnassignedCount(countFilters).catch(() => null)
       ]);
+      setLoadError(null);
+      setNeedGuideCount(unassignedTotal);
 
       // Handle paginated response
       if (toursResponse && toursResponse.data) {
@@ -397,6 +410,11 @@ const Tours = () => {
     } catch (err) {
       console.error('Load error:', err);
       setError(err.message);
+      // Step 5.2: never show a half-loaded list (e.g. tours without their groups)
+      setTours([]);
+      setTourGroups([]);
+      setNeedGuideCount(null);
+      setLoadError(err.message || 'Could not load the tours');
     } finally {
       setLoading(false);
     }
@@ -631,7 +649,6 @@ const Tours = () => {
   // many active departures still have no guide.
   const categorySummary = useMemo(() => {
     const buckets = {}; // key -> { tours, pax }
-    let needGuide = 0;
     const add = (key, pax) => {
       if (!buckets[key]) buckets[key] = { tours: 0, pax: 0 };
       buckets[key].tours += 1;
@@ -644,7 +661,6 @@ const Tours = () => {
           if (item._isGroup) {
             const g = item.group;
             add(tourCategory(g.display_name), countActivePax(g.tours));
-            if (!g.guide_id) needGuide += 1;
           } else {
             if (item.cancelled) return; // skip cancelled standalone tours entirely
             const cat = tourCategory(item.title);
@@ -654,13 +670,13 @@ const Tours = () => {
               key = cat === 'Other' ? 'Private (other)' : `Private ${cat}`;
             }
             add(key, getParticipantCount(item));
-            if (!item.guide_id) needGuide += 1;
           }
         });
       });
     });
 
-    return { buckets, needGuide };
+    // Step 5.2: "N tours still need a guide" is NOT counted here any more - see needGuideCount.
+    return { buckets };
   }, [groupedTours]);
 
   // Handle notes editing
@@ -1171,6 +1187,21 @@ const Tours = () => {
         </Card>
 
 
+        {/* Step 5.2: the list could not be loaded completely - say so instead of showing a wrong list */}
+        {loadError && (
+          <Card className="border-terracotta-200 bg-terracotta-50" role="alert" data-testid="tours-load-error">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="font-medium text-terracotta-800">The tours list could not be loaded.</p>
+                <p className="text-sm text-terracotta-700">{loadError}</p>
+              </div>
+              <Button onClick={() => loadData(true, currentPage, getCurrentFilters())} className="min-h-[44px]">
+                Try again
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {/* Tours by Date */}
         <div className="space-y-6">
           {groupedTours.length === 0 ? (
@@ -1670,11 +1701,11 @@ const Tours = () => {
                         pax={totalData.totalParticipants}
                       />
                     </div>
-                    {categorySummary.needGuide > 0 && (
-                      <div className="text-sm font-medium text-terracotta-700">
-                        {categorySummary.needGuide === 1
+                    {needGuideCount > 0 && (
+                      <div className="text-sm font-medium text-terracotta-700" data-testid="need-guide-banner">
+                        {needGuideCount === 1
                           ? '1 tour still needs a guide'
-                          : `${categorySummary.needGuide} tours still need a guide`}
+                          : `${needGuideCount} tours still need a guide`}
                       </div>
                     )}
                     <Button

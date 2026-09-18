@@ -117,6 +117,55 @@ describe('MySQL Database Service', () => {
     });
   });
 
+  // Step 5.2: all groups, paged; and the banner count
+  describe('tourGroupsAPI.listAll / getUnassignedCount', () => {
+    const pageOf = (n, page, total, hasNext) => ({
+      data: { data: Array.from({ length: n }, (_, i) => ({ id: page * 1000 + i })), pagination: { total, current_page: page, per_page: 100, has_next: hasNext } },
+    });
+
+    it('walks every page (100 per request) and returns all groups', async () => {
+      axios.get
+        .mockResolvedValueOnce(pageOf(100, 1, 163, true))
+        .mockResolvedValueOnce(pageOf(63, 2, 163, false));
+
+      const res = await mysqlDBModule.tourGroupsAPI.listAll({ upcoming: 'true' });
+
+      expect(res.data).toHaveLength(163);
+      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get.mock.calls[0][0]).toContain('per_page=100');
+      expect(axios.get.mock.calls[0][0]).toContain('page=1');
+      expect(axios.get.mock.calls[1][0]).toContain('page=2');
+      expect(axios.get.mock.calls[1][0]).toContain('upcoming=true');
+    });
+
+    it('a single short page needs one request', async () => {
+      axios.get.mockResolvedValueOnce(pageOf(7, 1, 7, false));
+      const res = await mysqlDBModule.tourGroupsAPI.listAll({ date: '2026-09-20' });
+      expect(res.data).toHaveLength(7);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws when fewer groups arrive than the server total (never a silent partial list)', async () => {
+      axios.get.mockResolvedValueOnce(pageOf(100, 1, 163, false));
+      await expect(mysqlDBModule.tourGroupsAPI.listAll({})).rejects.toThrow('received 100 of 163');
+    });
+
+    it('propagates a request failure', async () => {
+      axios.get.mockRejectedValueOnce(new Error('Network Error'));
+      await expect(mysqlDBModule.tourGroupsAPI.listAll({})).rejects.toThrow('Network Error');
+    });
+
+    it('getUnassignedCount asks the report for count_only and returns its total', async () => {
+      axios.get.mockResolvedValue({ data: { success: true, data: { total: 131 } } });
+      const n = await mysqlDBModule.getUnassignedCount({ upcoming: true });
+      expect(n).toBe(131);
+      const url = axios.get.mock.calls[0][0];
+      expect(url).toContain('action=unassigned-report');
+      expect(url).toContain('count_only=true');
+      expect(url).toContain('upcoming=true');
+    });
+  });
+
   describe('getGuides', () => {
     it('returns guides in correct format', async () => {
       const mockGuides = {

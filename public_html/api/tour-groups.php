@@ -153,13 +153,31 @@ function listGroups($conn) {
     $filterDate = $_GET['date'] ?? null;
     $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
     $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
+    // Step 5.2: same date filters, same priority and same windows as tours.php
+    // (start_date+end_date > past > upcoming > date), so the Tours page can ask for exactly
+    // the groups that belong to the tours it shows.
+    $past = isset($_GET['past']) && $_GET['past'] === 'true';
+    $startDate = $_GET['start_date'] ?? null;
+    $endDateParam = $_GET['end_date'] ?? null;
 
     // Build WHERE clause
     $where = [];
     $params = [];
     $types = '';
 
-    if ($upcoming) {
+    if ($startDate && $endDateParam && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDateParam)) {
+        $where[] = 'tg.group_date >= ?';
+        $where[] = 'tg.group_date <= ?';
+        $params[] = $startDate;
+        $params[] = $endDateParam;
+        $types .= 'ss';
+    } elseif ($past) {
+        $where[] = 'tg.group_date >= ?';
+        $where[] = 'tg.group_date <= ?';
+        $params[] = date('Y-m-d', strtotime('-40 days'));
+        $params[] = date('Y-m-d', strtotime('-1 day'));
+        $types .= 'ss';
+    } elseif ($upcoming) {
         $today = date('Y-m-d');
         $endDate = date('Y-m-d', strtotime('+60 days'));
         $where[] = 'tg.group_date >= ?';
@@ -964,6 +982,10 @@ function syncGroupGuideFromTours($conn, $groupId) {
         $updateStmt->bind_param('isi', $row['guide_id'], $row['guide_name'], $groupId);
         $updateStmt->execute();
         $updateStmt->close();
+
+        // Step 3.6a: a guide-less tour merged into a departure that already has a guide gets that
+        // guide at once (same rule as the sync, step 3.5: fill only, never overwrite another guide).
+        fillMissingGroupGuide($conn, $groupId, $row['guide_id']);
     }
 }
 

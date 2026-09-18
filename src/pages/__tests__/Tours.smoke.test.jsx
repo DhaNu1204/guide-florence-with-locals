@@ -12,6 +12,7 @@ vi.mock('../../services/mysqlDB', () => {
   const resolved = (val) => vi.fn().mockResolvedValue(val);
   const tourGroupsAPI = {
     list: resolved({ data: [] }),
+    listAll: resolved({ data: [] }),
     autoGroup: resolved({ success: true }),
     manualMerge: resolved({ success: true }),
     unmerge: resolved({ success: true }),
@@ -24,6 +25,7 @@ vi.mock('../../services/mysqlDB', () => {
     getAllGuides: resolved([]),
     updateTour: resolved({ success: true }),
     clearTourCache: vi.fn(),
+    getUnassignedCount: resolved(0),
   };
   return {
     default: mysqlDB,

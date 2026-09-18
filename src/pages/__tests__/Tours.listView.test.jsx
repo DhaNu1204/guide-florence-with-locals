@@ -34,10 +34,11 @@ vi.mock('../../services/mysqlDB', () => {
     getAllGuides: resolved([]),
     updateTour: resolved({ success: true }),
     clearTourCache: vi.fn(),
+    getUnassignedCount: resolved(0),
   };
   return {
     default: mysqlDB,
-    tourGroupsAPI: { list: resolved({ data: [] }) },
+    tourGroupsAPI: { list: resolved({ data: [] }), listAll: resolved({ data: [] }) },
     getOpenGuideRequests: resolved({ data: [] }),
     createGuideRequest: resolved({}),
     getGuides: resolved({ data: [] }),
