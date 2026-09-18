@@ -1,20 +1,49 @@
 import { useEffect, useState, useContext, createContext } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import bokunAutoSync from '../services/bokunAutoSync';
+import { getSyncInfo } from '../services/mysqlDB';
 
 // Create context for Bokun sync state
 const BokunSyncContext = createContext(null);
 
-// Constants for sync timing
-const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes in milliseconds
-const MIN_SYNC_INTERVAL_MS = 15 * 60 * 1000; // Minimum 15 minutes between syncs
+// Step 4.0: the browser never starts a sync on its own (the server cron runs every
+// 15 minutes). The hook only refreshes the "last sync" label from the server with a
+// light sync-info call, at most once every 5 minutes across all hook instances.
+const SYNC_INFO_INTERVAL_MS = 5 * 60 * 1000;
 const STORAGE_KEY = 'bokun_last_sync';
 
+let lastInfoFetchAt = 0;
+let lastInfoValue = null;
+
+// Latest completed server sync (cron / webhook / manual) as a Date, or null.
+const fetchServerLastSync = async () => {
+  const now = Date.now();
+  if (lastInfoFetchAt && now - lastInfoFetchAt < SYNC_INFO_INTERVAL_MS) {
+    return lastInfoValue;
+  }
+  lastInfoFetchAt = now;
+  try {
+    const info = await getSyncInfo();
+    const iso = info && info.last_sync && info.last_sync.completed_at;
+    const parsed = iso ? new Date(iso) : null;
+    lastInfoValue = parsed && !isNaN(parsed.getTime()) ? parsed : null;
+  } catch (error) {
+    // keep the previous value; the label is informational
+  }
+  return lastInfoValue;
+};
+
+// Test helper: forget the shared sync-info throttle state.
+export const __resetSyncInfoThrottle = () => {
+  lastInfoFetchAt = 0;
+  lastInfoValue = null;
+};
+
 /**
- * Custom hook for Bokun auto-sync
- * - Syncs on app load (if last sync > 15 minutes ago)
- * - Syncs every 15 minutes while app is active
- * - Stores last sync time in localStorage
+ * Custom hook for the Bokun sync state
+ * - Never syncs by itself (no startup, focus or periodic sync)
+ * - "Sync now" (admin) runs a manual sync
+ * - lastSync follows the server (sync-info), refreshed at most every 5 minutes
  * - Provides: { lastSync, isSyncing, syncNow, syncError }
  */
 export const useBokunAutoSync = () => {
@@ -27,14 +56,6 @@ export const useBokunAutoSync = () => {
   const [syncError, setSyncError] = useState(null);
   const [syncStatus, setSyncStatus] = useState(bokunAutoSync.getStatus());
   const [lastSyncEvent, setLastSyncEvent] = useState(null);
-
-  // Check if sync is needed based on last sync time
-  const shouldSync = () => {
-    if (!lastSync) return true;
-    const now = new Date();
-    const timeSinceLastSync = now.getTime() - new Date(lastSync).getTime();
-    return timeSinceLastSync >= MIN_SYNC_INTERVAL_MS;
-  };
 
   // Perform sync and update state
   const performSync = async (trigger = 'manual') => {
@@ -71,37 +92,32 @@ export const useBokunAutoSync = () => {
   };
 
   useEffect(() => {
-    if (isAuthenticated && userRole === 'admin') {
-      // Initialize auto-sync service when authenticated as admin
+    if (isAuthenticated) {
+      // Role fallback for the manual sync gate; starts nothing (step 4.0)
       bokunAutoSync.initialize(userRole);
-
-      // Perform initial sync if needed (last sync > 15 minutes ago)
-      if (shouldSync()) {
-        const delay = setTimeout(() => {
-          performSync('startup');
-        }, 2000); // Small delay to let the app fully load
-
-        return () => clearTimeout(delay);
-      }
-    } else {
-      // Stop sync when not authenticated or not admin
-      bokunAutoSync.stop();
     }
   }, [isAuthenticated, userRole]);
 
-  // Set up periodic sync interval
+  // Refresh the "last sync" label from the server: light sync-info call, no action=sync
   useEffect(() => {
-    if (!isAuthenticated || userRole !== 'admin') return;
+    if (!isAuthenticated) return undefined;
+    let cancelled = false;
 
-    // Set up 15-minute sync interval
-    const syncInterval = setInterval(() => {
-      if (shouldSync()) {
-        performSync('periodic');
+    const refresh = async () => {
+      const serverLastSync = await fetchServerLastSync();
+      if (!cancelled && serverLastSync) {
+        setLastSync((prev) => (prev && new Date(prev) > serverLastSync ? prev : serverLastSync));
       }
-    }, SYNC_INTERVAL_MS);
+    };
 
-    return () => clearInterval(syncInterval);
-  }, [isAuthenticated, userRole, lastSync]);
+    refresh();
+    const infoInterval = setInterval(refresh, SYNC_INFO_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(infoInterval);
+    };
+  }, [isAuthenticated]);
 
   // Listen for sync events from the service
   useEffect(() => {
@@ -137,13 +153,6 @@ export const useBokunAutoSync = () => {
     };
   }, [isAuthenticated, userRole]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      bokunAutoSync.stop();
-    };
-  }, []);
-
   return {
     // Primary API (as specified in requirements)
     lastSync,
@@ -155,7 +164,6 @@ export const useBokunAutoSync = () => {
     syncStatus,
     lastSyncEvent,
     syncError,
-    updateConfig: (config) => bokunAutoSync.updateConfig(config),
     service: bokunAutoSync
   };
 };

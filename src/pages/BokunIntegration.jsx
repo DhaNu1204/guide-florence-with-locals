@@ -12,7 +12,7 @@ import { format } from 'date-fns';
 const BokunIntegration = () => {
   const { setPageTitle } = usePageTitle();
   const { isAdmin } = useAuth();
-  const { syncStatus, lastSyncEvent, syncNow } = useBokunAutoSync();
+  const { syncStatus, lastSync, lastSyncEvent, syncNow } = useBokunAutoSync();
   const [activeTab, setActiveTab] = useState('sync');
   const [fullSyncLoading, setFullSyncLoading] = useState(false);
   const [fullSyncResult, setFullSyncResult] = useState(null);
@@ -101,11 +101,9 @@ const BokunIntegration = () => {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-medium text-terracotta-900 text-sm md:text-base">Auto-Sync Status</h3>
-                    <span className={`px-2 py-0.5 text-xs rounded-tuscan ${
-                      syncStatus.enabled ? 'bg-olive-100 text-olive-800' : 'bg-stone-100 text-stone-600'
-                    }`}>
-                      {syncStatus.enabled ? 'Enabled' : 'Disabled'}
+                    <h3 className="font-medium text-terracotta-900 text-sm md:text-base">Sync Status</h3>
+                    <span className="px-2 py-0.5 text-xs rounded-tuscan bg-olive-100 text-olive-800">
+                      Server-side
                     </span>
                   </div>
                   <p className="text-xs md:text-sm text-terracotta-700">
@@ -113,13 +111,13 @@ const BokunIntegration = () => {
                       ? 'Syncing bookings...'
                       : fullSyncLoading
                         ? 'Running full sync (1 year)...'
-                        : syncStatus.lastSyncTime
-                          ? `Last sync: ${format(new Date(syncStatus.lastSyncTime), 'MMM d, HH:mm')}`
+                        : lastSync
+                          ? `Last sync: ${format(new Date(lastSync), 'MMM d, HH:mm')}`
                           : 'No sync performed yet'
                     }
-                    {syncStatus.enabled && !syncStatus.syncInProgress && !fullSyncLoading && (
+                    {!syncStatus.syncInProgress && !fullSyncLoading && (
                       <span className="hidden md:inline ml-2 text-terracotta-600">
-                        • Auto-sync every {syncStatus.intervalMinutes} minutes
+                        • Syncing runs on the server every 15 min
                       </span>
                     )}
                   </p>
@@ -239,19 +237,18 @@ const BokunIntegration = () => {
                 <li>• Authentication: HMAC-SHA1</li>
                 <li>• Vendor ID: 96929</li>
                 <li>• Rate Limit: 400 requests/minute</li>
-                <li>• Auto-Sync: {syncStatus?.enabled ? 'Enabled' : 'Disabled'}</li>
+                <li>• Auto-Sync: on the server (cron every 15 min + Bokun webhook)</li>
               </ul>
             </div>
 
             <div>
               <h4 className="font-medium text-stone-900 mb-2">Sync Features</h4>
               <ul className="space-y-2 text-sm text-stone-600">
-                <li>• Automatic sync on app startup</li>
-                <li>• Background sync every {syncStatus?.intervalMinutes || 15} minutes</li>
+                <li>• Syncing runs on the server every 15 min</li>
                 <li>• Regular sync: {syncInfo?.default_sync_days || 120} days ahead (4 months)</li>
                 <li>• Full sync: {syncInfo?.full_sync_days || 365} days ahead (1 year)</li>
-                <li>• Smart sync when app regains focus</li>
-                <li>• Real-time notifications for new bookings</li>
+                <li>• Bokun webhook syncs changed bookings right away</li>
+                <li>• "Sync Now" for an immediate manual sync (admin)</li>
               </ul>
             </div>
           </div>
@@ -260,11 +257,10 @@ const BokunIntegration = () => {
             <div className="flex items-start gap-3">
               <FiCheck className="w-5 h-5 text-olive-600 mt-0.5" />
               <div>
-                <h4 className="font-medium text-olive-900">Email-Style Auto-Synchronization</h4>
+                <h4 className="font-medium text-olive-900">Server-Side Synchronization</h4>
                 <p className="text-sm text-olive-700 mt-1">
-                  The system now works like modern email applications - automatically checking for new bookings
-                  in the background, syncing on app startup, and showing notifications for new arrivals.
-                  You'll always have the latest booking information without manual intervention.
+                  Syncing runs on the server every 15 min, and Bokun notifies the system when a booking changes.
+                  The app itself never starts a sync in the background - use "Sync Now" when you need one immediately.
                 </p>
               </div>
             </div>

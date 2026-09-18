@@ -5,32 +5,17 @@ import { notifyForbidden } from './sessionExpiry';
 import { isSyncDisabledResponse } from '../utils/bokunConfig';
 
 class BokunAutoSyncService {
+  // Step 4.0: the app never starts a Bokun sync on its own. The server cron syncs
+  // every 15 minutes and the webhook covers changes; this service only runs the
+  // manual "Sync now" (admin) and tells listeners what happened.
   constructor() {
-    this.syncInterval = null;
     this.lastSyncTime = null;
-    // Step 1.2: when the server answers sync_disabled, lastSync must stay untouched but
-    // focus/visibility must not re-attempt every few seconds: the attempt time is throttled.
-    this.lastAttemptTime = null;
     this.syncInProgress = false;
     this.userRole = null;
     this.listeners = new Set();
 
-    // Auto-sync configuration
-    this.config = {
-      enabled: true,
-      intervalMinutes: 15, // Sync every 15 minutes like most email apps
-      onStartupSync: true, // Sync when app loads
-      onFocusSync: true,   // Sync when app gets focus
-    };
-
     // Load last sync time from localStorage
     this.lastSyncTime = localStorage.getItem('bokun_last_sync');
-
-    // Listen for app focus events (like email apps do)
-    if (typeof window !== 'undefined') {
-      window.addEventListener('focus', this.onAppFocus.bind(this));
-      window.addEventListener('visibilitychange', this.onVisibilityChange.bind(this));
-    }
   }
 
   // Step 1.1: only admins may sync (the API answers 403 otherwise). The stored
@@ -46,74 +31,9 @@ class BokunAutoSyncService {
     return (stored || this.userRole) === 'admin';
   }
 
-  // Initialize auto-sync when user logs in
+  // Remember the role verified at login (fallback for isAdmin()). Starts nothing.
   initialize(userRole) {
     this.userRole = userRole;
-    if (userRole !== 'admin') {
-      this.stop(); // Only admins can sync
-      return;
-    }
-
-    console.log('Initializing Bokun Auto-Sync Service');
-
-    // Perform initial sync if enabled AND last sync was > 15 minutes ago
-    if (this.config.onStartupSync && this.shouldSyncOnFocus()) {
-      setTimeout(() => {
-        this.performSync('startup');
-      }, 2000); // Delay to let the app fully load
-    } else if (this.config.onStartupSync) {
-      console.log('Skipping startup sync - last sync was less than 15 minutes ago');
-    }
-
-    // Start periodic sync
-    this.startPeriodicSync();
-  }
-
-  // Start periodic background sync
-  startPeriodicSync() {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-    }
-
-    if (this.config.enabled && this.isAdmin()) {
-      this.syncInterval = setInterval(() => {
-        this.performSync('periodic');
-      }, this.config.intervalMinutes * 60 * 1000);
-
-      console.log(`Scheduled Bokun sync every ${this.config.intervalMinutes} minutes`);
-    }
-  }
-
-  // Handle app getting focus (like checking email when you open the app)
-  onAppFocus() {
-    if (this.isAdmin() && this.config.onFocusSync && this.shouldSyncOnFocus()) {
-      setTimeout(() => {
-        this.performSync('focus');
-      }, 1000);
-    }
-  }
-
-  // Handle app visibility change
-  onVisibilityChange() {
-    if (!document.hidden && this.isAdmin() && this.config.onFocusSync && this.shouldSyncOnFocus()) {
-      setTimeout(() => {
-        this.performSync('visibility');
-      }, 1000);
-    }
-  }
-
-  // Check if we should sync on focus (avoid too frequent syncs)
-  // Uses 15-minute interval as specified in requirements
-  shouldSyncOnFocus() {
-    const reference = this.lastAttemptTime || this.lastSyncTime;
-    if (!reference) return true;
-
-    const lastSync = new Date(reference);
-    const now = new Date();
-    const minutesSinceLastSync = (now - lastSync) / (1000 * 60);
-
-    // Only sync if last sync was more than 15 minutes ago (as per requirements)
-    return minutesSinceLastSync >= 15;
   }
 
   // Perform the actual sync. Resolves to true only when a sync really completed
@@ -125,8 +45,8 @@ class BokunAutoSyncService {
     }
 
     if (!this.isAdmin()) {
-      // Viewer: no request, no error, lastSync untouched. Background triggers skip
-      // silently; an explicit click on "Sync now" gets the permission toast.
+      // Viewer: no request, no error, lastSync untouched; an explicit click on
+      // "Sync now" gets the permission toast.
       if (trigger === 'manual') notifyForbidden();
       this.notifyListeners({ type: 'sync_skipped', trigger, reason: 'not_allowed' });
       return false;
@@ -144,7 +64,6 @@ class BokunAutoSyncService {
       }
 
       console.log(`Starting Bokun sync (trigger: ${trigger})`);
-      this.lastAttemptTime = new Date().toISOString();
       this.notifyListeners({ type: 'sync_started', trigger });
 
       // Step 1.2: no config round-trip. action=sync answers {success:false, error:'sync_disabled'}
@@ -268,33 +187,11 @@ class BokunAutoSyncService {
     });
   }
 
-  // Stop auto-sync
-  stop() {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-      this.syncInterval = null;
-      console.log('Bokun auto-sync stopped');
-    }
-  }
-
-  // Update configuration
-  updateConfig(newConfig) {
-    this.config = { ...this.config, ...newConfig };
-
-    if (this.config.enabled) {
-      this.startPeriodicSync();
-    } else {
-      this.stop();
-    }
-  }
-
   // Get sync status
   getStatus() {
     return {
-      enabled: this.config.enabled,
       lastSyncTime: this.lastSyncTime,
-      syncInProgress: this.syncInProgress,
-      intervalMinutes: this.config.intervalMinutes
+      syncInProgress: this.syncInProgress
     };
   }
 

@@ -771,7 +771,29 @@ function getSyncHistory($limit = 20) {
 
 // Get sync configuration info
 function getSyncInfo() {
+    global $conn;
+
+    // Step 4.0: the app's "last sync" label follows the server (cron / webhook / manual),
+    // not the browser. Latest completed run; timestamps are UTC (DB session is +00:00).
+    $lastSync = null;
+    try {
+        ensureSyncLogsTable($conn);
+        $res = $conn->query("SELECT sync_type, triggered_by, DATE_FORMAT(COALESCE(completed_at, created_at), '%Y-%m-%dT%H:%i:%sZ') AS completed_at
+                             FROM sync_logs WHERE status = 'completed' ORDER BY id DESC LIMIT 1");
+        if ($res && ($row = $res->fetch_assoc())) {
+            $lastSync = [
+                'completed_at' => $row['completed_at'],
+                'sync_type' => $row['sync_type'],
+                // webhook rows carry a booking id here - not needed by the label
+                'triggered_by' => $row['sync_type'] === 'webhook' ? 'webhook' : $row['triggered_by']
+            ];
+        }
+    } catch (Throwable $e) {
+        error_log("getSyncInfo: last_sync lookup failed: " . $e->getMessage());
+    }
+
     return [
+        'last_sync' => $lastSync,
         'environment' => ENVIRONMENT,
         'sync_enabled_env' => bokunSyncEnabledByEnv(),
         'default_sync_days' => DEFAULT_SYNC_DAYS,
