@@ -269,3 +269,34 @@ if (!function_exists('bokunCustomerPrice')) {
         return $none;
     }
 }
+if (!function_exists('bokunIsRescheduled')) {
+    /**
+     * Step 3.2: a clock time as 'HH:MM', whatever shape it arrives in.
+     * MySQL TIME gives '10:00:00', Bokun's startTimeStr gives '10:00' (sometimes '9:30').
+     * Returns null when there is no usable time.
+     */
+    function bokunNormalizeTime($time) {
+        if ($time === null) return null;
+        if (!preg_match('/^\s*(\d{1,2}):(\d{2})/', (string) $time, $m)) return null;
+        return sprintf('%02d:%02d', (int) $m[1], (int) $m[2]);
+    }
+
+    /** Step 3.2: a date as 'YYYY-MM-DD' (drops any time part). Null when unusable. */
+    function bokunNormalizeDate($date) {
+        if ($date === null) return null;
+        return preg_match('/^\s*(\d{4}-\d{2}-\d{2})/', (string) $date, $m) ? $m[1] : null;
+    }
+
+    /**
+     * Step 3.2: did the departure really move? Compares NORMALISED values, so
+     * '10:00:00' vs '10:00' is NOT a reschedule and '10:00' vs '14:30' is.
+     * A side that cannot be parsed never counts as a change (no false flags). Pure - no DB.
+     */
+    function bokunIsRescheduled($oldDate, $oldTime, $newDate, $newTime) {
+        $od = bokunNormalizeDate($oldDate); $nd = bokunNormalizeDate($newDate);
+        $ot = bokunNormalizeTime($oldTime); $nt = bokunNormalizeTime($newTime);
+        $dateChanged = ($od !== null && $nd !== null && $od !== $nd);
+        $timeChanged = ($ot !== null && $nt !== null && $ot !== $nt);
+        return $dateChanged || $timeChanged;
+    }
+}
