@@ -29,9 +29,7 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
   beforeEach(() => {
     events = [];
     axios.get.mockReset();
-    bokunAutoSync.stop();
     bokunAutoSync.lastSyncTime = null;
-    bokunAutoSync.lastAttemptTime = null;
     bokunAutoSync.syncInProgress = false;
     bokunAutoSync.userRole = null;
     bokunAutoSync.listeners.clear();
@@ -47,7 +45,6 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
     expect(result).toBe(false);
     expect(axios.get).not.toHaveBeenCalled();
     expect(bokunAutoSync.lastSyncTime).toBeNull();
-    expect(bokunAutoSync.syncInterval).toBeNull();
     expect(events).toEqual([{ type: 'sync_skipped', trigger: 'periodic', reason: 'not_allowed' }]);
     expect(notifyForbidden).not.toHaveBeenCalled();
   });
@@ -90,9 +87,6 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
     expect(bokunAutoSync.lastSyncTime).toBeNull();
     expect(events.map((e) => e.type)).toEqual(['sync_started', 'sync_skipped']);
     expect(events[1].reason).toBe('sync_disabled');
-    // the attempt is remembered so focus/visibility do not re-fire within 15 minutes
-    expect(bokunAutoSync.lastAttemptTime).not.toBeNull();
-    expect(bokunAutoSync.shouldSyncOnFocus()).toBe(false);
   });
 
   it('403 from the API is "not allowed": no failure event, lastSync untouched', async () => {
@@ -118,5 +112,59 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
 
     expect(result).toBe(false);
     expect(events.map((e) => e.type)).toEqual(['sync_started', 'sync_failed']);
+  });
+});
+
+// Step 4.0: the app never starts a Bokun sync on its own
+describe('bokunAutoSync has no automatic triggers (step 4.0)', () => {
+  beforeEach(() => {
+    axios.get.mockReset();
+    bokunAutoSync.syncInProgress = false;
+    setStorage({ token: 't', userRole: 'admin' });
+  });
+
+  it('initialize(admin) starts no sync, no timer', () => {
+    vi.useFakeTimers();
+    try {
+      bokunAutoSync.initialize('admin');
+      vi.advanceTimersByTime(60 * 60 * 1000); // one hour
+      expect(axios.get).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('window focus and visibilitychange start no sync', () => {
+    vi.useFakeTimers();
+    try {
+      bokunAutoSync.initialize('admin');
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(5000);
+      expect(axios.get).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the old automatic entry points are gone', () => {
+    for (const name of ['startPeriodicSync', 'onAppFocus', 'onVisibilityChange', 'shouldSyncOnFocus', 'updateConfig', 'stop']) {
+      expect(bokunAutoSync[name]).toBeUndefined();
+    }
+  });
+
+  it('syncNow() still calls action=sync as a manual sync', async () => {
+    axios.get.mockResolvedValueOnce({ data: { success: true, synced_count: 0, total_bookings: 0 } });
+
+    const result = await bokunAutoSync.syncNow();
+
+    expect(result).toBe(true);
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    const url = axios.get.mock.calls[0][0];
+    expect(url).toContain('bokun_sync.php?action=sync');
+    expect(url).toContain('type=manual');
+    expect(url).toContain('triggered_by=manual');
   });
 });
