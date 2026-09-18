@@ -552,9 +552,11 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         // Update last sync timestamp
         $conn->query("UPDATE bokun_config SET last_sync = NOW() ORDER BY id ASC LIMIT 1");
 
-        // Auto-group tours after sync (only if we synced any bookings)
+        // Auto-group tours after sync: when bookings were synced, and (step 3.3) also when Bokun
+        // legitimately has NO bookings in the window - the only booking of a date may have moved
+        // away, and its now-empty auto group must be cleaned up. Not run when every booking failed.
         $groupingResult = null;
-        if ($createdCount > 0 || $updatedCount > 0) {
+        if ($createdCount > 0 || $updatedCount > 0 || $apiBookingsCount === 0) {
             $groupingResult = autoGroupAfterSync($conn, $startDate, $endDate);
             if ($groupingResult) {
                 error_log("Bokun Sync: Auto-grouped " . ($groupingResult['tours_grouped'] ?? 0) . " tours into " . ($groupingResult['groups_created'] ?? 0) . " groups");
