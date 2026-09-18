@@ -281,6 +281,9 @@ switch ($method) {
         }
 
         // Get all tours with guide names, payment information, and group info (with pagination and filters)
+        // Step 3.1: guide_paid = has the GUIDE been paid for this departure? Read-only, from the payments
+        // table, same rule as Pending Payments (a payment for the tour's current guide) and group-aware
+        // (1 group = 1 payment). tours.paid is NOT used for this.
         $sql = "SELECT t.*, g.name as guide_name,
                        tg.display_name as group_display_name,
                        tg.total_pax as group_total_pax,
@@ -288,7 +291,14 @@ switch ($method) {
                        tg.is_manual_merge as group_is_manual_merge,
                        tg.guide_id as group_guide_id,
                        tg.guide_name as group_guide_name,
-                       pr.product_type as product_type
+                       pr.product_type as product_type,
+                       (t.guide_id IS NOT NULL AND (
+                            EXISTS (SELECT 1 FROM payments p WHERE p.tour_id = t.id AND p.guide_id = t.guide_id)
+                            OR (t.group_id IS NOT NULL AND EXISTS (
+                                SELECT 1 FROM payments p2
+                                JOIN tours t2 ON t2.id = p2.tour_id
+                                WHERE t2.group_id = t.group_id AND p2.guide_id = t.guide_id))
+                       )) as guide_paid
                 FROM tours t
                 LEFT JOIN guides g ON t.guide_id = g.id
                 LEFT JOIN tour_groups tg ON t.group_id = tg.id
@@ -317,6 +327,12 @@ switch ($method) {
 
                 // Convert cancelled to boolean for frontend
                 $row['cancelled'] = isset($row['cancelled']) && $row['cancelled'] == 1 ? true : false;
+
+                // Step 3.1: guide_paid (computed above) as a boolean; Bokun's customer price as a number
+                $row['guide_paid'] = !empty($row['guide_paid']);
+                if (array_key_exists('bokun_total_price', $row)) {
+                    $row['bokun_total_price'] = $row['bokun_total_price'] !== null ? floatval($row['bokun_total_price']) : null;
+                }
 
                 // Convert rescheduled to boolean for frontend
                 $row['rescheduled'] = isset($row['rescheduled']) && $row['rescheduled'] == 1 ? true : false;
@@ -375,7 +391,8 @@ switch ($method) {
                               'group_id', 'group_info', 'participants', 'total_participants',
                               'pax_adults', 'pax_children', 'pax_infants', 'participant_names',
                               'customer_name', 'language', 'booking_channel', 'external_source',
-                              'cancelled', 'paid', 'payment_status', 'rescheduled', 'original_date',
+                              'cancelled', 'paid', 'payment_status', 'guide_paid', 'bokun_total_price', 'bokun_currency',
+                              'rescheduled', 'original_date',
                               'original_time', 'needs_guide_assignment', 'notes', 'last_sync'] as $key) {
                         $light[$key] = array_key_exists($key, $row) ? $row[$key] : null;
                     }

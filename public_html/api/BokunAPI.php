@@ -1,5 +1,6 @@
 <?php
 require_once 'HttpClient.php';
+require_once __DIR__ . '/tour_classification.php'; // step 3.1: bokunCustomerPrice()
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -471,6 +472,9 @@ class BokunAPI {
             $totalAmount = floatval($booking['paidAmount']);
         }
 
+        // Step 3.1: what the customer paid (retail) -> tours.bokun_total_price / bokun_currency
+        $customerPrice = bokunCustomerPrice($booking);
+
         // Map payment status - IMPORTANT: This is for GUIDE payment, not customer payment
         // All Bokun bookings should start as 'unpaid' for guide payment tracking
         // The Bokun paymentStatus (INVOICED/PAID) refers to customer payment to the booking platform,
@@ -594,10 +598,16 @@ class BokunAPI {
             'participants' => $participants,
             'participant_names' => $this->parseParticipantNames($booking),
             'booking_channel' => $bookingChannel,
+            // Step 3.1: these four are LOCAL state (guide payment tracking). The sync writes them
+            // only when it INSERTs a brand-new booking and never touches them again; `paid` always
+            // starts at 0 - what the customer paid Bokun says nothing about paying the guide.
             'total_amount_paid' => $totalAmount,
             'expected_amount' => $totalAmount,
             'payment_status' => $paymentStatus,
-            'paid' => $totalAmount > 0 ? 1 : 0,
+            'paid' => 0,
+            // Step 3.1: Bokun's customer price lives in its own columns (INSERT and UPDATE).
+            'bokun_total_price' => $customerPrice['price'],
+            'bokun_currency' => $customerPrice['currency'],
             'external_source' => 'bokun',
             'needs_guide_assignment' => 1,
             'guide_id' => null, // Will be assigned later

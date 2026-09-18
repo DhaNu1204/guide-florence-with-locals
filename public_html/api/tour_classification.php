@@ -214,3 +214,58 @@ if (!function_exists('deriveListFields')) {
         return ['total_participants' => $total, 'start_time_str' => $startTimeStr, 'language' => $lang];
     }
 }
+
+if (!function_exists('bokunCustomerPrice')) {
+    /**
+     * Step 3.1: what the CUSTOMER paid for a Bokun booking, and in which currency.
+     * This is Bokun's retail amount - it has nothing to do with paying the guide, and it
+     * is stored in tours.bokun_total_price / tours.bokun_currency, never in tours.paid,
+     * payment_status, total_amount_paid or expected_amount (those are local state).
+     *
+     * Same source order as the retail figure in pnl.php (pnlExtractRevenue): the booking
+     * itself, then productBookings[0], then activityBookings[0]; resellerInvoice.total first,
+     * then customerInvoice.total, then a positive totalPrice. The currency comes from the
+     * same object as the amount (a booking whose top-level currency is USD still carries an
+     * EUR invoice). Pure - no DB.
+     *
+     * @param mixed $bokunData decoded array or JSON string (may be null)
+     * @return array ['price' => float|null, 'currency' => string|null]
+     */
+    function bokunCustomerPrice($bokunData) {
+        if (is_string($bokunData)) {
+            $bokunData = json_decode($bokunData, true);
+        }
+        $none = ['price' => null, 'currency' => null];
+        if (!is_array($bokunData)) {
+            return $none;
+        }
+
+        $candidates = [$bokunData];
+        foreach (['productBookings', 'activityBookings'] as $k) {
+            if (isset($bokunData[$k][0]) && is_array($bokunData[$k][0])) {
+                $candidates[] = $bokunData[$k][0];
+            }
+        }
+        $rootCurrency = (isset($bokunData['currency']) && is_string($bokunData['currency'])) ? $bokunData['currency'] : null;
+        $clean = function ($c) {
+            $c = strtoupper(trim((string) $c));
+            return preg_match('/^[A-Z]{3}$/', $c) ? $c : null;
+        };
+
+        foreach (['resellerInvoice', 'customerInvoice'] as $invoiceKey) {
+            foreach ($candidates as $c) {
+                if (isset($c[$invoiceKey]) && is_array($c[$invoiceKey]) && isset($c[$invoiceKey]['total']) && is_numeric($c[$invoiceKey]['total'])) {
+                    $inv = $c[$invoiceKey];
+                    $currency = $clean($inv['currency'] ?? '') ?: ($clean($c['currency'] ?? '') ?: $clean($rootCurrency));
+                    return ['price' => round((float) $inv['total'], 2), 'currency' => $currency];
+                }
+            }
+        }
+        foreach ($candidates as $c) {
+            if (isset($c['totalPrice']) && is_numeric($c['totalPrice']) && (float) $c['totalPrice'] > 0) {
+                return ['price' => round((float) $c['totalPrice'], 2), 'currency' => $clean($c['currency'] ?? '') ?: $clean($rootCurrency)];
+            }
+        }
+        return $none;
+    }
+}
