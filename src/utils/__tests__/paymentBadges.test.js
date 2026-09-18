@@ -45,6 +45,7 @@ describe('formatCustomerPrice (bokun_total_price / bokun_currency)', () => {
     expect(formatCustomerPrice({ bokun_total_price: null })).toBeNull();
     expect(formatCustomerPrice({})).toBeNull();
     expect(formatCustomerPrice({ bokun_total_price: 'abc' })).toBeNull();
+    expect(formatCustomerPrice({ bokun_total_price: 0, bokun_currency: 'EUR' })).toBeNull(); // cancelled booking
     expect(formatCustomerPrice(null)).toBeNull();
   });
 

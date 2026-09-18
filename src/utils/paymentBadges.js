@@ -27,13 +27,14 @@ export const guidePaymentState = (tour) => {
 
 const SYMBOLS = { EUR: '€', USD: '$', GBP: '£' };
 
-// "€116.46" / "$95.00" / "120.00 CHF"; null when Bokun gave no amount
+// "€116.46" / "$95.00" / "120.00 CHF"; null when Bokun gave no amount (or 0, i.e. cancelled)
 export const formatCustomerPrice = (tour) => {
   if (!tour || tour.bokun_total_price === null || tour.bokun_total_price === undefined || tour.bokun_total_price === '') {
     return null;
   }
   const amount = Number(tour.bokun_total_price);
-  if (!Number.isFinite(amount)) return null;
+  // 0 = Bokun zeroed the invoice (cancelled booking) - nothing worth showing
+  if (!Number.isFinite(amount) || amount <= 0) return null;
   const currency = (tour.bokun_currency || 'EUR').toUpperCase();
   const symbol = SYMBOLS[currency];
   return symbol ? `${symbol}${amount.toFixed(2)}` : `${amount.toFixed(2)} ${currency}`;
