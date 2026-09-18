@@ -87,6 +87,17 @@ check('rendered body matches the approved template',
 $varsPipe = buildDigestVariables('Anna', '2026-09-22', $two, ' | ');
 check('separator is configurable', strpos($varsPipe['3'], ' | ') !== false && strpos($varsPipe['3'], "\n") === false);
 
+// --- the 21:30 Europe/Rome cron window (the server clock is UTC) ---------------------------
+$rome = new DateTimeZone('Europe/Rome');
+$at = function ($utc) use ($rome) { return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))->setTimezone($rome); };
+// summer (CEST, UTC+2): the 19:30 UTC run is 21:30 Rome and sends; 20:30 UTC is 22:30 Rome
+check('summer 19:30 UTC (= 21:30 Rome) sends', digestIsSendWindow($at('2026-07-01 19:30:00')) === true, $at('2026-07-01 19:30:00')->format('H:i'));
+check('summer 20:30 UTC (= 22:30 Rome) does not', digestIsSendWindow($at('2026-07-01 20:30:00')) === false, $at('2026-07-01 20:30:00')->format('H:i'));
+// winter (CET, UTC+1): the other way round
+check('winter 19:30 UTC (= 20:30 Rome) does not', digestIsSendWindow($at('2026-12-01 19:30:00')) === false, $at('2026-12-01 19:30:00')->format('H:i'));
+check('winter 20:30 UTC (= 21:30 Rome) sends', digestIsSendWindow($at('2026-12-01 20:30:00')) === true, $at('2026-12-01 20:30:00')->format('H:i'));
+check('midday never sends', digestIsSendWindow($at('2026-07-01 10:00:00')) === false);
+
 // --- masking ------------------------------------------------------------------------------
 check('phone masked to the last 4 digits', maskPhone('+39 333 1234567') === '***4567', maskPhone('+39 333 1234567'));
 check('empty phone', maskPhone('') === '(no number)');

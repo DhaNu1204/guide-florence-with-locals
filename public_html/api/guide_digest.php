@@ -49,6 +49,21 @@ function digestItalianDate($date) {
     return $days[$d->format('D')] . ' ' . (int) $d->format('j') . ' ' . $months[(int) $d->format('n')];
 }
 
+/**
+ * Is this cron run the 21:30 Europe/Rome slot? Pure.
+ *
+ * The server (and so hPanel cron) runs in UTC, but the digest must go out at 21:30 Rome all
+ * year - and Rome is UTC+2 in summer, UTC+1 in winter. The cron therefore fires TWICE,
+ * 19:30 and 20:30 UTC, and this guard lets exactly one of them through:
+ *   summer: 19:30 UTC = 21:30 Rome -> send;  20:30 UTC = 22:30 Rome -> outside
+ *   winter: 19:30 UTC = 20:30 Rome -> outside; 20:30 UTC = 21:30 Rome -> send
+ * (Even if both ever passed, the job is idempotent per (guide, date) and would not re-send.)
+ */
+function digestIsSendWindow($romeNow) {
+    $minutes = ((int) $romeNow->format('G')) * 60 + (int) $romeNow->format('i');
+    return $minutes >= 21 * 60 && $minutes < 22 * 60 + 30; // [21:00, 22:30)
+}
+
 /** First name for {{1}} ("Ciao {{1}}, ..."). Pure. */
 function digestFirstName($fullName) {
     $n = trim((string) $fullName);

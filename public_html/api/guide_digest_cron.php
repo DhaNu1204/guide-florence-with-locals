@@ -14,6 +14,11 @@
  *   --to=+39...         send to this number only (the approval test); implies one guide
  *   --guide=<id>        restrict to one guide (used together with --to)
  *   --dry               force a dry run for this invocation (no Twilio call at all)
+ *   --any-time          skip the 21:30 Europe/Rome window guard (manual runs)
+ *
+ * The server clock is UTC, so the cron fires at 19:30 AND 20:30 UTC and the window guard
+ * (digestIsSendWindow) lets through the one that is 21:30 in Rome - correct in both
+ * summer and winter time. See the cron line in docs/IMPLEMENTATION_PLAN.md step 3.10.
  */
 
 if (php_sapi_name() !== 'cli') {
@@ -28,6 +33,7 @@ require_once __DIR__ . '/guide_digest.php';
 
 $opts = [];
 $date = null;
+$anyTime = false;
 foreach (array_slice($argv, 1) as $arg) {
     if (preg_match('/^--date=(\d{4}-\d{2}-\d{2})$/', $arg, $m)) {
         $date = $m[1];
@@ -35,6 +41,8 @@ foreach (array_slice($argv, 1) as $arg) {
         $opts['force_to'] = $m[1];
     } elseif (preg_match('/^--guide=(\d+)$/', $arg, $m)) {
         $opts['only_guide_id'] = (int) $m[1];
+    } elseif ($arg === '--any-time') {
+        $anyTime = true;
     } elseif ($arg === '--dry') {
         putenv('TWILIO_DRY_RUN=true');
         $_ENV['TWILIO_DRY_RUN'] = 'true';
@@ -44,6 +52,15 @@ foreach (array_slice($argv, 1) as $arg) {
 if ($date === null) {
     $date = (new DateTimeImmutable('now', new DateTimeZone('Europe/Rome')))
         ->add(new DateInterval('P1D'))->format('Y-m-d');
+}
+
+// Only the run that is 21:30 in Rome actually sends (unless a date/number was given by hand).
+$romeNow = new DateTimeImmutable('now', new DateTimeZone('Europe/Rome'));
+if (!$anyTime && !isset($opts['force_to']) && !digestIsSendWindow($romeNow)) {
+    fwrite(STDOUT, '[' . date('c') . '] guide_digest_cron: outside the 21:30 Europe/Rome window ('
+        . $romeNow->format('H:i') . " Rome) - nothing to do
+");
+    exit(0);
 }
 
 $started = microtime(true);
