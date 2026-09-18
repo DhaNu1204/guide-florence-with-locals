@@ -28,7 +28,7 @@ $guide_id = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
 $period = isset($_GET['period']) ? $_GET['period'] : null;
 $action = isset($_GET['action']) ? $_GET['action'] : null;
 
-try {
+$dispatch = function () use ($conn, $action, $guide_id, $period) {
     if ($action === 'overview') {
         getPaymentOverview($conn);
     } elseif ($action === 'pending_tours') {
@@ -42,10 +42,66 @@ try {
     } else {
         getAllGuidePaymentSummaries($conn);
     }
+};
+
+try {
+    try {
+        $dispatch();
+    } catch (mysqli_sql_exception $e) {
+        // Step 4.1a: the guide_payment_summary view vanished from production once (Sept 2026)
+        // and the Payments page answered 500 for days. If - and only if - the error is
+        // "that view does not exist" (1146), create it once and retry; the view query is the
+        // first statement of the handlers that use it, so nothing has been sent yet.
+        // Every other error is rethrown untouched.
+        if (!isMissingGuidePaymentSummaryView($e)) {
+            throw $e;
+        }
+        error_log("Guide payments: view guide_payment_summary was missing - recreated it (step 4.1a guard)");
+        ensureGuidePaymentSummaryView($conn);
+        $dispatch();
+    }
 } catch (Exception $e) {
     http_response_code(500);
     error_log("Guide payments error: " . $e->getMessage());
     echo json_encode(['error' => 'An internal error occurred']);
+}
+
+/**
+ * Step 4.1a: true only for MySQL/MariaDB error 1146 (table/view doesn't exist) on guide_payment_summary.
+ */
+function isMissingGuidePaymentSummaryView($e) {
+    return $e instanceof mysqli_sql_exception
+        && (int) $e->getCode() === 1146
+        && strpos($e->getMessage(), 'guide_payment_summary') !== false;
+}
+
+/**
+ * Step 4.1a: self-provision the guide_payment_summary view (same idea as the
+ * CREATE TABLE IF NOT EXISTS blocks elsewhere). Definition = the one running on staging =
+ * database/migrations/fix_guide_payment_summary_view.sql. A view only - no table or data change.
+ */
+function ensureGuidePaymentSummaryView($conn) {
+    $conn->query("
+        CREATE OR REPLACE VIEW guide_payment_summary AS
+        SELECT
+            g.id AS guide_id,
+            g.name AS guide_name,
+            g.email AS guide_email,
+            COUNT(DISTINCT t.id) AS total_tours,
+            COUNT(DISTINCT CASE WHEN t.payment_status = 'paid' THEN t.id END) AS paid_tours,
+            COUNT(DISTINCT CASE WHEN t.payment_status = 'unpaid' THEN t.id END) AS unpaid_tours,
+            COUNT(DISTINCT CASE WHEN t.payment_status = 'partial' THEN t.id END) AS partial_tours,
+            COALESCE(SUM(p.amount), 0) AS total_payments_received,
+            COALESCE(SUM(CASE WHEN p.payment_method = 'cash' THEN p.amount ELSE 0 END), 0) AS cash_payments,
+            COALESCE(SUM(CASE WHEN p.payment_method = 'bank_transfer' THEN p.amount ELSE 0 END), 0) AS bank_payments,
+            COUNT(DISTINCT p.id) AS total_payment_transactions,
+            MIN(p.payment_date) AS first_payment_date,
+            MAX(p.payment_date) AS last_payment_date
+        FROM guides g
+        LEFT JOIN tours t ON g.id = t.guide_id
+        LEFT JOIN payments p ON t.id = p.tour_id
+        GROUP BY g.id, g.name, g.email
+    ");
 }
 
 /**
