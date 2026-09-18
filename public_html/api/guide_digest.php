@@ -34,9 +34,10 @@ function digestConfig() {
         'content_sid'           => (string) EnvLoader::get('TWILIO_DIGEST_CONTENT_SID', ''),
         'test_number'           => (string) EnvLoader::get('DIGEST_TEST_NUMBER', ''),
         'dry_run'               => EnvLoader::getBool('TWILIO_DRY_RUN', false),
-        // WhatsApp template parameters may not contain newlines on some Meta accounts;
-        // if the test send is rejected for that reason, set DIGEST_LINE_SEPARATOR=" | ".
-        'line_separator'        => (string) EnvLoader::get('DIGEST_LINE_SEPARATOR', "\n"),
+        // A WhatsApp template parameter may NOT contain a newline - Twilio rejects the send
+        // with error 21656 (proved by the approval test on 2026-09-18). The approved
+        // guide_daily_digest_it sample joins the tour lines with ", ", so that is the default.
+        'line_separator'        => (string) EnvLoader::get('DIGEST_LINE_SEPARATOR', ', '),
     ];
 }
 
@@ -142,7 +143,7 @@ function buildDigestLines(array $departures, $maxChars = 900, $maxTitle = 70) {
 }
 
 /** The three template variables for one guide. Pure. */
-function buildDigestVariables($guideName, $date, array $departures, $separator = "\n") {
+function buildDigestVariables($guideName, $date, array $departures, $separator = ', ') {
     $lines = buildDigestLines($departures);
     return [
         '1' => digestFirstName($guideName),
@@ -369,7 +370,77 @@ function sendGuideDigests($conn, $date, array $opts = []) {
             $stats['failed']++;
         }
     }
+
+    // What Twilio actually did with the messages we just sent (see digestVerifySent).
+    if (!twilioDryRun() && $stats['sent'] > 0) {
+        $check = digestVerifySent($conn, $date, $cfg);
+        $stats['verified'] = $check['checked'];
+        if ($check['downgraded'] > 0) {
+            $stats['sent'] -= $check['downgraded'];
+            $stats['failed'] += $check['downgraded'];
+            $stats['failed_after_send'] = $check['downgraded'];
+        }
+    }
     return $stats;
+}
+
+/**
+ * Twilio answers the create call with 'accepted'/'queued' and decides later, so a row marked
+ * 'sent' can still be a message that never arrived (exactly what error 21656 looked like on
+ * 2026-09-18: HTTP 201, then status 'failed'). Right after a run we re-read every message we
+ * just sent and downgrade the ones Twilio reports as failed/undelivered, so guide_digests
+ * tells the truth. One GET per message (a handful per evening), best effort, never throws.
+ *
+ * @return array{checked:int,downgraded:int}
+ */
+function digestVerifySent($conn, $date, $cfg) {
+    $out = ['checked' => 0, 'downgraded' => 0];
+    try {
+        $stmt = $conn->prepare("SELECT id, twilio_sid FROM guide_digests
+                                 WHERE digest_date = ? AND status = 'sent' AND twilio_sid IS NOT NULL
+                                   AND twilio_sid NOT LIKE 'DRYRUN-%' AND sent_at >= NOW() - INTERVAL 15 MINUTE");
+        $stmt->bind_param('s', $date);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        if (count($rows) === 0) {
+            return $out;
+        }
+        sleep(5); // give Twilio a moment to move past 'accepted'
+        foreach ($rows as $r) {
+            $out['checked']++;
+            $url = 'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode($cfg['account_sid'])
+                 . '/Messages/' . rawurlencode($r['twilio_sid']) . '.json';
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPAUTH       => CURLAUTH_BASIC,
+                CURLOPT_USERPWD        => $cfg['account_sid'] . ':' . $cfg['auth_token'],
+                CURLOPT_TIMEOUT        => 15,
+                CURLOPT_SSL_VERIFYPEER => true,
+            ]);
+            $body = curl_exec($ch);
+            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code !== 200) {
+                continue;
+            }
+            $j = json_decode((string) $body, true);
+            $st = (string) ($j['status'] ?? '');
+            if ($st === 'failed' || $st === 'undelivered') {
+                $err = 'Twilio ' . $st . ' (error_code ' . var_export($j['error_code'] ?? null, true) . ')';
+                $upd = $conn->prepare("UPDATE guide_digests SET status = 'failed', error = ?, updated_at = NOW() WHERE id = ?");
+                $upd->bind_param('si', $err, $r['id']);
+                $upd->execute();
+                $upd->close();
+                $out['downgraded']++;
+                error_log('guide digest: message ' . $r['twilio_sid'] . ' ' . $err);
+            }
+        }
+    } catch (\Throwable $e) {
+        error_log('digestVerifySent error: ' . $e->getMessage());
+    }
+    return $out;
 }
 
 /** Upsert one (guide, date) row; 'sent' also stamps sent_at. Never throws. */
