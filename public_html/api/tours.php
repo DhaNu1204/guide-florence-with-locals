@@ -323,6 +323,12 @@ switch ($method) {
                 ];
             }
             $reportStmt->close();
+            // Step 5.2: count_only=true -> just the number (the Tours page banner). Same query, same
+            // rows - the banner and the report can never disagree.
+            if (isset($_GET['count_only']) && $_GET['count_only'] === 'true') {
+                echo json_encode(['success' => true, 'data' => ['total' => count($departures)]]);
+                break;
+            }
             echo json_encode(['success' => true, 'data' => ['total' => count($departures), 'departures' => $departures]]);
             break;
         }

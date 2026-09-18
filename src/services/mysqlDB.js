@@ -388,8 +388,15 @@ export const getUnassignedReport = async (filters = {}) => {
   }
   if (filters.upcoming) url += `&upcoming=true`;
   if (filters.past) url += `&past=true`;
+  if (filters.count_only) url += `&count_only=true`;
   const response = await axios.get(addCacheBuster(url));
   return response.data && response.data.data ? response.data.data : { total: 0, departures: [] };
+};
+
+// Step 5.2: the Tours page banner number - the report's own total, nothing computed in the browser.
+export const getUnassignedCount = async (filters = {}) => {
+  const data = await getUnassignedReport({ ...filters, count_only: true });
+  return Number(data.total) || 0;
 };
 
 export const addTour = async (tourData) => {
@@ -679,6 +686,27 @@ export const tourGroupsAPI = {
     return response.data;
   },
 
+  // Step 5.2: EVERY group for the given filters. tour-groups.php pages at 100 max; this walks the
+  // pages until the server says there is no next one and then checks that what arrived covers the
+  // server's total - an incomplete group list would make grouped bookings render as loose rows.
+  async listAll(filters = {}) {
+    const PER_PAGE = 100;
+    const MAX_PAGES = 50;
+    const all = [];
+    let total = 0;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const res = await this.list({ ...filters, page, per_page: PER_PAGE });
+      const rows = Array.isArray(res?.data) ? res.data : [];
+      all.push(...rows);
+      total = Number(res?.pagination?.total ?? all.length);
+      if (!res?.pagination?.has_next || rows.length === 0) break;
+    }
+    if (all.length < total) {
+      throw new Error(`Tour groups incomplete: received ${all.length} of ${total}`);
+    }
+    return { data: all, pagination: { total, per_page: PER_PAGE, loaded: all.length } };
+  },
+
   async autoGroup(data = {}) {
     const response = await axios.post(`${API_BASE_URL}/tour-groups.php?action=auto-group`, data);
     clearTourCache();
@@ -753,6 +781,7 @@ const mysqlDB = {
   fetchTours: getTours,
   getTourById,
   getUnassignedReport,
+  getUnassignedCount,
   addTour,
   deleteTour,
   updateTour,
