@@ -61,6 +61,37 @@ describe('MySQL Database Service', () => {
     vi.restoreAllMocks();
   });
 
+  // Step 4.2: light list view + single full row for the details modal
+  describe('getTours view option / getTourById', () => {
+    it('getTours with view list sends view=list', async () => {
+      axios.get.mockResolvedValue({ data: { data: [], pagination: {} } });
+
+      await mysqlDBModule.getTours(false, 1, 500, { upcoming: true, view: 'list' });
+
+      const url = axios.get.mock.calls[0][0];
+      expect(url).toContain('tours.php?');
+      expect(url).toContain('upcoming=true');
+      expect(url).toContain('view=list');
+    });
+
+    it('getTours without a view does not send view=', async () => {
+      axios.get.mockResolvedValue({ data: { data: [], pagination: {} } });
+
+      await mysqlDBModule.getTours(false, 1, 500, { upcoming: true });
+
+      expect(axios.get.mock.calls[0][0]).not.toContain('view=');
+    });
+
+    it('getTourById calls the single-row endpoint and unwraps data', async () => {
+      axios.get.mockResolvedValue({ data: { success: true, data: { id: 42, bokun_data: '{}' } } });
+
+      const row = await mysqlDBModule.getTourById(42);
+
+      expect(axios.get.mock.calls[0][0]).toContain('/tours.php/42?view=full');
+      expect(row).toEqual({ id: 42, bokun_data: '{}' });
+    });
+  });
+
   describe('getGuides', () => {
     it('returns guides in correct format', async () => {
       const mockGuides = {

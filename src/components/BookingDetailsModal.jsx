@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { getTourById } from '../services/mysqlDB';
 import { FiX, FiCalendar, FiClock, FiUser, FiUsers, FiTag, FiMail, FiPhone, FiFileText, FiDollarSign, FiCheckCircle, FiSave, FiCopy, FiCheck } from 'react-icons/fi';
 
 // Helper function to extract booking details from bokun_data
@@ -216,6 +217,7 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [details, setDetails] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   // Swipe to close state
@@ -231,14 +233,40 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Step 4.2: list rows no longer carry bokun_data — fetch the full record on open,
+  // show a spinner meanwhile, and render every section from the full row.
+  // If the fetch fails (weak signal) fall back to the list row with a notice.
   useEffect(() => {
-    if (isOpen && ticket) {
-      const extractedDetails = extractBookingDetails(ticket);
+    if (!isOpen || !ticket) return undefined;
+    let cancelled = false;
+    setDetails(null);
+    setLoadFailed(false);
+    setTouchDelta(0); // Reset swipe state
+
+    const show = (row) => {
+      const extractedDetails = extractBookingDetails(row);
       setDetails(extractedDetails);
       setNotes(extractedDetails.notes);
-      setTouchDelta(0); // Reset swipe state
-    }
-  }, [isOpen, ticket]);
+    };
+
+    getTourById(ticket.id)
+      .then((fullRow) => {
+        if (cancelled) return;
+        if (fullRow) {
+          show(fullRow);
+        } else {
+          setLoadFailed(true);
+          show(ticket);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadFailed(true);
+        show(ticket);
+      });
+
+    return () => { cancelled = true; };
+  }, [isOpen, ticket?.id]);
 
   // Handle ESC key to close modal
   useEffect(() => {
@@ -299,7 +327,7 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
     }
   };
 
-  if (!isOpen || !details) return null;
+  if (!isOpen) return null;
 
   const formatDate = (dateStr) => {
     try {
@@ -389,7 +417,17 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
               : 'p-4 max-h-[calc(100vh-160px)]'
             }
           `}>
+            {!details ? (
+              <div className="flex items-center justify-center py-10" role="status" aria-label="Loading booking details">
+                <div className="w-8 h-8 border-4 border-terracotta-200 border-t-terracotta-600 rounded-full animate-spin" />
+              </div>
+            ) : (
             <div className={isMobile ? 'space-y-3' : 'space-y-4'}>
+              {loadFailed && (
+                <p className="text-sm text-gold-800 bg-gold-50 border border-gold-200 rounded-tuscan-lg px-3 py-2">
+                  Could not load the full booking details — showing basic info only.
+                </p>
+              )}
               {/* Tour Information */}
               <section>
                 <div className="flex items-center mb-2">
@@ -533,6 +571,7 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
                 </div>
               </section>
             </div>
+            )}
           </div>
 
           {/* Footer */}

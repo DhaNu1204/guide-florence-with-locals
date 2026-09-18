@@ -251,6 +251,18 @@ switch ($method) {
             ? "WHERE " . implode(" AND ", $whereConditions)
             : "";
 
+        // Step 4.2: response shape. Without ?view= nothing changes.
+        //   view=list           -> light rows for the Tours list / Dashboard (no bokun_data)
+        //   /{id}?view=full     -> one full row (incl. bokun_data) for the details modal
+        $view = isset($_GET['view']) ? $_GET['view'] : null;
+        $listView = ($view === 'list');
+        $singleFull = ($tourId && $view === 'full');
+        if ($singleFull) {
+            $whereClause = "WHERE t.id = ?";
+            $whereParams = [intval($tourId)];
+            $whereTypes = "i";
+        }
+
         // Get total count for pagination metadata (with filters)
         $countSql = "SELECT COUNT(*) as total FROM tours t LEFT JOIN products pr ON t.product_id = pr.bokun_product_id $whereClause";
         if (count($whereParams) > 0) {
@@ -350,7 +362,37 @@ switch ($method) {
                 $row['pax_children'] = $pax['children'];
                 $row['pax_infants'] = $pax['infants'];
 
+                if ($listView) {
+                    // Step 4.2: only what the list renders; everything the browser used to
+                    // parse out of bokun_data is derived here once (deriveListFields()).
+                    $derived = deriveListFields($row['bokun_data'] ?? null, $row['participants'] ?? 0, $row['language'] ?? null, $row['title'] ?? '');
+                    $row['language'] = $derived['language'];
+                    $row['total_participants'] = $derived['total_participants'];
+                    $row['start_time_str'] = $derived['start_time_str'];
+                    $light = [];
+                    foreach (['id', 'external_id', 'bokun_confirmation_code', 'title', 'product_id', 'product_type',
+                              'is_private', 'date', 'time', 'start_time_str', 'guide_id', 'guide_name',
+                              'group_id', 'group_info', 'participants', 'total_participants',
+                              'pax_adults', 'pax_children', 'pax_infants', 'participant_names',
+                              'customer_name', 'language', 'booking_channel', 'external_source',
+                              'cancelled', 'paid', 'payment_status', 'rescheduled', 'original_date',
+                              'original_time', 'needs_guide_assignment', 'notes', 'last_sync'] as $key) {
+                        $light[$key] = array_key_exists($key, $row) ? $row[$key] : null;
+                    }
+                    $row = $light;
+                }
+
                 $tours[] = $row;
+            }
+
+            if ($singleFull) {
+                if (count($tours) === 0) {
+                    header("HTTP/1.1 404 Not Found");
+                    echo json_encode(['success' => false, 'error' => 'Tour not found']);
+                } else {
+                    echo json_encode(['success' => true, 'data' => $tours[0]]);
+                }
+                break;
             }
 
             // Calculate pagination metadata

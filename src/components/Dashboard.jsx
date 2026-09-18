@@ -105,9 +105,10 @@ const Dashboard = () => {
     setLoading(true);
     try {
       // Fetch upcoming tours for display lists
-      const upcomingResponse = await getTours(forceRefresh, 1, 500, { upcoming: true });
+      // Step 4.2: light rows (view=list) — the Dashboard reads no bokun_data
+      const upcomingResponse = await getTours(forceRefresh, 1, 500, { upcoming: true, view: 'list' });
       // Fetch all tours for accurate payment stats (past tours need to be counted)
-      const allToursResponse = await getTours(forceRefresh, 1, 500, {});
+      const allToursResponse = await getTours(forceRefresh, 1, 500, { view: 'list' });
       const guidesData = await getAllGuides();
       setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
 
