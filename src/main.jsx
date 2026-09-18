@@ -4,18 +4,20 @@ import * as Sentry from "@sentry/react";
 import App from './App';
 import './index.css';
 
-// Initialize Sentry for error monitoring
+// Initialize Sentry for error monitoring.
+// Step 4.1: Session Replay is NOT part of the production bundle - `Sentry.replayIntegration`
+// is only referenced behind `import.meta.env.PROD`, so Rollup drops Replay (~100 KB) from
+// the shipped chunk. Error capture and (sampled) tracing are unchanged.
 Sentry.init({
   dsn: "https://507cab62a48d15caa7d1a535f389c36c@o4510711031201792.ingest.de.sentry.io/4510766649114704",
-  integrations: [
-    Sentry.browserTracingIntegration(),
-    Sentry.replayIntegration(),
-  ],
-  // Performance Monitoring
-  tracesSampleRate: 1.0, // Capture 100% of transactions (adjust in production)
-  // Session Replay
-  replaysSessionSampleRate: 0.1, // Sample 10% of sessions
-  replaysOnErrorSampleRate: 1.0, // Sample 100% of sessions with errors
+  integrations: import.meta.env.PROD
+    ? [Sentry.browserTracingIntegration()]
+    : [Sentry.browserTracingIntegration(), Sentry.replayIntegration()],
+  // Performance Monitoring (step 4.1: 10% of transactions instead of all of them)
+  tracesSampleRate: 0.1,
+  // Session Replay: off in production (the integration is not even shipped there)
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 0,
   // Send default PII data (IP address, etc.)
   sendDefaultPii: true,
   // Environment tag

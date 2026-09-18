@@ -11,8 +11,12 @@ import {
   FiClipboard,
   FiAlertCircle
 } from 'react-icons/fi';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// Step 4.1: jsPDF is fetched only when "Export PDF" is clicked, so opening this
+// page no longer downloads ~370 KB of PDF library.
+const loadPdfLib = async () => {
+  const [core, table] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  return { jsPDF: core.jsPDF, autoTable: table.default };
+};
 import { getAllGuides, getGuideTourReport } from '../services/mysqlDB';
 import { useToast } from '../components/Toast/ToastProvider';
 
@@ -91,6 +95,7 @@ const GuideReports = () => {
   // existing setError call sites unchanged (setError('') becomes a no-op).
   const setError = (msg) => { if (msg) toast.error(msg); };
   const [report, setReport] = useState(null); // { mode: 'all'|'single', ...data }
+  const [pdfBusy, setPdfBusy] = useState(false); // step 4.1: PDF library is being fetched/rendered
 
   useEffect(() => {
     if (setPageTitle) setPageTitle('Guide Reports');
@@ -175,8 +180,11 @@ const GuideReports = () => {
 
   const fileStamp = () => new Date().toISOString().split('T')[0];
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
     if (!report) return;
+    setPdfBusy(true);
+    try {
+    const { jsPDF, autoTable } = await loadPdfLib();
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const rangeLabel = getRangeLabel();
@@ -270,6 +278,9 @@ const GuideReports = () => {
 
     const safeName = guideName.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
     doc.save(`guide_tour_report_${safeName}_${fileStamp()}.pdf`);
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   const exportExcel = () => {
@@ -446,8 +457,8 @@ const GuideReports = () => {
               )}
             </div>
             <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" icon={FiFileText} onClick={exportPDF} disabled={!hasResults}>
-                Export PDF
+              <Button variant="outline" size="sm" icon={FiFileText} onClick={exportPDF} disabled={!hasResults || pdfBusy}>
+                {pdfBusy ? 'Preparing…' : 'Export PDF'}
               </Button>
               <Button variant="outline" size="sm" icon={FiDownload} onClick={exportExcel} disabled={!hasResults}>
                 Export Excel
