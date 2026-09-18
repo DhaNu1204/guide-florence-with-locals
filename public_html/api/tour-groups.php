@@ -18,6 +18,7 @@
 require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
+require_once __DIR__ . '/group_helpers.php'; // step 3.5: propagateGuideToTours() lives there (shared with bokun_sync.php)
 
 // Require authentication for all tour group operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -964,21 +965,6 @@ function syncGroupGuideFromTours($conn, $groupId) {
         $updateStmt->execute();
         $updateStmt->close();
     }
-}
-
-/**
- * Propagate guide assignment from group to all its tours
- */
-function propagateGuideToTours($conn, $groupId, $guideId) {
-    if ($guideId) {
-        $stmt = $conn->prepare("UPDATE tours SET guide_id = ?, needs_guide_assignment = 0, updated_at = NOW() WHERE group_id = ?");
-        $stmt->bind_param('ii', $guideId, $groupId);
-    } else {
-        $stmt = $conn->prepare("UPDATE tours SET guide_id = NULL, needs_guide_assignment = 1, updated_at = NOW() WHERE group_id = ?");
-        $stmt->bind_param('i', $groupId);
-    }
-    $stmt->execute();
-    $stmt->close();
 }
 
 /**

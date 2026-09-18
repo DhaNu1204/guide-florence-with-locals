@@ -92,6 +92,31 @@ describe('MySQL Database Service', () => {
     });
   });
 
+  // Step 3.5: the unassigned report comes from the server
+  describe('getUnassignedReport', () => {
+    it('calls action=unassigned-report with the page filters and unwraps data', async () => {
+      axios.get.mockResolvedValue({ data: { success: true, data: { total: 1, departures: [{ tour_unit: 'g1' }] } } });
+
+      const report = await mysqlDBModule.getUnassignedReport({ upcoming: true });
+
+      const url = axios.get.mock.calls[0][0];
+      expect(url).toContain('tours.php?action=unassigned-report');
+      expect(url).toContain('upcoming=true');
+      expect(report.total).toBe(1);
+      expect(report.departures).toHaveLength(1);
+    });
+
+    it('sends a date range when both ends are given', async () => {
+      axios.get.mockResolvedValue({ data: { success: true, data: { total: 0, departures: [] } } });
+
+      await mysqlDBModule.getUnassignedReport({ start_date: '2026-09-01', end_date: '2026-09-21' });
+
+      const url = axios.get.mock.calls[0][0];
+      expect(url).toContain('start_date=2026-09-01');
+      expect(url).toContain('end_date=2026-09-21');
+    });
+  });
+
   describe('getGuides', () => {
     it('returns guides in correct format', async () => {
       const mockGuides = {
