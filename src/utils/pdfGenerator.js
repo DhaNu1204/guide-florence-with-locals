@@ -3,8 +3,19 @@
  * Uses jsPDF and jsPDF-AutoTable for professional PDF reports
  */
 
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// Step 4.1: jsPDF and jspdf-autotable (~370 KB raw / ~100 KB brotli, plus their
+// html2canvas/canvg/dompurify deps) are loaded on demand the first time a report is
+// generated, so they are not part of any chunk needed to show a page.
+let jsPDF = null;
+let autoTable = null;
+
+const loadPdfLib = async () => {
+  if (!jsPDF) {
+    const [core, table] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+    jsPDF = core.jsPDF;
+    autoTable = table.default;
+  }
+};
 
 // Tuscan theme colors
 const COLORS = {
@@ -173,7 +184,8 @@ const addSummaryBox = (doc, summaryData, yPos) => {
 /**
  * Generate Guide Payment Summary Report
  */
-export const generateGuidePaymentSummaryPDF = (guidePayments, options = {}) => {
+export const generateGuidePaymentSummaryPDF = async (guidePayments, options = {}) => {
+  await loadPdfLib();
   const {
     startDate = null,
     endDate = null,
@@ -275,7 +287,8 @@ export const generateGuidePaymentSummaryPDF = (guidePayments, options = {}) => {
 /**
  * Generate Pending Payments Report
  */
-export const generatePendingPaymentsPDF = (pendingTours, options = {}) => {
+export const generatePendingPaymentsPDF = async (pendingTours, options = {}) => {
+  await loadPdfLib();
   const {
     filename = 'pending-payments'
   } = options;
@@ -369,7 +382,8 @@ export const generatePendingPaymentsPDF = (pendingTours, options = {}) => {
 /**
  * Generate Payment Transactions Report
  */
-export const generatePaymentTransactionsPDF = (transactions, options = {}) => {
+export const generatePaymentTransactionsPDF = async (transactions, options = {}) => {
+  await loadPdfLib();
   const {
     startDate = null,
     endDate = null,
@@ -494,7 +508,8 @@ export const generatePaymentTransactionsPDF = (transactions, options = {}) => {
 /**
  * Generate Monthly Summary Report
  */
-export const generateMonthlySummaryPDF = (monthlyData, options = {}) => {
+export const generateMonthlySummaryPDF = async (monthlyData, options = {}) => {
+  await loadPdfLib();
   const {
     year = new Date().getFullYear(),
     guideName = null,

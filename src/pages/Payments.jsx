@@ -6,11 +6,9 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format } from "date-fns";
 import { FiDollarSign, FiTrendingUp, FiUsers, FiCalendar, FiDownload, FiPlus, FiFilter, FiRefreshCw, FiAlertCircle, FiCheckCircle, FiAlertTriangle, FiX, FiEdit2, FiCheck, FiXCircle, FiTrash2, FiFileText, FiCreditCard } from 'react-icons/fi';
-import {
-  generateGuidePaymentSummaryPDF,
-  generatePendingPaymentsPDF,
-  generatePaymentTransactionsPDF
-} from '../utils/pdfGenerator';
+// Step 4.1: the PDF generator (and jsPDF behind it) is fetched the first time a
+// report is downloaded, not when this page loads.
+const loadPdfGenerator = () => import('../utils/pdfGenerator');
 import { authFetch } from '../services/authFetch';
 import { useToast } from '../components/Toast/ToastProvider';
 
@@ -20,6 +18,7 @@ const Payments = () => {
   const [paymentOverview, setPaymentOverview] = useState(null);
   const [guidePayments, setGuidePayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pdfBusy, setPdfBusy] = useState(false); // step 4.1: PDF module is being fetched/rendered
   const [error, setError] = useState(null);
   const [selectedGuide, setSelectedGuide] = useState(null);
   const [guideDetails, setGuideDetails] = useState(null);
@@ -438,6 +437,7 @@ const Payments = () => {
 
   // Download PDF report - fetches data and generates professional PDF
   const downloadReport = async (period = '30', startDate = null, endDate = null, guideId = null) => {
+    setPdfBusy(true);
     try {
       // Use provided dates or fall back to period-based calculation
       let reportStartDate, reportEndDate;
@@ -474,7 +474,8 @@ const Payments = () => {
       }
 
       // Generate PDF
-      generatePaymentTransactionsPDF(transactions, {
+      const { generatePaymentTransactionsPDF } = await loadPdfGenerator();
+      await generatePaymentTransactionsPDF(transactions, {
         startDate: reportStartDate,
         endDate: reportEndDate,
         guideName,
@@ -485,32 +486,42 @@ const Payments = () => {
     } catch (err) {
       console.error('Error generating PDF report:', err);
       showNotification('Failed to generate PDF report. Please try again.', 'error');
+    } finally {
+      setPdfBusy(false);
     }
   };
 
   // Download Guide Payment Summary as PDF
-  const downloadGuideSummaryPDF = () => {
+  const downloadGuideSummaryPDF = async () => {
+    setPdfBusy(true);
     try {
-      generateGuidePaymentSummaryPDF(guidePayments, {
+      const { generateGuidePaymentSummaryPDF } = await loadPdfGenerator();
+      await generateGuidePaymentSummaryPDF(guidePayments, {
         filename: 'guide-payment-summary'
       });
       showNotification('Guide summary PDF generated successfully!', 'success');
     } catch (err) {
       console.error('Error generating guide summary PDF:', err);
       showNotification('Failed to generate PDF. Please try again.', 'error');
+    } finally {
+      setPdfBusy(false);
     }
   };
 
   // Download Pending Payments as PDF
-  const downloadPendingPaymentsPDF = () => {
+  const downloadPendingPaymentsPDF = async () => {
+    setPdfBusy(true);
     try {
-      generatePendingPaymentsPDF(unpaidTours, {
+      const { generatePendingPaymentsPDF } = await loadPdfGenerator();
+      await generatePendingPaymentsPDF(unpaidTours, {
         filename: 'pending-guide-payments'
       });
       showNotification('Pending payments PDF generated successfully!', 'success');
     } catch (err) {
       console.error('Error generating pending payments PDF:', err);
       showNotification('Failed to generate PDF. Please try again.', 'error');
+    } finally {
+      setPdfBusy(false);
     }
   };
 
@@ -554,12 +565,13 @@ const Payments = () => {
         <div className="flex gap-2 w-full sm:w-auto">
           <Button
             onClick={downloadGuideSummaryPDF}
+            disabled={pdfBusy}
             variant="outline"
             icon={FiFileText}
             className="flex-1 sm:flex-initial"
           >
-            <span className="hidden sm:inline">PDF Report</span>
-            <span className="sm:hidden">PDF</span>
+            <span className="hidden sm:inline">{pdfBusy ? 'Preparing…' : 'PDF Report'}</span>
+            <span className="sm:hidden">{pdfBusy ? '…' : 'PDF'}</span>
           </Button>
           <Button
             onClick={() => setActiveTab('record')}
@@ -761,13 +773,14 @@ const Payments = () => {
                 {unpaidTours.length > 0 && (
                   <Button
                     onClick={downloadPendingPaymentsPDF}
+                    disabled={pdfBusy}
                     variant="outline"
                     size="sm"
                     icon={FiFileText}
                     className="self-start sm:self-auto"
                   >
-                    <span className="hidden sm:inline">Download PDF</span>
-                    <span className="sm:hidden">PDF</span>
+                    <span className="hidden sm:inline">{pdfBusy ? 'Preparing…' : 'Download PDF'}</span>
+                    <span className="sm:hidden">{pdfBusy ? '…' : 'PDF'}</span>
                   </Button>
                 )}
               </div>
@@ -913,12 +926,13 @@ const Payments = () => {
               <h3 className="text-base md:text-lg font-medium text-stone-900">Guide Payment Summary</h3>
               <Button
                 onClick={downloadGuideSummaryPDF}
+                disabled={pdfBusy}
                 variant="outline"
                 size="sm"
                 icon={FiFileText}
               >
-                <span className="hidden sm:inline">Download PDF</span>
-                <span className="sm:hidden">PDF</span>
+                <span className="hidden sm:inline">{pdfBusy ? 'Preparing…' : 'Download PDF'}</span>
+                <span className="sm:hidden">{pdfBusy ? '…' : 'PDF'}</span>
               </Button>
             </div>
             {/* Desktop Table */}

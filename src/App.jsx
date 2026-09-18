@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -6,21 +6,25 @@ import { ToastProvider, useToast } from './components/Toast/ToastProvider';
 import { SESSION_EXPIRED_EVENT, FORBIDDEN_EVENT, resetSessionExpiryGuard } from './services/sessionExpiry';
 import ModernLayout from './components/Layout/ModernLayout';
 import AdminRoute from './components/AdminRoute';
-import Dashboard from './components/Dashboard';
-import Guides from './pages/Guides';
-import Tours from './pages/Tours';
-import Tickets from './pages/Tickets';
-import Payments from './pages/Payments';
-import GuideReports from './pages/GuideReports';
-import EditTour from './pages/EditTour';
-import BokunIntegration from './pages/BokunIntegration';
-import PriorityTickets from './pages/PriorityTickets';
-import DailyPnL from './pages/DailyPnL';
 import Login from './pages/Login';
-import GuideRespond from './pages/GuideRespond';
 import { PageTitleProvider } from './contexts/PageTitleContext';
 import BokunAutoSyncProvider from './components/BokunAutoSyncProvider';
 import './index.css';
+
+// Step 4.1: every page below is fetched as its own chunk the first time its route
+// is opened, so the first screen no longer downloads the whole app. Login,
+// ModernLayout, AuthContext and the route guards stay eager (needed immediately).
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const Guides = lazy(() => import('./pages/Guides'));
+const Tours = lazy(() => import('./pages/Tours'));
+const Tickets = lazy(() => import('./pages/Tickets'));
+const Payments = lazy(() => import('./pages/Payments'));
+const GuideReports = lazy(() => import('./pages/GuideReports'));
+const EditTour = lazy(() => import('./pages/EditTour'));
+const BokunIntegration = lazy(() => import('./pages/BokunIntegration'));
+const PriorityTickets = lazy(() => import('./pages/PriorityTickets'));
+const DailyPnL = lazy(() => import('./pages/DailyPnL'));
+const GuideRespond = lazy(() => import('./pages/GuideRespond'));
 
 // Bridges non-React 401 handling (axios interceptor + authFetch) to React.
 // Listens for the window 'app:session-expired' event, shows a toast, and
@@ -82,8 +86,16 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
+// Shown while a page chunk is being fetched (same spinner the pages use).
+const PageSpinner = () => (
+  <div className="flex items-center justify-center h-64" role="status" aria-label="Loading page">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-terracotta-500"></div>
+  </div>
+);
+
 function AppRoutes() {
   return (
+    <Suspense fallback={<PageSpinner />}>
     <Routes>
       <Route path="/login" element={<Login />} />
       {/* Public, no-login guide availability response page (secret token link) */}
@@ -194,6 +206,7 @@ function AppRoutes() {
       />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
+    </Suspense>
   );
 }
 
@@ -215,7 +228,7 @@ const ErrorFallback = ({ error, resetError }) => (
 
 function App() {
   return (
-    <Sentry.ErrorBoundary fallback={ErrorFallback} showDialog>
+    <Sentry.ErrorBoundary fallback={ErrorFallback}>
       <Router>
         <ToastProvider>
           <SessionExpiryListener />
