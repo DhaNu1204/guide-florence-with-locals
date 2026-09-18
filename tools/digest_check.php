@@ -78,7 +78,11 @@ check('... body stays under the WhatsApp limit', strlen(implode("\n", $lines)) <
 $vars = buildDigestVariables('Caterina Cavalcaselle', '2026-09-22', $two);
 check("{{1}} is the first name", $vars['1'] === 'Caterina');
 check("{{2}} is the Italian date", $vars['2'] === 'mar 22 set', $vars['2']);
-check("{{3}} joins the lines with a newline", substr_count($vars['3'], "\n") === 1, json_encode($vars['3']));
+// A WhatsApp template parameter may not contain a newline (Twilio 21656), so the lines are
+// comma-joined - exactly like the sample of the approved guide_daily_digest_it template.
+check("{{3}} joins the lines with ', ' and has NO newline",
+    strpos($vars['3'], ', ') !== false && strpos($vars['3'], "
+") === false, json_encode($vars['3']));
 $body = renderDigestBody($vars);
 check('rendered body matches the approved template',
     strpos($body, 'Ciao Caterina, ecco i tuoi tour di domani mar 22 set:') === 0 && substr($body, -14) === "\nBuona serata!", $body);
@@ -86,6 +90,9 @@ check('rendered body matches the approved template',
 // --- a separator fallback (if WhatsApp rejects newlines in a parameter) -------------------
 $varsPipe = buildDigestVariables('Anna', '2026-09-22', $two, ' | ');
 check('separator is configurable', strpos($varsPipe['3'], ' | ') !== false && strpos($varsPipe['3'], "\n") === false);
+check('no template variable ever contains a newline or a tab',
+    !preg_match('/[
+	]/', $vars['1'] . $vars['2'] . $vars['3']));
 
 // --- the 21:30 Europe/Rome cron window (the server clock is UTC) ---------------------------
 $rome = new DateTimeZone('Europe/Rome');
