@@ -31,6 +31,16 @@ class BokunAPI {
     private $requestCount = 0;
     private $lastRequestTime = 0;
     private $maxRequestsPerMinute = 400; // Bokun limit
+
+    // Step 3.4 (§2.6): one product lookup per PRODUCT per PHP process instead of one per booking.
+    // Static, so a webhook process that syncs three dates in a row reuses it too; a product that
+    // could not be fetched is cached as null so it is not retried ~800 times.
+    private static $productCache = [];
+    // Counters for the per-sync summary line (reset by resetRequestStats() at the start of a sync).
+    private static $totalRequests = 0;
+    private static $productCacheHits = 0;
+    private static $productCacheMisses = 0;
+    private static $rateLimitSleeps = 0;
     
     public function __construct($config) {
         $this->accessKey = $config['access_key'];
@@ -77,7 +87,8 @@ class BokunAPI {
     private function makeRequest($method, $endpoint, $data = null, $retryCount = 0) {
         // Check rate limiting
         $this->checkRateLimit();
-        
+        self::$totalRequests++; // step 3.4: every real HTTP call, retries included
+
         $url = $this->baseUrl . $endpoint;
         $date = gmdate('Y-m-d H:i:s'); // UTC date
         $signature = $this->generateSignature($date, $method, $endpoint);
@@ -148,6 +159,7 @@ class BokunAPI {
                 }
                 
                 error_log("BokunAPI: Rate limited, retrying in {$retryAfter}s");
+                self::$rateLimitSleeps++; // step 3.4 (cause C): counted, so a sync reports its own stalls
                 sleep($retryAfter);
                 return $this->makeRequest($method, $endpoint, $data, $retryCount + 1);
             }
@@ -362,6 +374,66 @@ class BokunAPI {
     }
 
     /**
+     * Step 3.4 (§2.6): getProduct() behind a per-process cache keyed by product id.
+     * Returns null (and never throws) when the product cannot be fetched - the caller treats that
+     * as "no rate information", exactly as the old per-booking try/catch did, but the failure is
+     * remembered so one broken product cannot cost ~800 failed HTTP calls in a single sync.
+     */
+    public function getProductCached($productId) {
+        $key = (string) $productId;
+        if (array_key_exists($key, self::$productCache)) {
+            self::$productCacheHits++;
+            return self::$productCache[$key];
+        }
+        self::$productCacheMisses++;
+        try {
+            self::$productCache[$key] = $this->getProduct($key);
+        } catch (Exception $e) {
+            self::$productCache[$key] = null;
+            error_log("BokunAPI: product {$key} unavailable, cached as such for this run: " . $e->getMessage());
+        }
+        return self::$productCache[$key];
+    }
+
+    /**
+     * Step 3.4: the keyword ladder the sync has always applied to a rate title, unchanged and in
+     * the same order. A rate title that names no language is the product's default rate = English.
+     */
+    public static function languageFromRateTitle($rateTitle) {
+        $title = strtolower((string) $rateTitle);
+        foreach (['italian' => 'Italian', 'spanish' => 'Spanish', 'french' => 'French',
+                  'german' => 'German', 'english' => 'English'] as $needle => $language) {
+            if (strpos($title, $needle) !== false) {
+                return $language;
+            }
+        }
+        return 'English';
+    }
+
+    /**
+     * Step 3.4: how much this process asked of Bokun. Logged in the per-sync summary line.
+     */
+    public static function requestStats() {
+        return [
+            'bokun_requests'     => self::$totalRequests,
+            'product_calls'      => self::$productCacheMisses,
+            'product_cache_hits' => self::$productCacheHits,
+            'rate_limit_sleeps'  => self::$rateLimitSleeps,
+        ];
+    }
+
+    /**
+     * Reset the counters (not the product cache - reusing it across syncs in one process is the
+     * whole point) so each sync reports its own numbers.
+     */
+    public static function resetRequestStats() {
+        self::$totalRequests = 0;
+        self::$productCacheHits = 0;
+        self::$productCacheMisses = 0;
+        self::$rateLimitSleeps = 0;
+    }
+
+    /**
      * Make a public API request (for testing/exploration)
      */
     public function makePublicRequest($method, $endpoint, $data = null) {
@@ -527,45 +599,32 @@ class BokunAPI {
         }
 
         // Method 2: Check rate title for language (especially for GetYourGuide bookings)
+        //
+        // Step 3.4 (§2.6): the rate title is already in the booking Bokun just sent us, so ask for
+        // it there first and only fall back to GET /activity.json/{productId} when it is missing.
+        // Measured on production before the change: 4,000 of 4,000 stored payloads carry
+        // productBookings[0].rateTitle, and over a whole sync window (815 bookings, 19 products)
+        // the payload title agreed with the product endpoint's title for that rateId on 812 - the
+        // 3 that differ are reseller titles that derive the SAME language. The fallback call is
+        // cached per product for the run, so a sync can never make more calls than it has products.
         if (!$language && isset($productBooking['fields']['rateId']) && isset($productBooking['product']['id'])) {
             $rateId = $productBooking['fields']['rateId'];
             $productId = $productBooking['product']['id'];
 
-            try {
-                // Fetch product details to get rate information
-                $productDetails = $this->getProduct($productId);
+            $payloadRateTitle = $productBooking['rateTitle'] ?? ($productBooking['fields']['rateTitle'] ?? null);
 
+            if (is_string($payloadRateTitle) && trim($payloadRateTitle) !== '') {
+                $language = self::languageFromRateTitle($payloadRateTitle);
+            } else {
+                $productDetails = $this->getProductCached($productId);
                 if (isset($productDetails['rates']) && is_array($productDetails['rates'])) {
                     foreach ($productDetails['rates'] as $rate) {
-                        if (isset($rate['id']) && $rate['id'] == $rateId && isset($rate['title'])) {
-                            $rateTitle = strtolower($rate['title']);
-
-                            // Check if rate title contains language identifier
-                            if (strpos($rateTitle, 'italian') !== false) {
-                                $language = 'Italian';
-                                break;
-                            } elseif (strpos($rateTitle, 'spanish') !== false) {
-                                $language = 'Spanish';
-                                break;
-                            } elseif (strpos($rateTitle, 'french') !== false) {
-                                $language = 'French';
-                                break;
-                            } elseif (strpos($rateTitle, 'german') !== false) {
-                                $language = 'German';
-                                break;
-                            } elseif (strpos($rateTitle, 'english') !== false) {
-                                $language = 'English';
-                                break;
-                            } else {
-                                // If rate title doesn't contain language keyword, assume English for default rate
-                                $language = 'English';
-                            }
+                        if (isset($rate['id'], $rate['title']) && $rate['id'] == $rateId) {
+                            $language = self::languageFromRateTitle($rate['title']);
+                            break;
                         }
                     }
                 }
-            } catch (Exception $e) {
-                // Log error but continue processing
-                error_log("Failed to fetch product details for language extraction: " . $e->getMessage());
             }
         }
 

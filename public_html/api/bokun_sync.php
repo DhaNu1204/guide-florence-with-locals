@@ -112,6 +112,23 @@ function ensureExternalIdUniqueIndex($conn) {
     }
 }
 
+// Step 3.4: self-provision the index behind the per-booking existence lookup.
+// Without it `WHERE bokun_booking_id = ? OR external_id = ?` cannot use an index at all
+// (EXPLAIN type=ALL, key=NULL) and every one of the ~810 bookings in a sync scans the whole
+// 65 MB table. Not unique: nothing guarantees Bokun ids are unique across legacy rows.
+function ensureBokunBookingIdIndex($conn) {
+    $c = $conn->query("SHOW INDEX FROM tours WHERE Key_name = 'idx_tours_bokun_booking_id'");
+    if ($c && $c->num_rows === 0) {
+        try {
+            if (!@$conn->query("ALTER TABLE tours ADD KEY `idx_tours_bokun_booking_id` (`bokun_booking_id`)")) {
+                error_log("Bokun Sync: could not add idx_tours_bokun_booking_id");
+            }
+        } catch (mysqli_sql_exception $e) {
+            error_log("Bokun Sync: could not add idx_tours_bokun_booking_id: " . $e->getMessage());
+        }
+    }
+}
+
 // Self-provision the sync_logs table (idempotent, same pattern as bokun_webhook_logs).
 function ensureSyncLogsTable($conn) {
     $conn->query("CREATE TABLE IF NOT EXISTS sync_logs (
@@ -365,6 +382,9 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
     // or two clients' 15-min timers firing together) must not double-insert.
     ensureExternalIdUniqueIndex($conn);
 
+    // Step 3.4: the index the per-booking existence lookup needs.
+    ensureBokunBookingIdIndex($conn);
+
     // Step 3.1: columns for Bokun's customer price (the UPDATE/INSERT below write them).
     ensureBokunPriceColumns($conn);
 
@@ -383,6 +403,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
     try {
         // Initialize Bokun API
         $bokunAPI = new BokunAPI($config);
+        BokunAPI::resetRequestStats(); // step 3.4: count this sync's Bokun calls, not the process's
 
         // Get bookings from Bokun
         error_log("Bokun Sync [$syncType]: Requesting bookings from $startDate to $endDate");
@@ -413,12 +434,28 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                     $prodStmt->close();
                 }
 
-                // Check if tour already exists and get current date/time for rescheduling detection
-                $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE bokun_booking_id = ? OR external_id = ?");
-                $stmt->bind_param("ss", $tourData['bokun_booking_id'], $tourData['external_id']);
-                $stmt->execute();
-                $existing = $stmt->get_result()->fetch_assoc();
-                $stmt->close();
+                // Check if tour already exists and get current date/time for rescheduling detection.
+                // Step 3.4: this used to be one `bokun_booking_id = ? OR external_id = ?`, which MySQL
+                // cannot serve from an index (EXPLAIN type=ALL) - a full scan of the 65 MB table per
+                // booking. Split into two indexed lookups: external_id first (UNIQUE, so at most one
+                // row and virtually every booking is found here), bokun_booking_id only as a fallback.
+                // Proved equivalent on production: 1,000 real bookings, 0 rows where the OR form and
+                // the split form picked a different row (no duplicated bokun_booking_id exists).
+                $existing = null;
+                if ($tourData['external_id'] !== null && $tourData['external_id'] !== '') {
+                    $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE external_id = ?");
+                    $stmt->bind_param("s", $tourData['external_id']);
+                    $stmt->execute();
+                    $existing = $stmt->get_result()->fetch_assoc();
+                    $stmt->close();
+                }
+                if (!$existing && $tourData['bokun_booking_id'] !== '') {
+                    $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE bokun_booking_id = ? ORDER BY id ASC LIMIT 1");
+                    $stmt->bind_param("s", $tourData['bokun_booking_id']);
+                    $stmt->execute();
+                    $existing = $stmt->get_result()->fetch_assoc();
+                    $stmt->close();
+                }
 
                 $isUpdate = false;
 
@@ -586,6 +623,13 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         $status = $failedCount > 0 ? ($syncedCount > 0 ? 'partial' : 'failed') : 'completed';
         $errorMsg = count($errors) > 0 ? implode('; ', array_slice($errors, 0, 5)) : null;
         updateSyncLog($logId, $status, $stats, $errorMsg, $duration);
+
+        // Step 3.4: one line per sync saying what it cost Bokun - this is how "Bokun request count
+        // per sync" is measured before/after. Never gated by BOKUN_DEBUG_LOG (it is one line).
+        $apiStats = BokunAPI::requestStats();
+        error_log("Bokun Sync [$syncType]: done in {$duration}s - {$apiBookingsCount} bookings, "
+            . "bokun_requests={$apiStats['bokun_requests']} product_calls={$apiStats['product_calls']} "
+            . "product_cache_hits={$apiStats['product_cache_hits']} rate_limit_sleeps={$apiStats['rate_limit_sleeps']}");
 
         return [
             'success' => true,
