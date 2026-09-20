@@ -14,7 +14,8 @@ import {
   FiDollarSign,
   FiMapPin,
   FiClipboard,
-  FiTrendingUp
+  FiTrendingUp,
+  FiRadio
 } from 'react-icons/fi';
 import { BsBoxSeam } from 'react-icons/bs';
 import { useAuth } from '../../contexts/AuthContext';
@@ -117,6 +118,15 @@ const ModernLayout = ({ children }) => {
       title: 'Daily P&L',
       icon: FiTrendingUp,
       path: '/daily-pnl',
+      color: 'text-terracotta-600',
+      bgColor: 'bg-terracotta-50',
+      borderColor: 'border-terracotta-500',
+      adminOnly: true
+    },
+    {
+      title: 'Radios',
+      icon: FiRadio,
+      path: '/radios',
       color: 'text-terracotta-600',
       bgColor: 'bg-terracotta-50',
       borderColor: 'border-terracotta-500',

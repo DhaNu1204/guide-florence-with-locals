@@ -775,6 +775,18 @@ export const savePnlCosts = async (payload) => {
   return response.data;
 };
 
+// Step 6.3: the afternoon radio order for Vox Firenze (admin only).
+export const getRadioPlan = async (date) => {
+  const response = await axios.get(`${API_BASE_URL}/radios.php?action=plan&date=${date}`);
+  return response.data;
+};
+
+export const markRadioOrderSent = async (payload) => {
+  // payload: { date, message, receivers_total, transmitters_total }
+  const response = await axios.post(`${API_BASE_URL}/radios.php?action=sent`, payload);
+  return response.data;
+};
+
 // Step 6.2: merged costing units (Daily P&L only - nothing operational changes).
 export const mergePnlUnits = async (date, units) => {
   const response = await axios.post(`${API_BASE_URL}/pnl.php?action=link`, { date, units });
