@@ -129,6 +129,39 @@ function ensureBokunBookingIdIndex($conn) {
     }
 }
 
+// Step 3.7: self-provision tour_groups.bucket_key - the NATURAL identity of a departure
+// ("<product_id>|YYYY-MM-DD|HH:MM"), so a group can be found without its surrogate id and an
+// override keyed on the departure survives even if the id ever changes.
+// Deliberately NOT unique: the per-product PAX cap legitimately splits one departure into
+// several groups (production has two 14:30 groups of product 961801 on 2026-08-12).
+// Manual merges keep NULL - they are not bucketed and are never touched by auto-grouping.
+// Same statements in database/migrations/20260920_group_bucket_key.sql.
+// Returns true when the column is usable.
+function ensureGroupBucketKeyColumn($conn) {
+    $c = $conn->query("SHOW COLUMNS FROM tour_groups LIKE 'bucket_key'");
+    if ($c && $c->num_rows > 0) {
+        return true;
+    }
+    try {
+        $conn->query("ALTER TABLE tour_groups ADD COLUMN `bucket_key` VARCHAR(64) NULL DEFAULT NULL AFTER `is_manual_merge`");
+        $conn->query("ALTER TABLE tour_groups ADD KEY `idx_tour_groups_bucket_key` (`bucket_key`)");
+        // Backfill from the members the groups already have (MIN(product_id): every member of a
+        // bucket shares the product by construction).
+        $conn->query("UPDATE tour_groups tg
+                         JOIN (SELECT group_id, MIN(product_id) pid FROM tours
+                                WHERE group_id IS NOT NULL AND product_id IS NOT NULL
+                                GROUP BY group_id) m ON m.group_id = tg.id
+                        SET tg.bucket_key = CONCAT(m.pid, '|', DATE_FORMAT(tg.group_date, '%Y-%m-%d'), '|', DATE_FORMAT(tg.group_time, '%H:%i'))
+                      WHERE tg.is_manual_merge = 0");
+        error_log("Bokun Sync: added tour_groups.bucket_key, backfilled " . $conn->affected_rows . " rows (step 3.7)");
+        return true;
+    } catch (mysqli_sql_exception $e) {
+        error_log("Bokun Sync: ensureGroupBucketKeyColumn: " . $e->getMessage());
+        $c = $conn->query("SHOW COLUMNS FROM tour_groups LIKE 'bucket_key'");
+        return ($c && $c->num_rows > 0);
+    }
+}
+
 // Self-provision the sync_logs table (idempotent, same pattern as bokun_webhook_logs).
 function ensureSyncLogsTable($conn) {
     $conn->query("CREATE TABLE IF NOT EXISTS sync_logs (
@@ -929,9 +962,18 @@ function getSyncInfo() {
 
 /**
  * Auto-group tours after a Bokun sync.
- * Groups ungrouped, non-cancelled tours by normalized title + date + time.
- * Respects manually merged groups (is_manual_merge=1) — never touches them.
- * Splits groups that exceed 9 PAX (Uffizi rule).
+ * Groups ungrouped, non-cancelled tours by PRODUCT identity: product_id + date + HH:MM.
+ * Respects manually merged groups (is_manual_merge=1) - never touches them.
+ * Splits a departure whose PAX exceeds the per-product cap.
+ *
+ * Step 3.7: INCREMENTAL. It used to detach every auto-grouped tour in range, delete the
+ * orphans and insert a brand-new group row for every departure, so a departure got a new
+ * `id` every 15 minutes (production had burned 1,507,124 ids for 1,098 live groups) and
+ * everything keyed on that id - P&L overrides `pnl_tour_costs.tour_unit = 'g<id>'` above all -
+ * was silently orphaned. Now each departure keeps its row: a group is matched to the members
+ * it already has, only the tours that actually moved are written, a group row is updated only
+ * when one of its values really changed, and a group is deleted only when its departure is
+ * gone. Manual merges are untouched, as before.
  */
 function autoGroupAfterSync($conn, $startDate, $endDate) {
     // Make sure the is_private flag exists (we filter on it below).
@@ -951,9 +993,12 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
         return null;
     }
 
-    // Older installs may lack tour_groups.max_pax — only write it when present.
+    // Older installs may lack tour_groups.max_pax - only write it when present.
     $maxPaxColCheck = $conn->query("SHOW COLUMNS FROM tour_groups LIKE 'max_pax'");
     $hasMaxPax = ($maxPaxColCheck && $maxPaxColCheck->num_rows > 0);
+
+    // Step 3.7: the natural key of a departure, so a group can be found without its id.
+    $hasBucketKey = ensureGroupBucketKeyColumn($conn);
 
     // Acquire advisory lock to prevent concurrent auto-grouping
     $lockResult = $conn->query("SELECT GET_LOCK('auto_group', 10) as locked");
@@ -964,170 +1009,249 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
     }
 
     $groupsCreated = 0;
+    $groupsReused = 0;
+    $groupsUpdated = 0;
+    $groupsDeleted = 0;
     $toursGrouped = 0;
-    $guidesFilled = 0; // step 3.5: member tours that received their group's guide
+    $toursMoved = 0;
+    $toursDetached = 0;
+    $guidesFilled = 0; // step 3.5
+    $rowsWritten = 0;  // step 3.7: the number this step exists to drive to ~0
 
     $conn->begin_transaction();
     try {
 
-    // (A) Rebuild auto groups in range: detach every AUTO-group tour (manual merges
-    //     untouched) plus any tour whose group is dangling. This also strips
-    //     now-cancelled/now-private tours out of auto groups (they won't be re-added).
-    $detach = $conn->prepare("
-        UPDATE tours t
-        LEFT JOIN tour_groups tg ON t.group_id = tg.id
-        SET t.group_id = NULL
-        WHERE t.date >= ? AND t.date <= ?
-          AND t.group_id IS NOT NULL
-          AND (tg.id IS NULL OR tg.is_manual_merge = 0)
-    ");
-    $detach->bind_param('ss', $startDate, $endDate);
-    $detach->execute();
-    $detach->close();
-
-    // Drop auto groups that no longer have any member tours.
-    $conn->query("DELETE FROM tour_groups WHERE is_manual_merge = 0 AND id NOT IN (SELECT DISTINCT group_id FROM tours WHERE group_id IS NOT NULL)");
-
-    // (B) Groupable candidates: non-cancelled, NON-PRIVATE, have a product_id, and
-    //     not held by a manual merge (manual-group tours still carry their group_id).
+    // (A) Every groupable booking in range. Unlike before nothing is detached first, so tours
+    //     that are ALREADY in an auto group are included - that is what lets us recognise the
+    //     departure. Members of a manual merge are excluded and never touched; a tour whose
+    //     group row has vanished (dangling id) counts as ungrouped.
     $stmt = $conn->prepare("
-        SELECT t.id, t.title, t.date, t.time, t.participants, t.product_id, t.guide_id
+        SELECT t.id, t.title, t.date, t.time, t.participants, t.product_id, t.guide_id, t.group_id
         FROM tours t
+        LEFT JOIN tour_groups tg ON tg.id = t.group_id
         WHERE t.date >= ? AND t.date <= ?
           AND t.cancelled = 0
           AND t.is_private = 0
           AND t.product_id IS NOT NULL
-          AND t.group_id IS NULL
+          AND (t.group_id IS NULL OR tg.id IS NULL OR tg.is_manual_merge = 0)
         ORDER BY t.product_id, t.date, t.time, t.id
     ");
     $stmt->bind_param('ss', $startDate, $endDate);
     $stmt->execute();
     $result = $stmt->get_result();
-
     $tours = [];
     while ($row = $result->fetch_assoc()) {
         $tours[] = $row;
     }
     $stmt->close();
 
-    // (C) Bucket by PRODUCT identity: product_id | date | HH:MM (not title).
-    $buckets = [];
-    foreach ($tours as $tour) {
-        $timeParts = explode(':', $tour['time']);
-        $normTime = sprintf('%02d:%02d', intval($timeParts[0]), intval($timeParts[1] ?? 0));
-        $key = $tour['product_id'] . '|' . $tour['date'] . '|' . $normTime;
-        if (!isset($buckets[$key])) {
-            $buckets[$key] = [];
-        }
-        $buckets[$key][] = $tour;
+    // (B) Current AUTO membership in range: tourId => groupId. Cancelled and now-private tours
+    //     are included here on purpose - they must be detached from their group below.
+    $memStmt = $conn->prepare("
+        SELECT t.id, t.group_id
+        FROM tours t
+        LEFT JOIN tour_groups tg ON tg.id = t.group_id
+        WHERE t.date >= ? AND t.date <= ?
+          AND t.group_id IS NOT NULL
+          AND (tg.id IS NULL OR tg.is_manual_merge = 0)
+    ");
+    $memStmt->bind_param('ss', $startDate, $endDate);
+    $memStmt->execute();
+    $memRes = $memStmt->get_result();
+    $currentMembership = [];
+    while ($row = $memRes->fetch_assoc()) {
+        $currentMembership[(int) $row['id']] = (int) $row['group_id'];
     }
+    $memStmt->close();
 
-    foreach ($buckets as $bucketTours) {
-        // Only create groups for 2+ bookings of the same product departure.
+    // (C) The auto group rows themselves, so we can tell whether anything really changed.
+    $grpStmt = $conn->prepare("
+        SELECT id, group_date, group_time, display_name, total_pax, guide_id"
+        . ($hasMaxPax ? ", max_pax" : "") . ($hasBucketKey ? ", bucket_key" : "") . "
+        FROM tour_groups
+        WHERE is_manual_merge = 0 AND group_date >= ? AND group_date <= ?
+    ");
+    $grpStmt->bind_param('ss', $startDate, $endDate);
+    $grpStmt->execute();
+    $grpRes = $grpStmt->get_result();
+    $existingGroups = [];
+    while ($row = $grpRes->fetch_assoc()) {
+        $existingGroups[(int) $row['id']] = $row;
+    }
+    $grpStmt->close();
+
+    // (D) What the departures SHOULD look like. Same bucketing and the same PAX split as before.
+    $desired = [];
+    foreach (buildGroupBuckets($tours) as $bucketKey => $bucketTours) {
         if (count($bucketTours) < 2) {
-            continue;
+            continue; // a departure with one booking is not a group
         }
-
-        // Per-product capacity from the bucket's display (most-frequent) title.
         $maxPax = getMaxPaxForTitle(pickDisplayTitle($bucketTours));
-
-        // Split into sub-groups so PAX never exceeds the per-product max.
-        $subGroups = [];
-        $current = [];
-        $currentPax = 0;
-        foreach ($bucketTours as $tour) {
-            $pax = intval($tour['participants']);
-            if ($currentPax + $pax > $maxPax && count($current) > 0) {
-                $subGroups[] = $current;
-                $current = [];
-                $currentPax = 0;
-            }
-            $current[] = $tour;
-            $currentPax += $pax;
-        }
-        if (count($current) > 0) {
-            $subGroups[] = $current;
-        }
-
-        foreach ($subGroups as $subGroup) {
+        foreach (splitBucketByPax($bucketTours, $maxPax) as $subGroup) {
             if (count($subGroup) < 2) {
                 continue;
             }
-
-            $totalPax = array_sum(array_column($subGroup, 'participants'));
-            $displayTitle = pickDisplayTitle($subGroup);   // most frequent title (tie -> most PAX)
-            $groupMax = getMaxPaxForTitle($displayTitle);
-            $firstTour = $subGroup[0];
-
-            // Always create a fresh group (we detached everything above).
-            if ($hasMaxPax) {
-                $insertStmt = $conn->prepare("
-                    INSERT INTO tour_groups (group_date, group_time, display_name, total_pax, max_pax, is_manual_merge)
-                    VALUES (?, ?, ?, ?, ?, 0)
-                ");
-                $insertStmt->bind_param('sssii', $firstTour['date'], $firstTour['time'], $displayTitle, $totalPax, $groupMax);
-            } else {
-                $insertStmt = $conn->prepare("
-                    INSERT INTO tour_groups (group_date, group_time, display_name, total_pax, is_manual_merge)
-                    VALUES (?, ?, ?, ?, 0)
-                ");
-                $insertStmt->bind_param('sssi', $firstTour['date'], $firstTour['time'], $displayTitle, $totalPax);
-            }
-
-            if ($insertStmt->execute()) {
-                $newGroupId = $conn->insert_id;
-                $insertStmt->close();
-
-                // Assign tours to the new group
-                $tourIds = array_column($subGroup, 'id');
-                $placeholders = implode(',', array_fill(0, count($tourIds), '?'));
-                $types = str_repeat('i', count($tourIds) + 1);
-                $params = array_merge([$newGroupId], $tourIds);
-
-                $assignStmt = $conn->prepare("UPDATE tours SET group_id = ? WHERE id IN ($placeholders)");
-                $assignStmt->bind_param($types, ...$params);
-                $assignStmt->execute();
-                $assignStmt->close();
-
-                // Propagate a guide from the first member that already has one.
-                $guideStmt = $conn->prepare("
-                    SELECT t.guide_id, g.name as guide_name
-                    FROM tours t
-                    LEFT JOIN guides g ON t.guide_id = g.id
-                    WHERE t.group_id = ? AND t.guide_id IS NOT NULL
-                    LIMIT 1
-                ");
-                $guideStmt->bind_param('i', $newGroupId);
-                $guideStmt->execute();
-                $guideRow = $guideStmt->get_result()->fetch_assoc();
-                $guideStmt->close();
-
-                if ($guideRow) {
-                    $updateGuideStmt = $conn->prepare("
-                        UPDATE tour_groups SET guide_id = ?, guide_name = ?, updated_at = NOW() WHERE id = ?
-                    ");
-                    $updateGuideStmt->bind_param('isi', $guideRow['guide_id'], $guideRow['guide_name'], $newGroupId);
-                    $updateGuideStmt->execute();
-                    $updateGuideStmt->close();
-
-                    // Step 3.5: the group inherited that guide, but a booking that joined an already
-                    // assigned departure still had guide_id NULL / needs_guide_assignment = 1 and showed
-                    // up as "unassigned" everywhere tours are looked at one by one. Give the guide to the
-                    // members that have none (a member with a different guide is never overwritten).
-                    $guidesFilled += fillMissingGroupGuide($conn, $newGroupId, $guideRow['guide_id']);
-                }
-
-                $groupsCreated++;
-                $toursGrouped += count($subGroup);
-            } else {
-                error_log("autoGroupAfterSync: Failed to create group: " . $conn->error);
-                $insertStmt->close();
-            }
+            $displayTitle = pickDisplayTitle($subGroup);
+            $desired[] = [
+                'bucket_key' => $bucketKey,
+                'tours'      => $subGroup,
+                'tour_ids'   => array_map('intval', array_column($subGroup, 'id')),
+                'date'       => $subGroup[0]['date'],
+                'time'       => $subGroup[0]['time'],
+                'title'      => $displayTitle,
+                'total_pax'  => (int) array_sum(array_column($subGroup, 'participants')),
+                'max_pax'    => (int) getMaxPaxForTitle($displayTitle),
+            ];
         }
     }
 
-    // Clean up orphaned groups (no tours reference them)
+    // (E) Which existing row does each desired departure keep? Most shared members wins.
+    $matched = matchDesiredToExistingGroups(array_column($desired, 'tour_ids'), $currentMembership);
+
+    // (F) Create what is new, update only what differs, and remember who ends up where.
+    $desiredTourGroup = [];   // tourId => groupId after this run
+    $touchedGroups = [];      // groups that were created or whose membership changed -> guide pass
+    foreach ($desired as $i => $d) {
+        $groupId = $matched[$i];
+
+        if ($groupId === null) {
+            $cols = ['group_date', 'group_time', 'display_name', 'total_pax', 'is_manual_merge'];
+            $vals = [$d['date'], $d['time'], $d['title'], $d['total_pax'], 0];
+            $types = 'sssii';
+            if ($hasMaxPax)    { $cols[] = 'max_pax';    $vals[] = $d['max_pax'];    $types .= 'i'; }
+            if ($hasBucketKey) { $cols[] = 'bucket_key'; $vals[] = $d['bucket_key']; $types .= 's'; }
+            $insertStmt = $conn->prepare("INSERT INTO tour_groups (" . implode(', ', $cols) . ")
+                                          VALUES (" . implode(', ', array_fill(0, count($cols), '?')) . ")");
+            $insertStmt->bind_param($types, ...$vals);
+            if (!$insertStmt->execute()) {
+                error_log("autoGroupAfterSync: Failed to create group: " . $conn->error);
+                $insertStmt->close();
+                continue;
+            }
+            $groupId = $conn->insert_id;
+            $insertStmt->close();
+            $groupsCreated++;
+            $rowsWritten++;
+            $touchedGroups[$groupId] = true;
+        } else {
+            $groupsReused++;
+            $row = $existingGroups[$groupId] ?? null;
+            $changes = [];
+            $params = [];
+            $types = '';
+            if ($row === null || substr((string) $row['group_date'], 0, 10) !== substr((string) $d['date'], 0, 10)) {
+                $changes[] = 'group_date = ?'; $params[] = $d['date']; $types .= 's';
+            }
+            if ($row === null || normalizeGroupTime($row['group_time']) !== normalizeGroupTime($d['time'])) {
+                $changes[] = 'group_time = ?'; $params[] = $d['time']; $types .= 's';
+            }
+            if ($row === null || (string) $row['display_name'] !== (string) $d['title']) {
+                $changes[] = 'display_name = ?'; $params[] = $d['title']; $types .= 's';
+            }
+            if ($row === null || (int) $row['total_pax'] !== $d['total_pax']) {
+                $changes[] = 'total_pax = ?'; $params[] = $d['total_pax']; $types .= 'i';
+            }
+            if ($hasMaxPax && ($row === null || (int) $row['max_pax'] !== $d['max_pax'])) {
+                $changes[] = 'max_pax = ?'; $params[] = $d['max_pax']; $types .= 'i';
+            }
+            if ($hasBucketKey && ($row === null || (string) $row['bucket_key'] !== (string) $d['bucket_key'])) {
+                $changes[] = 'bucket_key = ?'; $params[] = $d['bucket_key']; $types .= 's';
+            }
+            if ($changes) {
+                $changes[] = 'updated_at = NOW()';
+                $upd = $conn->prepare("UPDATE tour_groups SET " . implode(', ', $changes) . " WHERE id = ?");
+                $params[] = $groupId; $types .= 'i';
+                $upd->bind_param($types, ...$params);
+                $upd->execute();
+                $upd->close();
+                $groupsUpdated++;
+                $rowsWritten++;
+            }
+        }
+
+        foreach ($d['tour_ids'] as $tid) {
+            $desiredTourGroup[$tid] = $groupId;
+        }
+        $toursGrouped += count($d['tour_ids']);
+    }
+
+    // (G) Membership: write ONLY the tours whose group actually changes.
+    $byGroup = [];
+    foreach ($desiredTourGroup as $tid => $gid) {
+        if (!isset($currentMembership[$tid]) || $currentMembership[$tid] !== $gid) {
+            $byGroup[$gid][] = $tid;
+            $touchedGroups[$gid] = true;
+        }
+    }
+    foreach ($byGroup as $gid => $tourIds) {
+        $placeholders = implode(',', array_fill(0, count($tourIds), '?'));
+        $assign = $conn->prepare("UPDATE tours SET group_id = ? WHERE id IN ($placeholders)");
+        $assign->bind_param(str_repeat('i', count($tourIds) + 1), ...array_merge([$gid], $tourIds));
+        $assign->execute();
+        $toursMoved += $assign->affected_rows > 0 ? $assign->affected_rows : 0;
+        $rowsWritten += $assign->affected_rows > 0 ? $assign->affected_rows : 0;
+        $assign->close();
+    }
+
+    // (H) Anything still sitting in an auto group that no departure wants (cancelled since,
+    //     turned private, lost its product, moved to another date/time, or left alone in its
+    //     bucket) is detached.
+    $toDetach = [];
+    foreach ($currentMembership as $tid => $gid) {
+        if (!isset($desiredTourGroup[$tid])) {
+            $toDetach[] = $tid;
+        }
+    }
+    if ($toDetach) {
+        $placeholders = implode(',', array_fill(0, count($toDetach), '?'));
+        $det = $conn->prepare("UPDATE tours SET group_id = NULL WHERE id IN ($placeholders)");
+        $det->bind_param(str_repeat('i', count($toDetach)), ...$toDetach);
+        $det->execute();
+        $toursDetached = $det->affected_rows > 0 ? $det->affected_rows : 0;
+        $rowsWritten += $toursDetached;
+        $det->close();
+    }
+
+    // (I) A group row dies only when its departure has no members left.
     $conn->query("DELETE FROM tour_groups WHERE id NOT IN (SELECT DISTINCT group_id FROM tours WHERE group_id IS NOT NULL)");
+    $groupsDeleted = $conn->affected_rows > 0 ? $conn->affected_rows : 0;
+    $rowsWritten += $groupsDeleted;
+
+    // (J) Guides (steps 3.5 / 3.6a), only for departures that were created or gained members -
+    //     an untouched group already has its guide on every member and needs no write at all.
+    foreach (array_keys($touchedGroups) as $gid) {
+        $guideId = null;
+        if (isset($existingGroups[$gid]) && $existingGroups[$gid]['guide_id']) {
+            $guideId = (int) $existingGroups[$gid]['guide_id']; // the group's own guide wins
+        }
+        if ($guideId === null) {
+            // A brand-new (or guide-less) departure inherits from the first member that has one.
+            $guideStmt = $conn->prepare("
+                SELECT t.guide_id, g.name AS guide_name
+                FROM tours t
+                LEFT JOIN guides g ON t.guide_id = g.id
+                WHERE t.group_id = ? AND t.guide_id IS NOT NULL AND t.cancelled = 0
+                ORDER BY t.id LIMIT 1
+            ");
+            $guideStmt->bind_param('i', $gid);
+            $guideStmt->execute();
+            $guideRow = $guideStmt->get_result()->fetch_assoc();
+            $guideStmt->close();
+            if ($guideRow) {
+                $guideId = (int) $guideRow['guide_id'];
+                $setGuide = $conn->prepare("UPDATE tour_groups SET guide_id = ?, guide_name = ?, updated_at = NOW() WHERE id = ?");
+                $setGuide->bind_param('isi', $guideId, $guideRow['guide_name'], $gid);
+                $setGuide->execute();
+                $setGuide->close();
+                $rowsWritten++;
+            }
+        }
+        if ($guideId) {
+            $filled = fillMissingGroupGuide($conn, $gid, $guideId);
+            $guidesFilled += $filled;
+            $rowsWritten += $filled;
+        }
+    }
 
     $conn->commit();
 
@@ -1141,10 +1265,16 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
     $conn->query("SELECT RELEASE_LOCK('auto_group')");
 
     return [
-        'guides_filled' => $guidesFilled, // step 3.5
-        'groups_created' => $groupsCreated,
-        'tours_grouped' => $toursGrouped,
-        'date_range' => ['start' => $startDate, 'end' => $endDate]
+        'guides_filled'   => $guidesFilled, // step 3.5
+        'groups_created'  => $groupsCreated,
+        'groups_reused'   => $groupsReused,   // step 3.7: departures that kept their id
+        'groups_updated'  => $groupsUpdated,
+        'groups_deleted'  => $groupsDeleted,
+        'tours_grouped'   => $toursGrouped,
+        'tours_moved'     => $toursMoved,
+        'tours_detached'  => $toursDetached,
+        'rows_written'    => $rowsWritten,
+        'date_range'      => ['start' => $startDate, 'end' => $endDate]
     ];
 }
 
