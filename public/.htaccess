@@ -47,7 +47,13 @@
   # ---- Caching -----------------------------------------------------------------
   # Hashed build output under /assets/ never changes: cache it for a year.
   SetEnvIf Request_URI "^/assets/" FWL_IMMUTABLE=1
-  Header always set Cache-Control "public, max-age=31536000, immutable" env=FWL_IMMUTABLE
+  # Step 4.1b: deliberately NOT "always". With "always" the header is also added to the error
+  # header table, so an error response for an /assets/ URL (a 5xx, or the host's own 403 bot
+  # challenge - both seen while verifying this step) is handed to the browser as cacheable for
+  # a year. That poisons the chunk's URL on that device: retries and reloads then read the
+  # cached failure and the route stays dead. Without "always" the header applies to successful
+  # responses only, which is all that hashed assets need.
+  Header set Cache-Control "public, max-age=31536000, immutable" env=FWL_IMMUTABLE
 
   # The app shell is never cached, so a deploy is picked up on the next normal load.
   <FilesMatch "^index\.html$">
