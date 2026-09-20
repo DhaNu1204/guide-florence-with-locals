@@ -775,6 +775,13 @@ export const savePnlCosts = async (payload) => {
   return response.data;
 };
 
+// Step 6.1: the languages that exist in the range in view, so the dropdown offers only those.
+export const getTourLanguages = async (filters = {}) => {
+  const params = new URLSearchParams({ ...filters, action: 'languages' });
+  const response = await axios.get(`${API_BASE_URL}/tours.php?${params.toString()}`);
+  return response.data;
+};
+
 // Step 6.3: the afternoon radio order for Vox Firenze (admin only).
 export const getRadioPlan = async (date) => {
   const response = await axios.get(`${API_BASE_URL}/radios.php?action=plan&date=${date}`);
@@ -805,6 +812,7 @@ const mysqlDB = {
   getTourById,
   getUnassignedReport,
   getUnassignedCount,
+  getTourLanguages, // step 6.1
   addTour,
   deleteTour,
   updateTour,

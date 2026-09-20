@@ -152,6 +152,10 @@ function listGroups($conn) {
     // Optional filters
     $filterDate = $_GET['date'] ?? null;
     $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
+    // Step 6.1: a group's language is the set of its members' languages, so a MIXED group is
+    // matched by any of them - that is what makes it appear under both English and Spanish.
+    $language = isset($_GET['language']) ? trim((string) $_GET['language']) : null;
+    if ($language === '' || $language === 'all') { $language = null; }
     $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
     // Step 5.2: same date filters, same priority and same windows as tours.php
     // (start_date+end_date > past > upcoming > date), so the Tours page can ask for exactly
@@ -199,6 +203,18 @@ function listGroups($conn) {
         $types .= 'i';
     }
 
+    if ($language !== null) {
+        if (strcasecmp($language, 'Unknown') === 0) {
+            $where[] = "EXISTS (SELECT 1 FROM tours t WHERE t.group_id = tg.id AND t.cancelled = 0
+                                  AND (t.language IS NULL OR TRIM(t.language) = ''))";
+        } else {
+            $where[] = 'EXISTS (SELECT 1 FROM tours t WHERE t.group_id = tg.id AND t.cancelled = 0
+                                  AND t.language = ?)';
+            $params[] = $language;
+            $types .= 's';
+        }
+    }
+
     $whereClause = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
 
     // Count total
@@ -236,10 +252,21 @@ function listGroups($conn) {
         $row['total_pax'] = intval($row['total_pax']);
         $row['is_manual_merge'] = (bool)$row['is_manual_merge'];
         if ($row['guide_id']) $row['guide_id'] = intval($row['guide_id']);
-
         // Fetch tours belonging to this group
         $row['tours'] = getGroupTours($conn, $row['id']);
         $row['booking_count'] = count($row['tours']);
+
+        // Step 6.1: a group's language is the SET of its members' languages, taken from the rows
+        // we already have. A mixed departure reads e.g. "English, Spanish"; a group whose members
+        // carry none reads "Unknown" so it can still be found.
+        $langs = [];
+        foreach ($row['tours'] as $memberTour) {
+            if (!empty($memberTour['cancelled'])) { continue; }
+            $l = isset($memberTour['language']) ? trim((string) $memberTour['language']) : '';
+            if ($l !== '' && !in_array($l, $langs, true)) { $langs[] = $l; }
+        }
+        sort($langs);
+        $row['language'] = $langs ? implode(', ', $langs) : 'Unknown';
 
         $groups[] = $row;
     }
@@ -300,7 +327,7 @@ function getGroupById($conn, $groupId) {
 function getGroupTours($conn, $groupId) {
     $stmt = $conn->prepare("
         SELECT t.id, t.title, t.date, t.time, t.customer_name, t.customer_email,
-               t.participants, t.booking_channel, t.bokun_confirmation_code,
+               t.participants, t.booking_channel, t.bokun_confirmation_code, t.language,
                t.cancelled, t.payment_status, t.guide_id, t.bokun_data, g.name as guide_name
         FROM tours t
         LEFT JOIN guides g ON t.guide_id = g.id

@@ -28,6 +28,7 @@ vi.mock('../../services/mysqlDB', () => {
     updateTour: resolved({ success: true }),
     clearTourCache: vi.fn(),
     getUnassignedCount: vi.fn().mockResolvedValue(17),
+    getTourLanguages: vi.fn().mockResolvedValue({ success: true, data: [] }), // step 6.1
   };
   return {
     default: mysqlDB,

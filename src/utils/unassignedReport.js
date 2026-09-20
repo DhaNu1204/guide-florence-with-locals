@@ -34,7 +34,7 @@ const parseYmdLocal = (ymd) => {
 };
 
 /**
- * @param {Array<{date:string,time:string,title:string}>} departures  server rows, one per departure
+ * @param {Array<{date:string,time:string,title:string,language:string}>} departures  server rows, one per departure
  * @param {{filterLabel:string, now?:Date}} options
  * @returns {string} the report text
  */
@@ -51,7 +51,13 @@ export const buildUnassignedReportText = (departures, { filterLabel, now = new D
   rows.forEach((d) => {
     const key = String(d.date).slice(0, 10);
     if (!byDate.has(key)) byDate.set(key, []);
-    byDate.get(key).push({ time: (d.time || '00:00').substring(0, 5), location: getLocation(d.title) });
+    byDate.get(key).push({
+      time: (d.time || '00:00').substring(0, 5),
+      location: getLocation(d.title),
+      // Step 6.1: the guide needs to know which language the departure is in. A mixed group
+      // arrives as "English, Spanish"; a departure with no language reads "Unknown".
+      language: d.language || 'Unknown',
+    });
   });
 
   [...byDate.keys()].sort().forEach((date) => {
@@ -60,7 +66,7 @@ export const buildUnassignedReportText = (departures, { filterLabel, now = new D
     byDate
       .get(date)
       .sort((a, b) => a.time.localeCompare(b.time))
-      .forEach((entry) => lines.push(`  ${entry.time}  ${entry.location}`));
+      .forEach((entry) => lines.push(`  ${entry.time}  ${entry.location} (${entry.language})`));
     lines.push('');
   });
 
