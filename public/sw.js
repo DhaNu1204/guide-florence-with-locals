@@ -10,7 +10,17 @@
  *
  * Bump CACHE_VERSION to force-clear old caches on deploy if ever needed.
  */
-const CACHE_VERSION = 'fwl-v1';
+const CACHE_VERSION = 'fwl-v2'; // step 4.1b: bumped to drop caches that hold an HTML fallback under an asset URL
+
+// Step 4.1b: a hashed asset that is missing on the server does NOT 404 - the SPA rewrite answers
+// with index.html and HTTP 200. Caching that under the asset's URL poisons the entry permanently:
+// the module import then fails with "Expected a JavaScript-or-Wasm module script but the server
+// responded with a MIME type of text/html" on every later load, even after the file is back.
+// Observed on staging on 2026-09-20 while verifying this step. So: never store, and never serve,
+// an HTML response for an /assets/ request.
+function isHtml(res) {
+  return !!res && (res.headers.get('content-type') || '').toLowerCase().includes('text/html');
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -50,13 +60,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: stale-while-revalidate.
+  // Static assets: stale-while-revalidate (step 4.1b: HTML never counts as an asset).
   event.respondWith(
     caches.open(CACHE_VERSION).then(async (cache) => {
-      const cached = await cache.match(req);
+      let cached = await cache.match(req);
+      if (isHtml(cached)) {
+        // A poisoned entry from before this version: drop it and go to the network.
+        await cache.delete(req);
+        cached = undefined;
+      }
       const network = fetch(req)
         .then((res) => {
-          if (res && res.status === 200) cache.put(req, res.clone());
+          if (res && res.status === 200 && !isHtml(res)) cache.put(req, res.clone());
           return res;
         })
         .catch(() => cached);
