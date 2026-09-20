@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('axios', () => ({ default: { get: vi.fn() } }));
+vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } })); // step 3.9: a sync is a POST
 vi.mock('../mysqlDB', () => ({ clearTourCache: vi.fn() }));
 const notifyForbidden = vi.fn();
 vi.mock('../sessionExpiry', () => ({ notifyForbidden: (...a) => notifyForbidden(...a) }));
@@ -29,6 +29,7 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
   beforeEach(() => {
     events = [];
     axios.get.mockReset();
+    axios.post.mockReset();
     bokunAutoSync.lastSyncTime = null;
     bokunAutoSync.syncInProgress = false;
     bokunAutoSync.userRole = null;
@@ -44,6 +45,7 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
 
     expect(result).toBe(false);
     expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
     expect(bokunAutoSync.lastSyncTime).toBeNull();
     expect(events).toEqual([{ type: 'sync_skipped', trigger: 'periodic', reason: 'not_allowed' }]);
     expect(notifyForbidden).not.toHaveBeenCalled();
@@ -57,20 +59,22 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
 
     expect(result).toBe(false);
     expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
     expect(notifyForbidden).toHaveBeenCalledTimes(1);
   });
 
   it('admin: exactly one request (action=sync, no config call) and a successful sync resolves true', async () => {
     setStorage({ token: 't', userRole: 'admin' });
     bokunAutoSync.userRole = 'admin';
-    axios.get.mockResolvedValueOnce({ data: { success: true, synced_count: 2, total_bookings: 10 } });
+    axios.post.mockResolvedValueOnce({ data: { success: true, synced_count: 2, total_bookings: 10 } });
 
     const result = await bokunAutoSync.performSync('periodic');
 
     expect(result).toBe(true);
-    expect(axios.get).toHaveBeenCalledTimes(1);
-    expect(axios.get.mock.calls[0][0]).toContain('action=sync');
-    expect(axios.get.mock.calls[0][0]).not.toContain('action=config');
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post.mock.calls[0][0]).toContain('action=sync');
+    expect(axios.post.mock.calls[0][0]).not.toContain('action=config');
     expect(bokunAutoSync.lastSyncTime).not.toBeNull();
     expect(events.map((e) => e.type)).toEqual(['sync_started', 'sync_completed']);
   });
@@ -78,12 +82,12 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
   it('sync_disabled from the server is a skip: no failure event, lastSync untouched, one request', async () => {
     setStorage({ token: 't', userRole: 'admin' });
     bokunAutoSync.userRole = 'admin';
-    axios.get.mockResolvedValueOnce({ data: { success: false, error: 'sync_disabled' } });
+    axios.post.mockResolvedValueOnce({ data: { success: false, error: 'sync_disabled' } });
 
     const result = await bokunAutoSync.performSync('periodic');
 
     expect(result).toBe(false);
-    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(axios.post).toHaveBeenCalledTimes(1);
     expect(bokunAutoSync.lastSyncTime).toBeNull();
     expect(events.map((e) => e.type)).toEqual(['sync_started', 'sync_skipped']);
     expect(events[1].reason).toBe('sync_disabled');
@@ -92,7 +96,7 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
   it('403 from the API is "not allowed": no failure event, lastSync untouched', async () => {
     setStorage({ token: 't', userRole: 'admin' });
     bokunAutoSync.userRole = 'admin';
-    axios.get.mockRejectedValueOnce({ response: { status: 403 }, message: 'Request failed with status code 403' });
+    axios.post.mockRejectedValueOnce({ response: { status: 403 }, message: 'Request failed with status code 403' });
 
     const result = await bokunAutoSync.performSync('focus');
 
@@ -106,7 +110,7 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
   it('a real failure still reports sync_failed', async () => {
     setStorage({ token: 't', userRole: 'admin' });
     bokunAutoSync.userRole = 'admin';
-    axios.get.mockRejectedValueOnce({ response: { status: 500 }, message: 'boom' });
+    axios.post.mockRejectedValueOnce({ response: { status: 500 }, message: 'boom' });
 
     const result = await bokunAutoSync.performSync('periodic');
 
@@ -119,6 +123,7 @@ describe('bokunAutoSync role gate (step 1.1)', () => {
 describe('bokunAutoSync has no automatic triggers (step 4.0)', () => {
   beforeEach(() => {
     axios.get.mockReset();
+    axios.post.mockReset();
     bokunAutoSync.syncInProgress = false;
     setStorage({ token: 't', userRole: 'admin' });
   });
@@ -129,6 +134,7 @@ describe('bokunAutoSync has no automatic triggers (step 4.0)', () => {
       bokunAutoSync.initialize('admin');
       vi.advanceTimersByTime(60 * 60 * 1000); // one hour
       expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -144,6 +150,7 @@ describe('bokunAutoSync has no automatic triggers (step 4.0)', () => {
       window.dispatchEvent(new Event('visibilitychange'));
       vi.advanceTimersByTime(5000);
       expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -155,16 +162,16 @@ describe('bokunAutoSync has no automatic triggers (step 4.0)', () => {
     }
   });
 
-  it('syncNow() still calls action=sync as a manual sync', async () => {
-    axios.get.mockResolvedValueOnce({ data: { success: true, synced_count: 0, total_bookings: 0 } });
+  it('syncNow() POSTs action=sync as a manual sync (step 3.9: a sync is never a GET)', async () => {
+    axios.post.mockResolvedValueOnce({ data: { success: true, synced_count: 0, total_bookings: 0 } });
 
     const result = await bokunAutoSync.syncNow();
 
     expect(result).toBe(true);
-    expect(axios.get).toHaveBeenCalledTimes(1);
-    const url = axios.get.mock.calls[0][0];
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    const [url, body] = axios.post.mock.calls[0];
     expect(url).toContain('bokun_sync.php?action=sync');
-    expect(url).toContain('type=manual');
-    expect(url).toContain('triggered_by=manual');
+    expect(body).toEqual({ type: 'manual', triggered_by: 'manual' });
   });
 });

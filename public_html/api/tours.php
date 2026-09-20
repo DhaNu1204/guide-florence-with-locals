@@ -827,18 +827,10 @@ switch ($method) {
                         $tour['payment_status'] = 'unpaid';
                     }
 
-                    // If this update touched the guide assignment, reconcile the
-                    // guide WhatsApp reminders so a newly-assigned within-7-day
-                    // tour schedules promptly. Flag-gated + fully isolated:
-                    // never affects the assignment response. No payment fields.
-                    if (is_array($data) && (array_key_exists('guideId', $data) || array_key_exists('guide_id', $data))) {
-                        try {
-                            require_once __DIR__ . '/twilio_reminders.php';
-                            reconcileGuideReminders($conn);
-                        } catch (\Throwable $reminderErr) {
-                            error_log('tours.php: guide reminder reconcile failed (non-fatal): ' . $reminderErr->getMessage());
-                        }
-                    }
+                    // Step 3.9: this used to reconcile the per-tour "~60 minutes before" WhatsApp
+                    // reminder on a guide assignment. Step 3.10 retired that reminder in favour of
+                    // the evening digest, which its own cron builds from the live data - nothing
+                    // needs reconciling here, and the machinery is deleted.
 
                     echo json_encode($tour);
                 } else {

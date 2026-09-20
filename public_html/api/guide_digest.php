@@ -16,7 +16,7 @@
  * While that flag is false the sender refuses every destination except the test number.
  */
 
-require_once __DIR__ . '/twilio_reminders.php'; // normalizeWhatsapp(), twilioPost(), twilioDryRun()
+require_once __DIR__ . '/twilio_helpers.php'; // normalizeWhatsapp(), twilioPost(), twilioDryRun()
 
 if (!function_exists('digestConfig')) {
 
