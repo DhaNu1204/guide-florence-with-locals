@@ -370,12 +370,26 @@ function createPayment($conn) {
         $tour_result = $tour_stmt->get_result();
         $tour_info = $tour_result->fetch_assoc();
 
+        // Step 5.3: report the row that was actually written - amount, guide and tour - so a batch
+        // can show a truthful total instead of adding up what it hoped the server would store.
+        $written_stmt = $conn->prepare("SELECT p.tour_id, p.guide_id, p.amount, g.name AS guide_name
+                                        FROM payments p LEFT JOIN guides g ON g.id = p.guide_id
+                                        WHERE p.id = ?");
+        $written_stmt->bind_param("i", $payment_id);
+        $written_stmt->execute();
+        $written = $written_stmt->get_result()->fetch_assoc();
+        $written_stmt->close();
+
         http_response_code(201);
         echo json_encode([
             'success' => true,
             'message' => 'Payment recorded successfully',
             'data' => [
                 'payment_id' => $payment_id,
+                'tour_id' => isset($written['tour_id']) ? intval($written['tour_id']) : intval($input['tour_id']),
+                'guide_id' => isset($written['guide_id']) ? intval($written['guide_id']) : intval($input['guide_id']),
+                'guide_name' => isset($written['guide_name']) ? $written['guide_name'] : null,
+                'amount' => isset($written['amount']) ? (float) $written['amount'] : (float) $input['amount'],
                 'tour_payment_status' => $tour_info['payment_status'],
                 'tour_total_paid' => $tour_info['total_amount_paid']
             ]
