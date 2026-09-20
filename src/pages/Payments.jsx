@@ -9,7 +9,8 @@ import { FiDollarSign, FiTrendingUp, FiUsers, FiCalendar, FiDownload, FiPlus, Fi
 // Step 4.1: the PDF generator (and jsPDF behind it) is fetched the first time a
 // report is downloaded, not when this page loads.
 const loadPdfGenerator = () => import('../utils/pdfGenerator');
-import { authFetch } from '../services/authFetch';
+import { authFetch } from '../services/authFetch';
+import { buildBatchPlan, batchTotalLine, batchButtonLabel, batchRequests, summariseResults, formatEuro, tourUnitKey } from '../utils/batchPayment';
 import { useToast } from '../components/Toast/ToastProvider';
 
 const Payments = () => {
@@ -136,6 +137,17 @@ const Payments = () => {
     return { guideName: null, guideId: null, mixed: guideIds.length > 1 };
   }, [selectedTourIds, unpaidTours]);
 
+  // Step 5.3: everything the batch is about to write - how many departures, the per-tour amount,
+  // the total, and the split per guide. The page states all of it before the owner confirms.
+  const selectedToursList = useMemo(
+    () => unpaidTours.filter(t => selectedTourIds.has(tourUnitKey(t))),
+    [selectedTourIds, unpaidTours]
+  );
+  const batchPlan = useMemo(
+    () => buildBatchPlan(selectedToursList, recordAmount, recordGuideOverride),
+    [selectedToursList, recordAmount, recordGuideOverride]
+  );
+
   // Toggle tour selection
   const toggleTourSelection = (tourKey) => {
     setSelectedTourIds(prev => {
@@ -171,21 +183,9 @@ const Payments = () => {
 
   // Submit payment for selected tours
   const handleRecordPayment = async () => {
-    if (selectedTourIds.size === 0) return;
-
-    const amount = parseFloat(recordAmount);
-    if (!amount || amount <= 0) {
-      showNotification('Please enter a valid amount', 'error');
-      return;
-    }
-
-    // Determine guide
-    const guideId = selectedToursGuideInfo.mixed
-      ? parseInt(recordGuideOverride)
-      : selectedToursGuideInfo.guideId;
-
-    if (!guideId) {
-      showNotification('Please select a guide', 'error');
+    // Step 5.3: the plan is the single source of truth - the same object the screen showed.
+    if (!batchPlan.canSubmit) {
+      showNotification(batchPlan.blocker || 'Nothing to record', 'error');
       return;
     }
 
@@ -193,44 +193,44 @@ const Payments = () => {
     const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
     const { date: paymentDate, time: paymentTime } = getItalianDateTime();
 
-    const selectedTours = unpaidTours.filter(t => {
-      const key = t.is_group ? `g${t.group_id}` : `t${t.id}`;
-      return selectedTourIds.has(key);
+    // One request per departure, each paid to THAT departure's own guide (§2.10: the old code
+    // recorded every selected tour against one chosen guide).
+    const requests = batchRequests(batchPlan, {
+      paymentMethod: recordMethod,
+      paymentDate,
+      paymentTime,
+      reference: recordReference
     });
 
-    let successCount = 0;
-    let errorMessages = [];
-
-    for (const tour of selectedTours) {
+    const results = [];
+    for (const body of requests) {
       try {
-        const tourId = tour.id; // For groups, this is the first tour's ID
         const response = await authFetch(`${API_BASE_URL}/payments.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tour_id: parseInt(tourId),
-            guide_id: parseInt(guideId),
-            amount: amount,
-            payment_method: recordMethod,
-            payment_date: paymentDate,
-            payment_time: paymentTime,
-            transaction_reference: recordReference || null,
-            force_group_payment: false
-          })
+          body: JSON.stringify(body)
         });
         const result = await response.json();
         if (response.ok && result.success) {
-          successCount++;
+          // Report what the SERVER says it wrote, not what we hoped it would write.
+          results.push({ ok: true, amount: result.data?.amount ?? body.amount });
         } else {
-          errorMessages.push(result.error || result.message || 'Unknown error');
+          results.push({ ok: false, error: result.error || result.message || 'Unknown error' });
         }
       } catch (err) {
-        errorMessages.push(err.message);
+        results.push({ ok: false, error: err.message });
       }
     }
 
+    const summary = summariseResults(results);
+    const successCount = summary.writtenCount;
+    const errorMessages = results.filter(r => !r.ok).map(r => r.error);
+
     if (successCount > 0) {
-      showNotification(`${successCount} payment${successCount > 1 ? 's' : ''} recorded successfully!`, 'success');
+      showNotification(
+        `${successCount} payment${successCount > 1 ? 's' : ''} recorded — ${formatEuro(summary.total)} in total`,
+        'success'
+      );
       // Optimistic removal: remove paid tours from the list
       setUnpaidTours(prev => prev.filter(t => {
         const key = t.is_group ? `g${t.group_id}` : `t${t.id}`;
@@ -1170,9 +1170,13 @@ const Payments = () => {
                       {/* Guide */}
                       <div>
                         <label className="block text-sm font-medium text-stone-700 mb-1">Guide</label>
-                        {selectedToursGuideInfo.mixed ? (
+                        {/* Step 5.3: a tour that HAS a guide is always paid to that guide (the split
+                            below shows who gets what). This select is only for tours with no guide. */}
+                        {batchPlan.unassignedCount > 0 ? (
                           <>
-                            <div className="text-xs text-terracotta-600 mb-1">Different guides — select one:</div>
+                            <div className="text-xs text-terracotta-600 mb-1">
+                              {batchPlan.unassignedCount} tour{batchPlan.unassignedCount > 1 ? 's have' : ' has'} no guide — choose one:
+                            </div>
                             <select
                               value={recordGuideOverride}
                               onChange={(e) => setRecordGuideOverride(e.target.value)}
@@ -1186,14 +1190,16 @@ const Payments = () => {
                           </>
                         ) : (
                           <div className="px-3 py-2 bg-stone-50 border border-stone-200 rounded-tuscan text-sm text-stone-900 font-medium">
-                            {selectedToursGuideInfo.guideName || 'No guide'}
+                            {batchPlan.mixed
+                              ? `${batchPlan.groups.length} guides — see the split below`
+                              : (selectedToursGuideInfo.guideName || 'No guide')}
                           </div>
                         )}
                       </div>
 
-                      {/* Amount */}
+                      {/* Amount — step 5.3: per TOUR, and the total is spelled out below */}
                       <div>
-                        <label className="block text-sm font-medium text-stone-700 mb-1">Amount (€)</label>
+                        <label className="block text-sm font-medium text-stone-700 mb-1">Amount per tour (€)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -1203,6 +1209,9 @@ const Payments = () => {
                           placeholder="0.00"
                           className="w-full border border-stone-300 rounded-tuscan px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent"
                         />
+                        <div className="mt-1 text-sm font-medium text-stone-700" data-testid="batch-total-line">
+                          {batchTotalLine(batchPlan)}
+                        </div>
                       </div>
 
                       {/* Method Toggle */}
@@ -1247,14 +1256,33 @@ const Payments = () => {
                       </div>
                     </div>
 
+                    {/* Step 5.3: the split, so money is never implied to move between guides */}
+                    {(batchPlan.mixed || batchPlan.unassignedCount > 0) && batchPlan.count > 0 && (
+                      <div className="mt-3 rounded-tuscan border border-amber-300 bg-amber-50 px-3 py-2" data-testid="batch-guide-split">
+                        <div className="text-xs font-semibold text-amber-900 mb-1">
+                          {batchPlan.mixed
+                            ? 'These tours belong to different guides — each guide is paid separately:'
+                            : 'Some of these tours have no guide yet:'}
+                        </div>
+                        <ul className="text-xs text-amber-900 space-y-0.5">
+                          {batchPlan.groups.map((g) => (
+                            <li key={g.guideId === null ? 'none' : g.guideId} className="flex justify-between gap-3">
+                              <span>{g.guideName} — {g.count} tour{g.count > 1 ? 's' : ''} × {formatEuro(batchPlan.amount)}</span>
+                              <span className="font-semibold">{formatEuro(g.subtotal)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     <div className="mt-4 flex justify-end">
                       <Button
                         onClick={handleRecordPayment}
-                        disabled={recordSubmitting || !recordAmount || parseFloat(recordAmount) <= 0}
+                        disabled={recordSubmitting || !batchPlan.canSubmit}
                         loading={recordSubmitting}
                         icon={FiDollarSign}
                       >
-                        Record Payment
+                        {batchButtonLabel(batchPlan)}
                       </Button>
                     </div>
                   </div>
@@ -1346,10 +1374,12 @@ const Payments = () => {
                       </button>
                     </div>
 
-                    {/* Guide */}
-                    {selectedToursGuideInfo.mixed ? (
+                    {/* Guide — step 5.3: only for tours that have none; the rest keep their own */}
+                    {batchPlan.unassignedCount > 0 ? (
                       <div>
-                        <div className="text-xs text-terracotta-600 mb-1">Different guides — select one:</div>
+                        <div className="text-xs text-terracotta-600 mb-1">
+                          {batchPlan.unassignedCount} tour{batchPlan.unassignedCount > 1 ? 's have' : ' has'} no guide — choose one:
+                        </div>
                         <select
                           value={recordGuideOverride}
                           onChange={(e) => setRecordGuideOverride(e.target.value)}
@@ -1363,14 +1393,18 @@ const Payments = () => {
                       </div>
                     ) : (
                       <div className="text-sm text-stone-700">
-                        Guide: <span className="font-medium text-stone-900">{selectedToursGuideInfo.guideName || 'No guide'}</span>
+                        Guide: <span className="font-medium text-stone-900">
+                          {batchPlan.mixed
+                            ? `${batchPlan.groups.length} guides — see the split below`
+                            : (selectedToursGuideInfo.guideName || 'No guide')}
+                        </span>
                       </div>
                     )}
 
                     {/* Amount + Method row */}
                     <div className="flex gap-3">
                       <div className="flex-1">
-                        <label className="block text-xs font-medium text-stone-600 mb-1">Amount (€)</label>
+                        <label className="block text-xs font-medium text-stone-600 mb-1">Amount per tour (€)</label>
                         <input
                           type="number"
                           inputMode="decimal"
@@ -1420,16 +1454,39 @@ const Payments = () => {
                       className="w-full border border-stone-300 rounded-tuscan px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 min-h-[44px]"
                     />
 
+                    {/* Step 5.3: the total and, when it matters, the per-guide split */}
+                    <div className="text-sm font-medium text-stone-700" data-testid="batch-total-line-mobile">
+                      {batchTotalLine(batchPlan)}
+                    </div>
+                    {/* Step 5.3: the split, so money is never implied to move between guides */}
+                    {(batchPlan.mixed || batchPlan.unassignedCount > 0) && batchPlan.count > 0 && (
+                      <div className="rounded-tuscan border border-amber-300 bg-amber-50 px-3 py-2" data-testid="batch-guide-split-mobile">
+                        <div className="text-xs font-semibold text-amber-900 mb-1">
+                          {batchPlan.mixed
+                            ? 'These tours belong to different guides — each guide is paid separately:'
+                            : 'Some of these tours have no guide yet:'}
+                        </div>
+                        <ul className="text-xs text-amber-900 space-y-0.5">
+                          {batchPlan.groups.map((g) => (
+                            <li key={g.guideId === null ? 'none' : g.guideId} className="flex justify-between gap-3">
+                              <span>{g.guideName} — {g.count} tour{g.count > 1 ? 's' : ''} × {formatEuro(batchPlan.amount)}</span>
+                              <span className="font-semibold">{formatEuro(g.subtotal)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     {/* Submit */}
                     <Button
                       onClick={handleRecordPayment}
-                      disabled={recordSubmitting || !recordAmount || parseFloat(recordAmount) <= 0}
+                      disabled={recordSubmitting || !batchPlan.canSubmit}
                       loading={recordSubmitting}
                       icon={FiDollarSign}
                       fullWidth
                       size="lg"
                     >
-                      Record Payment
+                      {batchButtonLabel(batchPlan)}
                     </Button>
                   </div>
                 </div>
