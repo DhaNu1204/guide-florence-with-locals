@@ -172,15 +172,22 @@ check('... and it too is stable on the next run',
     groupOf($conn, $e) === $g2 && (int) $r9b['rows_written'] === 0, 'rows_written=' . $r9b['rows_written']);
 
 // --- 10. a departure that splits on the PAX cap -------------------------------------------
-$conn->query("UPDATE tours SET participants = 5 WHERE id IN ($e, $f)");
-$g = addTour($conn, 'g', 5, '15:45:00', TEST_DATE2);
-$h = addTour($conn, 'h', 4, '15:45:00', TEST_DATE2);
+// 2+2+3 = 7 fills the first group, the cap (9) pushes the next two into a second one:
+// sub-groups [e,f,g] and [h,i]. The half that still holds e and f must keep the id.
+$conn->query("UPDATE tours SET participants = 2 WHERE id IN ($e, $f)");
+$g = addTour($conn, 'g', 3, '15:45:00', TEST_DATE2);
+$h = addTour($conn, 'h', 3, '15:45:00', TEST_DATE2);
+$i = addTour($conn, 'i', 3, '15:45:00', TEST_DATE2);
 $r10 = regroup($conn);
 $ids = [];
-foreach ([$e, $f, $g, $h] as $t) { $ids[groupOf($conn, $t)] = true; }
-check('a 19-PAX departure with a cap of 9 splits into several groups', count($ids) >= 2,
-    'groups=' . count($ids) . ' created=' . $r10['groups_created']);
-check('... the first half kept the original id', isset($ids[$g2]), 'ids=' . implode(',', array_keys($ids)));
+foreach ([$e, $f, $g, $h, $i] as $t) { $ids[(string) groupOf($conn, $t)] = true; }
+check('a departure over the PAX cap splits into two groups', count($ids) === 2,
+    'groups=' . count($ids) . ' created=' . $r10['groups_created'] . ' ids=' . implode(',', array_keys($ids)));
+check('... the half that kept e and f kept the original id',
+    groupOf($conn, $e) === $g2 && groupOf($conn, $f) === $g2 && groupOf($conn, $g) === $g2,
+    'e=' . var_export(groupOf($conn, $e), true) . ' g2=' . $g2);
+check('... the other half is a new group',
+    groupOf($conn, $h) !== null && groupOf($conn, $h) === groupOf($conn, $i) && groupOf($conn, $h) !== $g2);
 $r10b = regroup($conn);
 check('... and the split is stable too', (int) $r10b['rows_written'] === 0, 'rows_written=' . $r10b['rows_written']);
 
