@@ -134,11 +134,18 @@ if [ "$DEPLOY_FRONTEND" = true ]; then
 fi
 
 # --- Remote sync helper (runs on the server): copy only changed files from a staged tree --------------
-# args: SRC DEST [DELETE_SCOPE]. DELETE_SCOPE (e.g. "assets") removes remote files under that folder
+# args: SRC DEST [DELETE_SCOPE]. DELETE_SCOPE (e.g. "assets") retires remote files under that folder
 # that are not in SRC. Nothing else is ever deleted; unchanged files are left untouched (mtime kept).
+#
+# Step 4.1b: retiring takes TWO deploys. A file that this deploy orphans is KEPT and its name is
+# recorded in $DEST/.deploy-assets-retained.log (denied by the site .htaccess, which blocks *.log);
+# it is deleted only by the next deploy that still does not want it. So the previous release's
+# hashed chunks always survive one deploy, and a phone holding an open tab across a deploy can
+# still fetch the chunks its index-*.js asks for. They are immutable and hash-named, so keeping
+# them costs a few hundred KB and can never serve the wrong content.
 # (plain temp-file lists, no process substitution: the host's bash has no /dev/fd)
 read -r -d '' REMOTE_SYNC <<'SYNC' || true
-SRC="$1"; DEST="$2"; SCOPE="${3:-}"; changed=0; same=0; removed=0
+SRC="$1"; DEST="$2"; SCOPE="${3:-}"; changed=0; same=0; removed=0; kept=0
 LIST=$(mktemp); mkdir -p "$DEST"; cd "$SRC"
 find . -type f > "$LIST"
 while IFS= read -r f; do
@@ -150,14 +157,25 @@ while IFS= read -r f; do
     fi
 done < "$LIST"
 if [ -n "$SCOPE" ] && [ -d "$DEST/$SCOPE" ]; then
+    STATE="$DEST/.deploy-assets-retained.log"
+    PREV=$(mktemp); NEXT=$(mktemp)
+    [ -f "$STATE" ] && cat "$STATE" > "$PREV"
     find "$DEST/$SCOPE" -type f > "$LIST"
     while IFS= read -r f; do
         rel=${f#$DEST/}
-        if [ ! -f "$SRC/$rel" ]; then rm -f "$f"; removed=$((removed+1)); echo "  removed stale: $rel"; fi
+        if [ ! -f "$SRC/$rel" ]; then
+            if grep -Fxq "$rel" "$PREV"; then
+                rm -f "$f"; removed=$((removed+1)); echo "  removed stale: $rel"
+            else
+                echo "$rel" >> "$NEXT"; kept=$((kept+1)); echo "  kept one more deploy: $rel"
+            fi
+        fi
     done < "$LIST"
+    cat "$NEXT" > "$STATE"; chmod 600 "$STATE"
+    rm -f "$PREV" "$NEXT"
 fi
 rm -f "$LIST"
-echo "  sync: $changed updated, $same unchanged, $removed removed"
+echo "  sync: $changed updated, $same unchanged, $kept kept-one-more, $removed removed"
 SYNC
 
 # --- Backend: allowlist from git ls-files, print it, tar it up with VERSION and .htaccess, sync -------

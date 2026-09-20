@@ -1,4 +1,4 @@
-import React, { useEffect, lazy, Suspense } from 'react';
+import React, { useEffect, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -9,22 +9,26 @@ import AdminRoute from './components/AdminRoute';
 import Login from './pages/Login';
 import { PageTitleProvider } from './contexts/PageTitleContext';
 import BokunAutoSyncProvider from './components/BokunAutoSyncProvider';
+import lazyWithRetry from './utils/lazyWithRetry';
 import './index.css';
 
 // Step 4.1: every page below is fetched as its own chunk the first time its route
 // is opened, so the first screen no longer downloads the whole app. Login,
 // ModernLayout, AuthContext and the route guards stay eager (needed immediately).
-const Dashboard = lazy(() => import('./components/Dashboard'));
-const Guides = lazy(() => import('./pages/Guides'));
-const Tours = lazy(() => import('./pages/Tours'));
-const Tickets = lazy(() => import('./pages/Tickets'));
-const Payments = lazy(() => import('./pages/Payments'));
-const GuideReports = lazy(() => import('./pages/GuideReports'));
-const EditTour = lazy(() => import('./pages/EditTour'));
-const BokunIntegration = lazy(() => import('./pages/BokunIntegration'));
-const PriorityTickets = lazy(() => import('./pages/PriorityTickets'));
-const DailyPnL = lazy(() => import('./pages/DailyPnL'));
-const GuideRespond = lazy(() => import('./pages/GuideRespond'));
+// Step 4.1b: through lazyWithRetry, so one dropped chunk request on a phone retries
+// (300 ms, 900 ms) and, if it still fails, reloads the tab once instead of showing the
+// red error screen. See src/utils/lazyWithRetry.js.
+const Dashboard = lazyWithRetry(() => import('./components/Dashboard'));
+const Guides = lazyWithRetry(() => import('./pages/Guides'));
+const Tours = lazyWithRetry(() => import('./pages/Tours'));
+const Tickets = lazyWithRetry(() => import('./pages/Tickets'));
+const Payments = lazyWithRetry(() => import('./pages/Payments'));
+const GuideReports = lazyWithRetry(() => import('./pages/GuideReports'));
+const EditTour = lazyWithRetry(() => import('./pages/EditTour'));
+const BokunIntegration = lazyWithRetry(() => import('./pages/BokunIntegration'));
+const PriorityTickets = lazyWithRetry(() => import('./pages/PriorityTickets'));
+const DailyPnL = lazyWithRetry(() => import('./pages/DailyPnL'));
+const GuideRespond = lazyWithRetry(() => import('./pages/GuideRespond'));
 
 // Bridges non-React 401 handling (axios interceptor + authFetch) to React.
 // Listens for the window 'app:session-expired' event, shows a toast, and
@@ -210,14 +214,21 @@ function AppRoutes() {
   );
 }
 
-// Fallback component for Sentry error boundary
-const ErrorFallback = ({ error, resetError }) => (
+// Fallback component for Sentry error boundary.
+// Step 4.1b: "Try Again" used to call resetError(), which only re-renders - for the most common
+// error here (a page chunk that failed to download) React replays the same rejected promise, so
+// the button could never help. It reloads the page instead, which refetches index.html (no-store
+// since step 2.3) and therefore the current chunks.
+const ErrorFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-100">
     <div className="bg-white p-8 rounded-lg shadow-lg max-w-md text-center">
       <h2 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h2>
-      <p className="text-gray-600 mb-4">An unexpected error occurred. Our team has been notified.</p>
+      <p className="text-gray-600 mb-2">An unexpected error occurred. Our team has been notified.</p>
+      <p className="text-gray-500 text-sm mb-4">
+        If you are on mobile data, check your connection and try again.
+      </p>
       <button
-        onClick={resetError}
+        onClick={() => window.location.reload()}
         className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition"
       >
         Try Again
