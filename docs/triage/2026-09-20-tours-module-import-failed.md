@@ -44,3 +44,28 @@ and `src/App.jsx:213-226` — the `ErrorFallback` "Try Again" button calls `rese
 3. `ErrorFallback` "Try Again" must reload the page, and say to check the connection.
 4. Keep the previous release's `assets/` for one more deploy, so cause B cannot happen at all.
 5. Service-worker precaching of route chunks is **step 4.5** (`vite-plugin-pwa` / `generateSW`), not this step.
+
+## Two more causes found while verifying the fix on staging
+Neither was visible from the Sentry event; both were found by actually breaking a chunk on staging.
+
+### C — the service worker cached the SPA fallback under the chunk's URL
+A hashed asset that is missing on the server does **not** 404: the SPA rewrite answers with
+`index.html` and **HTTP 200** (verified: `GET /assets/nope-does-not-exist-123.js` → `200`,
+`Content-Type: text/html`). `sw.js` cached every 200 under the requested URL, so the chunk URL
+ended up holding HTML and every later import failed with *"Expected a JavaScript-or-Wasm module
+script but the server responded with a MIME type of text/html"* — **permanently**, because the
+cached copy is served before the network. Observed directly: after restoring the file on the
+server (200 `application/x-javascript`), the tab still showed the error screen.
+This defeats the whole recovery design, so it is fixed here: `sw.js` never stores and never
+serves an HTML response for an `/assets/` request, and `CACHE_VERSION` is bumped to `fwl-v2`.
+
+### D — `Header always set … immutable` stamps error responses too
+`public/.htaccess` had `SetEnvIf Request_URI "^/assets/" FWL_IMMUTABLE=1` + `Header **always**
+set Cache-Control "public, max-age=31536000, immutable"`. `always` puts the header in the error
+table as well, so a failed response for a chunk URL — a 5xx, or the host's own `403 "Checking
+your browser"` challenge, both of which occurred during this verification — is handed to the
+browser as cacheable **for a year**. The URL is then dead on that device: retries and reloads
+read the cached failure without touching the server. Reproduced on staging, where one simulated
+503 made `Tours-B1cu-zm0.js` permanently unusable in that browser while `curl` still got 200.
+Fixed by dropping `always` from that one line (successful responses still get the header; the
+SPA fallback for a missing asset already answers `no-cache, no-store, must-revalidate`).
