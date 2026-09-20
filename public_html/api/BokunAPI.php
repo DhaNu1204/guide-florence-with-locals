@@ -670,7 +670,8 @@ class BokunAPI {
             'date' => $date,
             'time' => $time,
             'duration' => $duration,
-            'language' => $language,
+            // Step 6.1: one spelling per language, so the filter can match exactly.
+            'language' => function_exists('tourLanguageCanonical') ? tourLanguageCanonical($language) : $language,
             'description' => null, // Can be filled from notes later
             'customer_name' => $this->getCustomerName($booking),
             'customer_email' => $customer['email'] ?? null,

@@ -164,6 +164,58 @@ if (!function_exists('deriveListFields')) {
      * @param mixed $title        tours.title (last-resort language keyword source)
      * @return array ['total_participants'=>int, 'start_time_str'=>?string, 'language'=>?string]
      */
+if (!function_exists('tourLanguageCanonical')) {
+    /**
+     * Step 6.1: ONE spelling per language, so a filter can match exactly.
+     *
+     * Production is already clean (5 values: English, Spanish, Italian, German, French - no
+     * codes, no case variants, no stray spaces), so this changes nothing today. It exists so a
+     * future "EN" / "espanol" / " italian " from a new channel is folded in at sync time instead
+     * of quietly becoming a sixth entry in the owner's dropdown.
+     *
+     * Returns the canonical full English name, or null when there is nothing usable - a row with
+     * no language stays NULL and is filterable as "Unknown".
+     */
+    function tourLanguageCanonical($value) {
+        if ($value === null || !is_string($value)) {
+            return null;
+        }
+        $v = trim($value);
+        if ($v === '') {
+            return null;
+        }
+        // Only the first word matters ("English guided tour" -> English).
+        $key = mb_strtolower($v);
+        $map = [
+            'en' => 'English',    'eng' => 'English',    'english' => 'English',   'inglese' => 'English',
+            'it' => 'Italian',    'ita' => 'Italian',    'italian' => 'Italian',   'italiano' => 'Italian',
+            'es' => 'Spanish',    'spa' => 'Spanish',    'spanish' => 'Spanish',   'espanol' => 'Spanish',
+            'español' => 'Spanish', 'spagnolo' => 'Spanish',
+            'fr' => 'French',     'fra' => 'French',     'french' => 'French',     'francais' => 'French',
+            'français' => 'French', 'francese' => 'French',
+            'de' => 'German',     'ger' => 'German',     'deu' => 'German',        'german' => 'German',
+            'deutsch' => 'German', 'tedesco' => 'German',
+            'pt' => 'Portuguese', 'por' => 'Portuguese', 'portuguese' => 'Portuguese',
+            'portugues' => 'Portuguese', 'português' => 'Portuguese',
+            'ru' => 'Russian',    'russian' => 'Russian',
+            'zh' => 'Chinese',    'chinese' => 'Chinese',
+            'ja' => 'Japanese',   'japanese' => 'Japanese',
+        ];
+        if (isset($map[$key])) {
+            return $map[$key];
+        }
+        // A phrase: take the first known language word inside it.
+        foreach ($map as $needle => $name) {
+            if (mb_strlen($needle) > 2 && mb_strpos($key, $needle) !== false) {
+                return $name;
+            }
+        }
+        // Something we do not know: keep it, but in one predictable shape.
+        $first = preg_split('/[\s,;\/]+/', $v)[0];
+        return $first === '' ? null : mb_convert_case(mb_strtolower($first), MB_CASE_TITLE, 'UTF-8');
+    }
+}
+
     function deriveListFields($bokunData, $participants = 0, $language = null, $title = '') {
         if (is_string($bokunData)) {
             $bokunData = json_decode($bokunData, true);
@@ -211,7 +263,9 @@ if (!function_exists('deriveListFields')) {
             }
         }
 
-        return ['total_participants' => $total, 'start_time_str' => $startTimeStr, 'language' => $lang];
+        // Step 6.1: one spelling per language, whatever the payload used.
+        return ['total_participants' => $total, 'start_time_str' => $startTimeStr,
+                'language' => tourLanguageCanonical($lang)];
     }
 }
 

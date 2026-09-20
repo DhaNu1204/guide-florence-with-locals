@@ -227,65 +227,11 @@ const getBookingDate = (tour) => {
   }
 };
 
-// Helper function to extract tour language from bokun_data
-const getTourLanguage = (tour) => {
-  try {
-    // First check if language is stored in database
-    if (tour.language) {
-      return tour.language;
-    }
-
-    // Extract from Bokun data
-    if (tour.bokun_data) {
-      const bokunData = JSON.parse(tour.bokun_data);
-      if (bokunData.productBookings && bokunData.productBookings[0]) {
-        const booking = bokunData.productBookings[0];
-
-        // IMPORTANT: Check in notes for "GUIDE : English" pattern
-        if (booking.notes && Array.isArray(booking.notes)) {
-          for (const note of booking.notes) {
-            if (note.body) {
-              // Look for "GUIDE : English" or similar patterns
-              const guideMatch = note.body.match(/GUIDE\s*:\s*([A-Za-z]+)/i);
-              if (guideMatch) {
-                return guideMatch[1].charAt(0).toUpperCase() + guideMatch[1].slice(1).toLowerCase();
-              }
-
-              // Look for "Booking languages:" section
-              const langMatch = note.body.match(/Booking languages.*?:\s*([A-Za-z]+)/is);
-              if (langMatch) {
-                return langMatch[1].charAt(0).toUpperCase() + langMatch[1].slice(1).toLowerCase();
-              }
-            }
-          }
-        }
-
-        // Option 1: Check in fields
-        if (booking.fields && booking.fields.language) {
-          return booking.fields.language;
-        }
-
-        // Option 2: Check in product details
-        if (booking.product && booking.product.language) {
-          return booking.product.language;
-        }
-
-        // Option 3: Check title for language indicators
-        const title = (booking.product?.title || booking.title || tour.title || '').toLowerCase();
-        if (title.includes('italian')) return 'Italian';
-        if (title.includes('spanish')) return 'Spanish';
-        if (title.includes('french')) return 'French';
-        if (title.includes('german')) return 'German';
-        if (title.includes('english')) return 'English';
-      }
-    }
-
-    // Return null if no language found - don't assume
-    return null;
-  } catch (error) {
-    return null;
-  }
-};
+// Step 6.1: the language is computed ONCE at sync time and stored on the row (tours.language,
+// canonical spelling), and the list endpoint returns it - so the page just reads it. The old
+// browser-side extractor that re-parsed bokun_data on every render is gone; since 4.2 the list
+// does not even carry bokun_data, so its fallbacks could never fire anyway.
+const getTourLanguage = (tour) => (tour && tour.language ? tour.language : null);
 
 // Read an optional ?date=YYYY-MM-DD deep link (e.g. from the Dashboard "needs a guide" alert).
 // Parse from parts (not new Date('YYYY-MM-DD')) to avoid a UTC off-by-one shifting the day.
@@ -316,6 +262,9 @@ const Tours = () => {
   const [loadError, setLoadError] = useState(null);
   const [guides, setGuides] = useState([]);
   const [selectedGuideId, setSelectedGuideId] = useState('all');
+  // Step 6.1: filter by the language the tour is given in. 'Unknown' = the rows that have none.
+  const [selectedLanguage, setSelectedLanguage] = useState('all');
+  const [languageOptions, setLanguageOptions] = useState([]);
   const [filterDate, setFilterDate] = useState(initialDateParam || new Date()); // Default to today (or ?date= deep link)
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -436,6 +385,9 @@ const Tours = () => {
     if (selectedGuideId !== 'all') {
       filters.guide_id = selectedGuideId;
     }
+    if (selectedLanguage !== 'all') {
+      filters.language = selectedLanguage;
+    }
     return filters;
   };
 
@@ -462,7 +414,17 @@ const Tours = () => {
     if (showDateRange && (!rangeStartDate || !rangeEndDate)) return;
     setCurrentPage(1); // Reset to page 1 when filters change
     loadData(false, 1, getCurrentFilters());
-  }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate, selectedGuideId]);
+  }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate, selectedGuideId, selectedLanguage]);
+
+  // Step 6.1: the dropdown only offers languages that exist in the range in view. The language
+  // filter itself is excluded from the question, so choosing one never empties the list.
+  useEffect(() => {
+    if (showDateRange && (!rangeStartDate || !rangeEndDate)) return;
+    const { language: _lang, guide_id: _guide, ...rangeFilters } = getCurrentFilters();
+    mysqlDB.getTourLanguages(rangeFilters)
+      .then((res) => setLanguageOptions(Array.isArray(res?.data) ? res.data : []))
+      .catch(() => setLanguageOptions([]));
+  }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate]);
 
   // ---- "Ask a guide" availability-request flow ----------------------------
   // NB: declared BEFORE the mount effect below — that effect lists loadOpenRequests
@@ -1169,6 +1131,22 @@ const Tours = () => {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">Filter by Language</label>
+              <select
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value)}
+                className="w-full px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+                data-testid="tours-language-filter"
+              >
+                <option value="all">All Languages</option>
+                {languageOptions.map((l) => (
+                  <option key={l.language} value={l.language}>
+                    {l.language} ({l.departures})
+                  </option>
+                ))}
+              </select>
+            </div>
             <DateFilter
               filterDate={filterDate}
               setFilterDate={setFilterDate}
@@ -1366,8 +1344,15 @@ const Tours = () => {
                                 </div>
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
-                                <span className="inline-block px-2 py-1 bg-renaissance-50 text-renaissance-700 text-xs font-medium rounded-tuscan">
-                                  {getTourLanguage(tour)}
+                                <span
+                                  className={`inline-block px-2 py-1 text-xs font-medium rounded-tuscan ${
+                                    getTourLanguage(tour)
+                                      ? 'bg-renaissance-50 text-renaissance-700'
+                                      : 'bg-stone-100 text-stone-500'
+                                  }`}
+                                  data-testid="tour-language-chip"
+                                >
+                                  {getTourLanguage(tour) || 'Unknown'}
                                 </span>
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">

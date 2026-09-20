@@ -184,6 +184,10 @@ switch ($method) {
         // Get optional date filter parameter (YYYY-MM-DD format)
         $filterDate = isset($_GET['date']) ? $_GET['date'] : null;
         $guideId = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
+        // Step 6.1: the language filter. 'Unknown' means the rows that have none - they must stay
+        // findable instead of quietly disappearing from every view.
+        $language = isset($_GET['language']) ? trim((string) $_GET['language']) : null;
+        if ($language === '' || $language === 'all') { $language = null; }
         $upcoming = isset($_GET['upcoming']) && $_GET['upcoming'] === 'true';
         $past = isset($_GET['past']) && $_GET['past'] === 'true';
         $startDate = isset($_GET['start_date']) ? $_GET['start_date'] : null;
@@ -237,6 +241,19 @@ switch ($method) {
             $whereTypes .= "i";
         }
 
+        // Step 6.1: filter on the stored language (canonical since this step; the sync writes
+        // one spelling per language). A departure is matched through its own row here; groups are
+        // matched member by member, which is what makes a mixed group appear under both.
+        if ($language !== null) {
+            if (strcasecmp($language, 'Unknown') === 0) {
+                $whereConditions[] = "(t.language IS NULL OR t.language = '')";
+            } else {
+                $whereConditions[] = "t.language = ?";
+                $whereParams[] = $language;
+                $whereTypes .= "s";
+            }
+        }
+
         // Product type filter via products table
         if ($productType === 'tour') {
             // Exclude tickets; include tours and manual entries (NULL product_id)
@@ -272,6 +289,57 @@ switch ($method) {
         // the browser from whatever groups the page happened to have loaded (tour-groups.php returns
         // 50 per page and knows no date range), so members of a missing group showed up one by one
         // with their own NULL guide_id.
+        // Step 6.1: the languages that actually exist in the range the user is looking at, so
+        // the dropdown never offers one that would return nothing. Counted per DEPARTURE, like
+        // everything else the owner sees, and a departure with no language counts as "Unknown".
+        if (isset($_GET['action']) && $_GET['action'] === 'languages') {
+            $langConditions = [];
+            $langParams = [];
+            $langTypes = "";
+            $cursor = 0;
+            foreach ($whereConditions as $cond) {
+                $n = substr_count($cond, '?');
+                // the language filter itself must not narrow the list of languages on offer
+                if ($cond !== "t.guide_id = ?" && $cond !== "t.language = ?"
+                    && $cond !== "(t.language IS NULL OR t.language = '')") {
+                    $langConditions[] = $cond;
+                    for ($k = 0; $k < $n; $k++) {
+                        $langParams[] = $whereParams[$cursor + $k];
+                        $langTypes .= $whereTypes[$cursor + $k];
+                    }
+                }
+                $cursor += $n;
+            }
+            $langConditions[] = "t.cancelled = 0";
+            $langWhere = "WHERE " . implode(" AND ", $langConditions);
+
+            $langSql = "SELECT COALESCE(NULLIF(TRIM(t.language), ''), 'Unknown') AS language,
+                               COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) AS departures,
+                               COUNT(*) AS bookings
+                        FROM tours t
+                        LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+                        $langWhere
+                        GROUP BY COALESCE(NULLIF(TRIM(t.language), ''), 'Unknown')
+                        ORDER BY departures DESC, language ASC";
+            $langStmt = $conn->prepare($langSql);
+            if (count($langParams) > 0) {
+                $langStmt->bind_param($langTypes, ...$langParams);
+            }
+            $langStmt->execute();
+            $langResult = $langStmt->get_result();
+            $languages = [];
+            while ($r = $langResult->fetch_assoc()) {
+                $languages[] = [
+                    'language'   => $r['language'],
+                    'departures' => intval($r['departures']),
+                    'bookings'   => intval($r['bookings']),
+                ];
+            }
+            $langStmt->close();
+            echo json_encode(['success' => true, 'data' => $languages]);
+            exit();
+        }
+
         if (isset($_GET['action']) && $_GET['action'] === 'unassigned-report') {
             $reportConditions = [];
             $reportParams = [];
@@ -297,7 +365,10 @@ switch ($method) {
                                  LEFT(COALESCE(MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
                                  COALESCE(MAX(tg.display_name), MIN(t.title)) AS unit_title,
                                  COUNT(*) AS bookings,
-                                 SUM(COALESCE(t.participants, 0)) AS pax
+                                 SUM(COALESCE(t.participants, 0)) AS pax,
+                                 -- step 6.1: what language the departure is in (a mixed group
+                                 -- lists both of them, comma separated)
+                                 GROUP_CONCAT(DISTINCT NULLIF(TRIM(t.language), '') ORDER BY t.language SEPARATOR ', ') AS languages
                           FROM tours t
                           LEFT JOIN tour_groups tg ON t.group_id = tg.id
                           LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
@@ -320,6 +391,7 @@ switch ($method) {
                     'title' => $r['unit_title'],
                     'bookings' => intval($r['bookings']),
                     'pax' => intval($r['pax']),
+                    'language' => $r['languages'] !== null && $r['languages'] !== '' ? $r['languages'] : 'Unknown',
                 ];
             }
             $reportStmt->close();
