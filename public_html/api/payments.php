@@ -12,6 +12,7 @@
  */
 
 require_once 'config.php';
+require_once __DIR__ . '/payment_helpers.php'; // step 3.8: paymentAmountError()
 require_once 'Middleware.php';
 
 // Require authentication for all payment operations
@@ -220,11 +221,13 @@ function getPaymentsByTour($conn, $tour_id) {
 /**
  * Create new payment transaction
  */
+
 function createPayment($conn) {
     $input = json_decode(file_get_contents('php://input'), true);
 
-    // Validate required fields
-    $required_fields = ['tour_id', 'guide_id', 'amount', 'payment_method', 'payment_date'];
+    // Validate required fields (step 3.8: `amount` is checked on its own below - empty() would
+    // report a perfectly explicit `amount: 0` as a missing field).
+    $required_fields = ['tour_id', 'guide_id', 'payment_method', 'payment_date'];
     foreach ($required_fields as $field) {
         if (!isset($input[$field]) || empty($input[$field])) {
             http_response_code(400);
@@ -233,10 +236,11 @@ function createPayment($conn) {
         }
     }
 
-    // Validate amount is positive
-    if ($input['amount'] <= 0) {
+    // Step 3.8: one validator for every payment write.
+    $amountError = paymentAmountError(isset($input['amount']) ? $input['amount'] : null);
+    if ($amountError !== null) {
         http_response_code(400);
-        echo json_encode(['error' => 'Amount must be greater than 0']);
+        echo json_encode(['error' => $amountError]);
         return;
     }
 
@@ -404,9 +408,16 @@ function updatePayment($conn, $payment_id) {
     $types = "";
 
     // Build dynamic update query
-    if (isset($input['amount']) && $input['amount'] > 0) {
+    // Step 3.8: a bad amount is a 400, not a silently skipped field.
+    if (is_array($input) && array_key_exists('amount', $input)) {
+        $amountError = paymentAmountError($input['amount']);
+        if ($amountError !== null) {
+            http_response_code(400);
+            echo json_encode(['error' => $amountError]);
+            return;
+        }
         $update_fields[] = "amount = ?";
-        $values[] = $input['amount'];
+        $values[] = (float) $input['amount'];
         $types .= "d";
     }
 

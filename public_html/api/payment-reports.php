@@ -28,7 +28,7 @@ $format = isset($_GET['format']) ? $_GET['format'] : 'json';
 $year = isset($_GET['year']) ? intval($_GET['year']) : null;
 $month = isset($_GET['month']) ? intval($_GET['month']) : null;
 
-try {
+$dispatch = function () use ($conn, $type, $start_date, $end_date, $guide_id, $format, $year, $month) {
     switch ($type) {
         case 'summary':
             generateSummaryReport($conn, $start_date, $end_date, $format);
@@ -51,10 +51,68 @@ try {
             echo json_encode(['error' => 'Invalid report type']);
             break;
     }
+};
+
+try {
+    try {
+        $dispatch();
+    } catch (mysqli_sql_exception $e) {
+        // Step 3.8: the same guard step 4.1a gave guide-payments.php, for the other view.
+        // guide_payment_summary disappeared from production once and the page answered 500 for
+        // days; monthly_payment_summary sits in the same database and was left unguarded. If -
+        // and only if - the error is "that view does not exist" (1146), recreate it once and
+        // retry. The view query is the first statement of the monthly report, so nothing has
+        // been sent yet. Every other error is rethrown untouched.
+        if (!isMissingMonthlyPaymentSummaryView($e)) {
+            throw $e;
+        }
+        error_log("Payment reports: view monthly_payment_summary was missing - recreated it (step 3.8 guard)");
+        ensureMonthlyPaymentSummaryView($conn);
+        $dispatch();
+    }
 } catch (Exception $e) {
     http_response_code(500);
     error_log("Payment reports error: " . $e->getMessage());
     echo json_encode(['error' => 'An internal error occurred']);
+}
+
+/**
+ * Step 3.8: true only for MySQL/MariaDB error 1146 (table/view does not exist) on
+ * monthly_payment_summary.
+ */
+function isMissingMonthlyPaymentSummaryView($e) {
+    return $e instanceof mysqli_sql_exception
+        && (int) $e->getCode() === 1146
+        && strpos($e->getMessage(), 'monthly_payment_summary') !== false;
+}
+
+/**
+ * Step 3.8: self-provision monthly_payment_summary. Definition copied from the view running on
+ * production on 2026-09-20 (SHOW CREATE VIEW), minus the DEFINER clause so it is recreated as
+ * the current user. A view only - no table and no data change.
+ * Also in database/migrations/20260920_monthly_payment_summary_view.sql.
+ */
+function ensureMonthlyPaymentSummaryView($conn) {
+    $conn->query("
+        CREATE OR REPLACE VIEW monthly_payment_summary AS
+        SELECT
+            YEAR(p.payment_date)  AS payment_year,
+            MONTH(p.payment_date) AS payment_month,
+            MONTHNAME(p.payment_date) AS month_name,
+            g.id   AS guide_id,
+            g.name AS guide_name,
+            COUNT(DISTINCT p.tour_id) AS tours_paid,
+            COUNT(p.id) AS payment_transactions,
+            SUM(p.amount) AS total_amount,
+            SUM(CASE WHEN p.payment_method = 'cash' OR p.payment_method = 'Cash' THEN p.amount ELSE 0 END) AS cash_amount,
+            SUM(CASE WHEN p.payment_method = 'bank_transfer' OR p.payment_method = 'Bank Transfer' THEN p.amount ELSE 0 END) AS bank_amount,
+            p.payment_method AS payment_method,
+            AVG(p.amount) AS avg_payment_amount
+        FROM payments p
+        JOIN guides g ON p.guide_id = g.id
+        GROUP BY YEAR(p.payment_date), MONTH(p.payment_date), g.id, p.payment_method
+        ORDER BY YEAR(p.payment_date) DESC, MONTH(p.payment_date) DESC, g.name
+    ");
 }
 
 /**

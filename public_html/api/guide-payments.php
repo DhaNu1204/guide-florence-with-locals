@@ -220,11 +220,11 @@ function getGuidePaymentDetails($conn, $guide_id) {
             WHERE t.guide_id = ?
               AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
               AND t.cancelled = 0
-              AND t.title NOT LIKE '%Entry Ticket%'
-              AND t.title NOT LIKE '%Entrance Ticket%'
-              AND t.title NOT LIKE '%Priority Ticket%'
-              AND t.title NOT LIKE '%Skip the Line%'
-              AND t.title NOT LIKE '%Skip-the-Line%'
+              -- Step 3.8: products.product_type is the single source of truth for tour vs ticket
+              -- (tour_classification.php). The title keywords this replaced missed product 961802
+              -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
+              -- bookings the old filter would have counted as money owed to a guide.
+              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
             GROUP BY tour_unit
             HAVING MAX(p.id) IS NULL
         ) u
@@ -241,11 +241,11 @@ function getGuidePaymentDetails($conn, $guide_id) {
             WHERE t.guide_id = ?
               AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
               AND t.cancelled = 0
-              AND t.title NOT LIKE '%Entry Ticket%'
-              AND t.title NOT LIKE '%Entrance Ticket%'
-              AND t.title NOT LIKE '%Priority Ticket%'
-              AND t.title NOT LIKE '%Skip the Line%'
-              AND t.title NOT LIKE '%Skip-the-Line%'
+              -- Step 3.8: products.product_type is the single source of truth for tour vs ticket
+              -- (tour_classification.php). The title keywords this replaced missed product 961802
+              -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
+              -- bookings the old filter would have counted as money owed to a guide.
+              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
             GROUP BY tour_unit
         ) p
     ");
@@ -332,11 +332,11 @@ function getGuidePaymentDetails($conn, $guide_id) {
                             WHERE t.guide_id = ?
                               AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                               AND t.cancelled = 0
-                              AND t.title NOT LIKE '%Entry Ticket%'
-                              AND t.title NOT LIKE '%Entrance Ticket%'
-                              AND t.title NOT LIKE '%Priority Ticket%'
-                              AND t.title NOT LIKE '%Skip the Line%'
-                              AND t.title NOT LIKE '%Skip-the-Line%'
+                              -- Step 3.8: products.product_type is the single source of truth for tour vs ticket
+                              -- (tour_classification.php). The title keywords this replaced missed product 961802
+                              -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
+                              -- bookings the old filter would have counted as money owed to a guide.
+                              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
                               AND NOT EXISTS (
                                   SELECT 1 FROM payments p
                                   WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
@@ -570,11 +570,11 @@ function getPaymentOverview($conn) {
                                 WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                                   AND t.cancelled = 0
                                   AND t.guide_id IS NOT NULL
-                                  AND t.title NOT LIKE '%Entry Ticket%'
-                                  AND t.title NOT LIKE '%Entrance Ticket%'
-                                  AND t.title NOT LIKE '%Priority Ticket%'
-                                  AND t.title NOT LIKE '%Skip the Line%'
-                                  AND t.title NOT LIKE '%Skip-the-Line%'
+                                  -- Step 3.8: products.product_type is the single source of truth for tour vs ticket
+                                  -- (tour_classification.php). The title keywords this replaced missed product 961802
+                                  -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
+                                  -- bookings the old filter would have counted as money owed to a guide.
+                                  AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
                                 GROUP BY tour_unit
                             ) paid_units");
     $paidStmt->bind_param("s", $romeNow);
@@ -592,11 +592,11 @@ function getPaymentOverview($conn) {
                                 WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                                   AND t.cancelled = 0
                                   AND t.guide_id IS NOT NULL
-                                  AND t.title NOT LIKE '%Entry Ticket%'
-                                  AND t.title NOT LIKE '%Entrance Ticket%'
-                                  AND t.title NOT LIKE '%Priority Ticket%'
-                                  AND t.title NOT LIKE '%Skip the Line%'
-                                  AND t.title NOT LIKE '%Skip-the-Line%'
+                                  -- Step 3.8: products.product_type is the single source of truth for tour vs ticket
+                                  -- (tour_classification.php). The title keywords this replaced missed product 961802
+                                  -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
+                                  -- bookings the old filter would have counted as money owed to a guide.
+                                  AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
                                 GROUP BY tour_unit
                                 HAVING MAX(p.id) IS NULL
                             ) unpaid_units");
@@ -613,11 +613,11 @@ function getPaymentOverview($conn) {
                                 FROM tours t
                                 WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) >= ?
                                   AND t.cancelled = 0
-                                  AND t.title NOT LIKE '%Entry Ticket%'
-                                  AND t.title NOT LIKE '%Entrance Ticket%'
-                                  AND t.title NOT LIKE '%Priority Ticket%'
-                                  AND t.title NOT LIKE '%Skip the Line%'
-                                  AND t.title NOT LIKE '%Skip-the-Line%'
+                                  -- Step 3.8: products.product_type is the single source of truth for tour vs ticket
+                                  -- (tour_classification.php). The title keywords this replaced missed product 961802
+                                  -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
+                                  -- bookings the old filter would have counted as money owed to a guide.
+                                  AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
                                 GROUP BY tour_unit
                             ) upcoming_units");
     $upcomingStmt->bind_param("s", $romeNow);
@@ -679,11 +679,11 @@ function getPendingTours($conn) {
             JOIN guides g ON t.guide_id = g.id
             WHERE CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
               AND t.cancelled = 0
-              AND t.title NOT LIKE '%Entry Ticket%'
-              AND t.title NOT LIKE '%Entrance Ticket%'
-              AND t.title NOT LIKE '%Priority Ticket%'
-              AND t.title NOT LIKE '%Skip the Line%'
-              AND t.title NOT LIKE '%Skip-the-Line%'
+              -- Step 3.8: products.product_type is the single source of truth for tour vs ticket
+              -- (tour_classification.php). The title keywords this replaced missed product 961802
+              -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
+              -- bookings the old filter would have counted as money owed to a guide.
+              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
               AND NOT EXISTS (
                   SELECT 1 FROM payments p
                   WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
