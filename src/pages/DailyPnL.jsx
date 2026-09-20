@@ -4,7 +4,8 @@ import {
   FiCalendar, FiX, FiRotateCcw
 } from 'react-icons/fi';
 import {
-  getPnlDay, getPnlRange, getPnlSettings, savePnlSettings, savePnlCosts
+  getPnlDay, getPnlRange, getPnlSettings, savePnlSettings, savePnlCosts,
+  mergePnlUnits, unmergePnlUnits // step 6.2
 } from '../services/mysqlDB';
 
 const eur = (v) =>
@@ -191,7 +192,7 @@ function EditableChip({ row, field, label, value, autoValue, overridden, onSave,
 // One tour (or ticket product) as a simple card: who/when + money in − money
 // out = big green/red profit. Chips are editable.
 // ---------------------------------------------------------------------------
-function UnitCard({ row, onCostSave, onOpenDetail }) {
+function UnitCard({ row, onCostSave, onOpenDetail, selectable, selected, onToggleSelect, onUnmerge }) {
   const chipKeys = row.is_ticket
     ? ['ticket_cost', 'other_cost']
     : COST_FIELDS.map((f) => f.key);
@@ -201,16 +202,37 @@ function UnitCard({ row, onCostSave, onOpenDetail }) {
       ? ` (${row.pax.adults} adults, ${row.pax.children} children${row.pax.infants > 0 ? `, ${row.pax.infants} infants` : ''})`
       : '';
 
+  const merged = row.merged || null;
+
   return (
     <div
       onClick={() => onOpenDetail && onOpenDetail(row)}
-      className="bg-white rounded-xl shadow-tuscan p-4 cursor-pointer hover:shadow-tuscan-xl transition-shadow"
+      className={`bg-white rounded-xl shadow-tuscan p-4 cursor-pointer hover:shadow-tuscan-xl transition-shadow ${
+        merged ? 'ring-2 ring-terracotta-300' : ''
+      }`}
       title="Tap to see how this is calculated and edit amounts"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Step 6.2: pick two departures on this day and cost them as one guide */}
+            {selectable && !merged && (
+              <input
+                type="checkbox"
+                checked={!!selected}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => onToggleSelect && onToggleSelect(row)}
+                className="w-4 h-4 accent-terracotta-500"
+                aria-label={`Select ${row.title} for merging`}
+                data-testid="pnl-merge-select"
+              />
+            )}
             <span className="text-sm font-semibold text-stone-500">{(row.time || '').slice(0, 5)}</span>
+            {merged && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-terracotta-100 text-terracotta-800 font-semibold" data-testid="pnl-merged-badge">
+                Merged — one guide
+              </span>
+            )}
             <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${CATEGORY_BADGE[row.category] || CATEGORY_BADGE.Other}`}>
               {row.category}
             </span>
@@ -238,6 +260,30 @@ function UnitCard({ row, onCostSave, onOpenDetail }) {
               : (!row.is_ticket ? ' · no guide assigned' : '')}
             {` · ${row.channels.join(', ')}`}
           </p>
+          {merged && (
+            <div className="mt-2 rounded-tuscan border border-terracotta-200 bg-terracotta-50/60 px-3 py-2" data-testid="pnl-merged-detail">
+              <div className="text-[11px] text-terracotta-900 font-semibold">
+                These ran together with one guide — {merged.guide_rule}
+              </div>
+              <ul className="mt-1 text-[11px] text-stone-700 space-y-0.5">
+                {merged.members.map((m) => (
+                  <li key={m.unit} className="flex justify-between gap-3">
+                    <span className="truncate">{(m.time || '').slice(0, 5)} {m.title} — {m.pax} PAX</span>
+                    <span className="shrink-0 text-stone-500">
+                      in {eur(m.net)} · tickets {eur(m.ticket_cost)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={(e) => { e.stopPropagation(); onUnmerge && onUnmerge(merged.link_key); }}
+                className="mt-1.5 text-[11px] font-medium text-terracotta-700 underline"
+                data-testid="pnl-unmerge"
+              >
+                Unmerge
+              </button>
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0">
           <p className={`text-xl font-bold ${row.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
@@ -401,6 +447,9 @@ export default function DailyPnL() {
   const [error, setError] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [detailRow, setDetailRow] = useState(null);
+  // Step 6.2: departures ticked for a costing merge, and the in-flight flag
+  const [selectedUnits, setSelectedUnits] = useState([]);
+  const [merging, setMerging] = useState(false);
 
   const loadDay = useCallback(async (d) => {
     setLoading(true);
@@ -444,6 +493,39 @@ export default function DailyPnL() {
     else if (view === 'week') loadRange(weekStart, shiftDate(weekStart, 6));
     else loadMonth(month);
   }, [view, date, weekStart, month, loadDay, loadRange, loadMonth]);
+
+  // Step 6.2 --------------------------------------------------------------------------------
+  // Tick two departures on the same day and cost them as one guide. P&L only: nothing in Tours,
+  // grouping, payments, reminders or the digest is affected.
+  const toggleMergeSelect = (row) => {
+    if (row === null) { setSelectedUnits([]); return; }
+    setSelectedUnits((prev) =>
+      prev.includes(row.unit) ? prev.filter((u) => u !== row.unit) : [...prev, row.unit]
+    );
+  };
+
+  const handleMerge = async () => {
+    if (selectedUnits.length < 2) return;
+    setMerging(true);
+    try {
+      await mergePnlUnits(date, selectedUnits);
+      setSelectedUnits([]);
+      await loadDay(date);
+    } catch (e) {
+      setError(e?.response?.data?.error || 'Could not merge those departures.');
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  const handleUnmerge = async (linkKey) => {
+    try {
+      await unmergePnlUnits(linkKey);
+      await loadDay(date);
+    } catch (e) {
+      setError(e?.response?.data?.error || 'Could not undo that merge.');
+    }
+  };
 
   const handleCostSave = async (row, field, value) => {
     try {
@@ -587,7 +669,16 @@ export default function DailyPnL() {
       {loading ? (
         <div className="flex items-center justify-center py-20 text-stone-500">Loading…</div>
       ) : view === 'day' ? (
-        <DayTable data={dayData} onCostSave={handleCostSave} onOpenDetail={setDetailRow} />
+        <DayTable
+          data={dayData}
+          onCostSave={handleCostSave}
+          onOpenDetail={setDetailRow}
+          selectedUnits={selectedUnits}
+          onToggleSelect={toggleMergeSelect}
+          onMerge={handleMerge}
+          onUnmerge={handleUnmerge}
+          merging={merging}
+        />
       ) : (
         <>
           <CategoryTiles cats={monthData?.by_category} />
@@ -885,7 +976,7 @@ function CategoryTiles({ cats }) {
 //   2. Tickets & Audio Guides
 //   3. Cancelled (collapsed, excluded from money)
 // ---------------------------------------------------------------------------
-function DayTable({ data, onCostSave, onOpenDetail }) {
+function DayTable({ data, onCostSave, onOpenDetail, selectedUnits, onToggleSelect, onMerge, onUnmerge, merging }) {
   if (!data || !data.rows || data.rows.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-tuscan p-10 text-center text-stone-500">
@@ -914,6 +1005,33 @@ function DayTable({ data, onCostSave, onOpenDetail }) {
         <span className="font-semibold text-terracotta-600">Orange</span> = manual value — click ↺ on it to go back to automatic.
       </p>
 
+      {/* Step 6.2: merge two departures that ran together under one guide (P&L only) */}
+      <div className="bg-white rounded-xl shadow-tuscan px-4 py-3" data-testid="pnl-merge-bar">
+        <p className="text-xs text-stone-500">
+          <span className="font-semibold text-stone-700">Ran together with one guide?</span>{' '}
+          Tick two departures on this day and merge them: you are charged <strong>one</strong> guide fee for
+          the pair, while tickets, radios, revenue and PAX still count per product. Costs you set on the
+          merged row win; anything you set on a single tour still counts. This changes the P&amp;L only —
+          Tours, groups, payments and the guide WhatsApp are untouched.
+        </p>
+        {selectedUnits && selectedUnits.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <span className="text-xs text-stone-600">{selectedUnits.length} selected</span>
+            <button
+              onClick={onMerge}
+              disabled={selectedUnits.length < 2 || merging}
+              className="px-3 py-1.5 rounded-tuscan bg-terracotta-500 text-white text-xs font-semibold disabled:bg-stone-300"
+              data-testid="pnl-merge-button"
+            >
+              {merging ? 'Merging…' : `Merge ${selectedUnits.length} for costing`}
+            </button>
+            <button onClick={() => onToggleSelect(null)} className="text-xs text-stone-500 underline">
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 1. Guided tours, by location */}
       {guided.length > 0 && (
         <div>
@@ -932,7 +1050,16 @@ function DayTable({ data, onCostSave, onOpenDetail }) {
                 </div>
                 <div className="space-y-2">
                   {byCategory[cat].map((row) => (
-                    <UnitCard key={row.unit} row={row} onCostSave={onCostSave} onOpenDetail={onOpenDetail} />
+                    <UnitCard
+                      key={row.unit}
+                      row={row}
+                      onCostSave={onCostSave}
+                      onOpenDetail={onOpenDetail}
+                      selectable
+                      selected={selectedUnits && selectedUnits.includes(row.unit)}
+                      onToggleSelect={onToggleSelect}
+                      onUnmerge={onUnmerge}
+                    />
                   ))}
                 </div>
               </div>
@@ -950,7 +1077,16 @@ function DayTable({ data, onCostSave, onOpenDetail }) {
           </div>
           <div className="space-y-2">
             {tickets.map((row) => (
-              <UnitCard key={row.unit} row={row} onCostSave={onCostSave} onOpenDetail={onOpenDetail} />
+              <UnitCard
+                key={row.unit}
+                row={row}
+                onCostSave={onCostSave}
+                onOpenDetail={onOpenDetail}
+                selectable
+                selected={selectedUnits && selectedUnits.includes(row.unit)}
+                onToggleSelect={onToggleSelect}
+                onUnmerge={onUnmerge}
+              />
             ))}
           </div>
         </div>
