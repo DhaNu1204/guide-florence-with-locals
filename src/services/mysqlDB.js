@@ -775,6 +775,17 @@ export const savePnlCosts = async (payload) => {
   return response.data;
 };
 
+// Step 6.2: merged costing units (Daily P&L only - nothing operational changes).
+export const mergePnlUnits = async (date, units) => {
+  const response = await axios.post(`${API_BASE_URL}/pnl.php?action=link`, { date, units });
+  return response.data;
+};
+
+export const unmergePnlUnits = async (linkKey) => {
+  const response = await axios.post(`${API_BASE_URL}/pnl.php?action=unlink`, { link_key: linkKey });
+  return response.data;
+};
+
 // Default export object for backwards compatibility
 const mysqlDB = {
   // Tours operations

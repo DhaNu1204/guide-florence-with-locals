@@ -24,12 +24,33 @@ require_once 'config.php';
 require_once 'Middleware.php';
 require_once 'tour_classification.php';
 require_once __DIR__ . '/group_helpers.php'; // step 3.7: groupBucketKey()
+require_once __DIR__ . '/pnl_links.php';     // step 6.2: merged costing units
 
 // Financial data: admin only
 Middleware::requireRole($conn, 'admin');
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? trim($_GET['action']) : '';
+
+/**
+ * Step 6.2: the merged costing units that touch a date range, as tour_unit => link row.
+ * A link is resolved by its tour_unit; if that unit no longer exists (a surrogate id moved) the
+ * stored bucket_key still identifies the departure, exactly as pnl_tour_costs does since 3.7.
+ */
+function pnlLoadUnitLinks($conn, $start, $end) {
+    $byUnit = [];
+    $stmt = $conn->prepare("SELECT link_key, link_date, tour_unit, bucket_key
+                              FROM pnl_unit_links WHERE link_date >= ? AND link_date <= ?
+                             ORDER BY id");
+    $stmt->bind_param("ss", $start, $end);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $byUnit[$row['tour_unit']] = $row;
+    }
+    $stmt->close();
+    return $byUnit;
+}
 
 /**
  * Step 3.7: the natural key of a tour unit - "<product_id>|YYYY-MM-DD|HH:MM".
@@ -102,6 +123,25 @@ function pnlEnsureTables($conn) {
         $conn->query("ALTER TABLE pnl_tour_costs ADD COLUMN bucket_key VARCHAR(64) NULL DEFAULT NULL AFTER date");
         $conn->query("ALTER TABLE pnl_tour_costs ADD KEY idx_pnl_costs_bucket_key (bucket_key)");
     }
+
+    // Step 6.2: two departures that physically run together under ONE guide, linked by hand for
+    // COSTING ONLY. This is a P&L concept: it changes nothing in Tours, grouping, payments,
+    // reminders or the digest. Never created automatically - auto-grouping still refuses to mix
+    // products. A unit belongs to at most one link (tour_unit is UNIQUE), and every row of a link
+    // shares link_key and link_date. bucket_key is carried beside tour_unit for the same reason
+    // pnl_tour_costs carries it since 3.7: the natural key survives even if a surrogate id moves.
+    // Also in database/migrations/20260920_pnl_unit_links.sql.
+    $conn->query("CREATE TABLE IF NOT EXISTS pnl_unit_links (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        link_key    VARCHAR(40) NOT NULL,
+        link_date   DATE NOT NULL,
+        tour_unit   VARCHAR(24) NOT NULL UNIQUE,
+        bucket_key  VARCHAR(64) NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by  INT NULL,
+        KEY idx_pnl_links_key (link_key),
+        KEY idx_pnl_links_date (link_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     // Column guard for installs created before the outsourced feature
     $res = $conn->query("SHOW COLUMNS FROM pnl_tour_costs LIKE 'outsourced'");
@@ -564,6 +604,14 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         if ($d !== 0) return $d;
         return strcmp($a['time'] ?? '', $b['time'] ?? '');
     });
+
+    // Step 6.2: two departures the owner linked by hand run as ONE tour with one guide - fold
+    // them into a single row (tickets, radios, revenue and PAX still add up). A unit that is not
+    // linked is untouched, so a day with no links produces exactly the rows it did before.
+    $links = pnlLoadUnitLinks($conn, $start, $end);
+    if ($links) {
+        $rows = pnlLinkCombineRows($rows, $links, $settings, $overrides);
+    }
     return $rows;
 }
 
@@ -633,12 +681,162 @@ try {
         exit();
     }
 
+    // ---------------------------------------------------------------------------
+    // Step 6.2: merged costing units. P&L ONLY - nothing here touches tours,
+    // tour_groups, payments, guide reminders or the digest.
+    // ---------------------------------------------------------------------------
+    if ($method === 'GET' && $action === 'links') {
+        applyRateLimit('read');
+        $date = isset($_GET['date']) ? trim($_GET['date']) : null;
+        $start = isset($_GET['start']) ? trim($_GET['start']) : $date;
+        $end   = isset($_GET['end']) ? trim($_GET['end']) : $date;
+        if (!$start || !$end || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'date (or start and end) in YYYY-MM-DD is required']);
+            exit();
+        }
+        $links = [];
+        foreach (pnlLoadUnitLinks($conn, $start, $end) as $unit => $row) {
+            $links[$row['link_key']]['link_key'] = $row['link_key'];
+            $links[$row['link_key']]['date'] = $row['link_date'];
+            $links[$row['link_key']]['units'][] = $unit;
+        }
+        echo json_encode(['success' => true, 'data' => array_values($links)]);
+        exit();
+    }
+
+    if ($method === 'POST' && $action === 'link') {
+        applyRateLimit('update');
+        $input = json_decode(file_get_contents('php://input'), true);
+        $date  = isset($input['date']) ? trim($input['date']) : '';
+        $units = isset($input['units']) && is_array($input['units']) ? array_values(array_unique($input['units'])) : [];
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'A date in YYYY-MM-DD is required']);
+            exit();
+        }
+        if (count($units) < 2) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Select at least two departures to merge']);
+            exit();
+        }
+        foreach ($units as $u) {
+            if (!is_string($u) || !preg_match('/^[gt]\d+$/', $u)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Only real departures can be merged']);
+                exit();
+            }
+        }
+
+        // Guard rail 1: every unit must exist AND be on that date - a link never crosses dates.
+        $bucketKeys = [];
+        foreach ($units as $u) {
+            $id = intval(substr($u, 1));
+            if ($u[0] === 'g') {
+                $stmt = $conn->prepare("SELECT tg.group_date d, tg.bucket_key bk FROM tour_groups tg WHERE tg.id = ?");
+            } else {
+                $stmt = $conn->prepare("SELECT t.date d, CONCAT(t.product_id, '|', DATE_FORMAT(t.date, '%Y-%m-%d'), '|', DATE_FORMAT(t.time, '%H:%i')) bk
+                                          FROM tours t WHERE t.id = ?");
+            }
+            $stmt->bind_param("i", $id);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$row) {
+                http_response_code(400);
+                echo json_encode(['error' => "Departure $u was not found"]);
+                exit();
+            }
+            if (substr((string) $row['d'], 0, 10) !== $date) {
+                http_response_code(400);
+                echo json_encode(['error' => "Departure $u is not on $date - a merge only works within one day"]);
+                exit();
+            }
+            $bucketKeys[$u] = $row['bk'];
+        }
+
+        // Guard rail 2: a departure belongs to at most one link.
+        $placeholders = implode(',', array_fill(0, count($units), '?'));
+        $check = $conn->prepare("SELECT tour_unit FROM pnl_unit_links WHERE tour_unit IN ($placeholders)");
+        $check->bind_param(str_repeat('s', count($units)), ...$units);
+        $check->execute();
+        $taken = [];
+        $res = $check->get_result();
+        while ($r = $res->fetch_assoc()) { $taken[] = $r['tour_unit']; }
+        $check->close();
+        if ($taken) {
+            http_response_code(409);
+            echo json_encode(['error' => 'Already merged: ' . implode(', ', $taken) . '. Unmerge it first.']);
+            exit();
+        }
+
+        $userId = isset($GLOBALS['auth_user']['id']) ? intval($GLOBALS['auth_user']['id']) : null;
+        $conn->begin_transaction();
+        try {
+            $ins = $conn->prepare("INSERT INTO pnl_unit_links (link_key, link_date, tour_unit, bucket_key, created_by)
+                                   VALUES (?, ?, ?, ?, ?)");
+            $pending = 'pending';
+            $firstId = null;
+            foreach ($units as $u) {
+                $bk = $bucketKeys[$u];
+                $ins->bind_param("ssssi", $pending, $date, $u, $bk, $userId);
+                $ins->execute();
+                if ($firstId === null) { $firstId = $conn->insert_id; }
+            }
+            $ins->close();
+            // The merged unit's own key, usable as a pnl_tour_costs.tour_unit ('m<id>').
+            $linkKey = 'm' . $firstId;
+            $upd = $conn->prepare("UPDATE pnl_unit_links SET link_key = ? WHERE link_key = 'pending' AND link_date = ? AND tour_unit IN ($placeholders)");
+            $args = array_merge([$linkKey, $date], $units);
+            $upd->bind_param(str_repeat('s', count($args)), ...$args);
+            $upd->execute();
+            $upd->close();
+            $conn->commit();
+        } catch (Exception $e) {
+            $conn->rollback();
+            error_log('pnl link failed: ' . $e->getMessage());
+            http_response_code(500);
+            echo json_encode(['error' => 'Could not merge those departures']);
+            exit();
+        }
+
+        echo json_encode(['success' => true, 'data' => ['link_key' => $linkKey, 'date' => $date, 'units' => $units]]);
+        exit();
+    }
+
+    if ($method === 'POST' && $action === 'unlink') {
+        applyRateLimit('update');
+        $input = json_decode(file_get_contents('php://input'), true);
+        $linkKey = isset($input['link_key']) ? trim($input['link_key']) : '';
+        if (!preg_match('/^m\d+$/', $linkKey)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'A link_key is required']);
+            exit();
+        }
+        // Deleting a link touches nothing else: the members' own overrides and every payment stay.
+        $del = $conn->prepare("DELETE FROM pnl_unit_links WHERE link_key = ?");
+        $del->bind_param("s", $linkKey);
+        $del->execute();
+        $removed = $del->affected_rows;
+        $del->close();
+        if ($removed === 0) {
+            http_response_code(404);
+            echo json_encode(['error' => 'That merge does not exist']);
+            exit();
+        }
+        echo json_encode(['success' => true, 'data' => ['link_key' => $linkKey, 'units_released' => $removed]]);
+        exit();
+    }
+
     if ($method === 'POST' && $action === 'costs') {
         applyRateLimit('update');
         $input = json_decode(file_get_contents('php://input'), true);
         $unit = isset($input['tour_unit']) ? trim($input['tour_unit']) : '';
         $date = isset($input['date']) ? trim($input['date']) : '';
-        if (!preg_match('/^[gt]\d+$/', $unit) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        // Step 6.2: 'm<id>' is a merged costing unit (pnl_unit_links); an override on it wins
+        // over the members' own overrides.
+        if (!preg_match('/^[gtm]\d+$/', $unit) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             http_response_code(400);
             echo json_encode(['error' => 'Invalid tour_unit or date']);
             exit();
