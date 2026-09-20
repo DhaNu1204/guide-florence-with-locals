@@ -23,12 +23,46 @@
 require_once 'config.php';
 require_once 'Middleware.php';
 require_once 'tour_classification.php';
+require_once __DIR__ . '/group_helpers.php'; // step 3.7: groupBucketKey()
 
 // Financial data: admin only
 Middleware::requireRole($conn, 'admin');
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? trim($_GET['action']) : '';
+
+/**
+ * Step 3.7: the natural key of a tour unit - "<product_id>|YYYY-MM-DD|HH:MM".
+ * For a group it comes from the group row (falling back to its members), for a single
+ * booking from the tour itself. Returns null when the product is unknown.
+ */
+function pnlBucketKeyForUnit($conn, $unit) {
+    if (preg_match('/^g(\d+)$/', $unit, $m)) {
+        $stmt = $conn->prepare("SELECT tg.bucket_key, tg.group_date, tg.group_time,
+                                       (SELECT MIN(t.product_id) FROM tours t WHERE t.group_id = tg.id) AS product_id
+                                  FROM tour_groups tg WHERE tg.id = ?");
+        $stmt->bind_param('i', $m[1]);
+    } elseif (preg_match('/^t(\d+)$/', $unit, $m)) {
+        $stmt = $conn->prepare("SELECT NULL AS bucket_key, date AS group_date, time AS group_time, product_id
+                                  FROM tours WHERE id = ?");
+        $stmt->bind_param('i', $m[1]);
+    } else {
+        return null;
+    }
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$row) {
+        return null;
+    }
+    if (!empty($row['bucket_key'])) {
+        return $row['bucket_key'];
+    }
+    if (empty($row['product_id'])) {
+        return null;
+    }
+    return groupBucketKey($row['product_id'], $row['group_date'], $row['group_time']);
+}
 
 // ---------------------------------------------------------------------------
 // Self-provision tables (same CREATE TABLE IF NOT EXISTS pattern as products /
@@ -57,6 +91,17 @@ function pnlEnsureTables($conn) {
         updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_pnl_costs_date (date)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Step 3.7: the override stops depending on a surrogate group id. `tour_unit` stays the
+    // handle (every existing 'g<id>'/'t<id>' row keeps working, and payments/reports use the
+    // same string), and `bucket_key` - "<product_id>|YYYY-MM-DD|HH:MM" - is written beside it
+    // as a fallback, so an override survives even if the departure's group id ever changes.
+    // Also in database/migrations/20260920_group_bucket_key.sql.
+    $res = $conn->query("SHOW COLUMNS FROM pnl_tour_costs LIKE 'bucket_key'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE pnl_tour_costs ADD COLUMN bucket_key VARCHAR(64) NULL DEFAULT NULL AFTER date");
+        $conn->query("ALTER TABLE pnl_tour_costs ADD KEY idx_pnl_costs_bucket_key (bucket_key)");
+    }
 
     // Column guard for installs created before the outsourced feature
     $res = $conn->query("SHOW COLUMNS FROM pnl_tour_costs LIKE 'outsourced'");
@@ -265,7 +310,7 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
 // Core: build per-unit P&L rows for a date range.
 // ---------------------------------------------------------------------------
 function pnlBuildRows($conn, $start, $end, $settings) {
-    $sql = "SELECT t.id, t.group_id, t.title, t.date, t.time, t.participants,
+    $sql = "SELECT t.id, t.group_id, t.product_id, t.title, t.date, t.time, t.participants,
                    t.cancelled, t.booking_channel, t.total_amount_paid, t.bokun_data,
                    t.is_private, t.guide_id, g.name AS guide_name,
                    tg.display_name AS group_display_name, tg.group_time,
@@ -287,6 +332,9 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         if (!isset($units[$key])) {
             $units[$key] = [
                 'unit'            => $key,
+                // Step 3.7: what this departure IS, independent of the group's surrogate id.
+                'bucket_key'      => $row['product_id'] ? groupBucketKey($row['product_id'], $row['date'],
+                                        ($row['group_id'] && $row['group_time']) ? $row['group_time'] : $row['time']) : null,
                 'date'            => $row['date'],
                 'time'            => $row['group_id'] && $row['group_time'] ? $row['group_time'] : $row['time'],
                 'title'           => $row['group_id'] && $row['group_display_name'] ? $row['group_display_name'] : $row['title'],
@@ -360,14 +408,35 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         unset($u);
     }
 
-    // Load overrides for the range
+    // Load overrides for the range.
+    // Step 3.7: an override is found by its tour_unit as before, and - for GROUP units only -
+    // by bucket_key when the unit string no longer resolves. That is what makes an override
+    // survive a departure whose group id changed (10 of the 11 group overrides on production
+    // were already orphaned that way before this step). The fallback is deliberately refused
+    // when a bucket holds more than one group (the PAX cap can split a departure): applying a
+    // cost to the wrong half would be worse than losing it.
     $overrides = [];
+    $byBucket = [];
+    $bucketSeen = [];
     $stmt = $conn->prepare("SELECT * FROM pnl_tour_costs WHERE date >= ? AND date <= ?");
     $stmt->bind_param("ss", $start, $end);
     $stmt->execute();
     $res = $stmt->get_result();
     while ($row = $res->fetch_assoc()) {
         $overrides[$row['tour_unit']] = $row;
+        $bk = isset($row['bucket_key']) ? $row['bucket_key'] : null;
+        if ($bk !== null && $bk !== '' && strpos($row['tour_unit'], 'g') === 0) {
+            $bucketSeen[$bk] = ($bucketSeen[$bk] ?? 0) + 1;
+            $byBucket[$bk] = $row;
+        }
+    }
+
+    // How many group units share each bucket in this range? (> 1 = split departure, no fallback)
+    $unitsPerBucket = [];
+    foreach ($units as $u) {
+        if (!empty($u['is_group']) && !empty($u['bucket_key'])) {
+            $unitsPerBucket[$u['bucket_key']] = ($unitsPerBucket[$u['bucket_key']] ?? 0) + 1;
+        }
     }
 
     // Finalize rows
@@ -392,6 +461,12 @@ function pnlBuildRows($conn, $start, $end, $settings) {
 
         // Overrides row (needed early: the outsourced flag changes auto costs)
         $ov = isset($overrides[$key]) ? $overrides[$key] : null;
+        if ($ov === null && !empty($u['is_group']) && !empty($u['bucket_key'])) {
+            $bk = $u['bucket_key'];
+            if (isset($byBucket[$bk]) && ($bucketSeen[$bk] ?? 0) === 1 && ($unitsPerBucket[$bk] ?? 0) === 1) {
+                $ov = $byBucket[$bk]; // the departure is the same one, only its id moved
+            }
+        }
         $isOutsourced = $ov !== null && intval($ov['outsourced']) === 1;
 
         // Auto costs
@@ -598,10 +673,14 @@ try {
             exit();
         }
 
+        // Step 3.7: stamp the departure's natural key beside the unit so the override is still
+        // findable if the group's surrogate id ever changes.
+        $bucketKey = pnlBucketKeyForUnit($conn, $unit);
+
         // Build upsert dynamically (values bound as strings; MySQL casts to DECIMAL)
-        $allCols = array_merge(['tour_unit', 'date'], $cols, $notesProvided ? ['notes'] : []);
+        $allCols = array_merge(['tour_unit', 'date', 'bucket_key'], $cols, $notesProvided ? ['notes'] : []);
         $placeholders = implode(', ', array_fill(0, count($allCols), '?'));
-        $updateParts = [];
+        $updateParts = ['bucket_key = VALUES(bucket_key)'];
         foreach (array_merge($cols, $notesProvided ? ['notes'] : []) as $c) {
             $updateParts[] = "$c = VALUES($c)";
         }
@@ -610,7 +689,7 @@ try {
                 ON DUPLICATE KEY UPDATE " . implode(', ', $updateParts);
         $stmt = $conn->prepare($sql);
 
-        $bindVals = [$unit, $date];
+        $bindVals = [$unit, $date, $bucketKey];
         foreach ($cols as $c) $bindVals[] = $vals[$c] === null ? null : (string)$vals[$c];
         if ($notesProvided) $bindVals[] = $notes;
         $types = str_repeat('s', count($bindVals));

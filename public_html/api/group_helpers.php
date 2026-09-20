@@ -5,6 +5,115 @@
  * (auto-grouping after a sync). Functions only - no output, no routing, safe to require_once.
  */
 
+if (!function_exists('normalizeGroupTime')) {
+    /**
+     * Step 3.7: 'HH:MM' from anything the DB or Bokun hands us ('09:00:00', '9:00', '09:00').
+     * The bucket key must not change just because the string form did.
+     */
+    function normalizeGroupTime($time) {
+        $parts = explode(':', (string) $time);
+        return sprintf('%02d:%02d', intval($parts[0] ?? 0), intval($parts[1] ?? 0));
+    }
+}
+
+if (!function_exists('groupBucketKey')) {
+    /**
+     * Step 3.7: the NATURAL identity of a departure - product, date, start time. This is what a
+     * group really is; its `id` is only a surrogate that used to be thrown away every 15 minutes.
+     * NOT unique among groups: one bucket legitimately produces several groups when the PAX cap
+     * for the product splits it (measured on production: two 14:30 groups of product 961801 on
+     * 2026-08-12). It is a lookup key, not a constraint.
+     */
+    function groupBucketKey($productId, $date, $time) {
+        return intval($productId) . '|' . substr((string) $date, 0, 10) . '|' . normalizeGroupTime($time);
+    }
+}
+
+if (!function_exists('buildGroupBuckets')) {
+    /**
+     * Step 3.7: tours -> [bucketKey => [tours]], insertion order preserved (the caller sorts by
+     * product_id, date, time, id, and that order decides how a bucket is split below).
+     */
+    function buildGroupBuckets(array $tours) {
+        $buckets = [];
+        foreach ($tours as $tour) {
+            $key = groupBucketKey($tour['product_id'], $tour['date'], $tour['time']);
+            $buckets[$key][] = $tour;
+        }
+        return $buckets;
+    }
+}
+
+if (!function_exists('splitBucketByPax')) {
+    /**
+     * Step 3.7: the per-product PAX cap splits one departure into several groups. Unchanged
+     * behaviour, extracted from bokun_sync.php so it can be tested without a database.
+     * Sub-groups of a single booking are dropped by the caller (a group needs 2+ bookings).
+     */
+    function splitBucketByPax(array $bucketTours, $maxPax) {
+        $subGroups = [];
+        $current = [];
+        $currentPax = 0;
+        foreach ($bucketTours as $tour) {
+            $pax = intval($tour['participants']);
+            if ($currentPax + $pax > $maxPax && count($current) > 0) {
+                $subGroups[] = $current;
+                $current = [];
+                $currentPax = 0;
+            }
+            $current[] = $tour;
+            $currentPax += $pax;
+        }
+        if (count($current) > 0) {
+            $subGroups[] = $current;
+        }
+        return $subGroups;
+    }
+}
+
+if (!function_exists('matchDesiredToExistingGroups')) {
+    /**
+     * Step 3.7 - the heart of stable identity. Decide which EXISTING group row each desired
+     * group should keep, by how many members they share. A group row is claimed at most once;
+     * ties go to the lower group id so two runs over unchanged data always decide the same way.
+     *
+     * @param array $desired      list of lists of tour ids (the member set we want)
+     * @param array $tourToGroup  tourId => groupId as the database has it right now
+     * @return array              index in $desired => groupId to reuse, or null = create a new one
+     */
+    function matchDesiredToExistingGroups(array $desired, array $tourToGroup) {
+        $candidates = [];
+        foreach ($desired as $i => $tourIds) {
+            $overlap = [];
+            foreach ($tourIds as $tid) {
+                if (isset($tourToGroup[$tid])) {
+                    $gid = (int) $tourToGroup[$tid];
+                    $overlap[$gid] = ($overlap[$gid] ?? 0) + 1;
+                }
+            }
+            foreach ($overlap as $gid => $n) {
+                $candidates[] = ['i' => $i, 'gid' => $gid, 'n' => $n];
+            }
+        }
+
+        // Best overlap first; then the earlier desired group; then the lower group id.
+        usort($candidates, function ($a, $b) {
+            if ($a['n'] !== $b['n']) { return $b['n'] - $a['n']; }
+            if ($a['i'] !== $b['i']) { return $a['i'] - $b['i']; }
+            return $a['gid'] - $b['gid'];
+        });
+
+        $result = array_fill(0, count($desired), null);
+        $claimed = [];
+        foreach ($candidates as $c) {
+            if ($result[$c['i']] !== null || isset($claimed[$c['gid']])) { continue; }
+            $result[$c['i']] = $c['gid'];
+            $claimed[$c['gid']] = true;
+        }
+        return $result;
+    }
+}
+
 if (!function_exists('propagateGuideToTours')) {
     /**
      * Explicit assignment: the user set (or cleared) the guide of a group, so EVERY member
