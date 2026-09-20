@@ -785,17 +785,10 @@ function updateGroup($conn, $groupId, $data) {
 
     // The group's guide may have changed and was propagated to tours.guide_id
     // (propagateGuideToTours, inside the committed transaction above). Reconcile
-    // the guide WhatsApp reminders so a group-level assignment schedules promptly
-    // instead of waiting for the next Bokun sync. Flag-gated + fully isolated: a
-    // reminder failure can never affect this group-update response. No payments.
-    if (is_array($data) && array_key_exists('guide_id', $data)) {
-        try {
-            require_once __DIR__ . '/twilio_reminders.php';
-            reconcileGuideReminders($conn);
-        } catch (\Throwable $reminderErr) {
-            error_log('tour-groups.php: guide reminder reconcile failed (non-fatal): ' . $reminderErr->getMessage());
-        }
-    }
+    // Step 3.9: this used to reconcile the per-tour "~60 minutes before" WhatsApp reminder so a
+    // group-level assignment scheduled promptly. Step 3.10 retired that reminder in favour of the
+    // evening digest, which is built from the live data by its own cron - there is nothing to
+    // reconcile on assignment any more, and the machinery is deleted.
 
     $group = fetchGroupWithTours($conn, $groupId);
     echo json_encode(['success' => true, 'data' => $group]);

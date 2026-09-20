@@ -68,11 +68,13 @@ class BokunAutoSyncService {
 
       // Step 1.2: no config round-trip. action=sync answers {success:false, error:'sync_disabled'}
       // when the server has sync switched off, and that is a skip, not a failure.
-      // Perform the sync using GET as specified in the requirements
-      // GET /api/bokun_sync.php?action=sync
+      // Step 3.9: POST, not GET - a sync changes data, and the server now answers 405 to a GET.
       // Pass sync type for proper logging (auto/manual/startup/periodic)
       const syncType = trigger === 'manual' ? 'manual' : 'auto';
-      const response = await axios.get(`${API_BASE}/bokun_sync.php?action=sync&type=${syncType}&triggered_by=${trigger}`, {
+      const response = await axios.post(`${API_BASE}/bokun_sync.php?action=sync`, {
+        type: syncType,
+        triggered_by: trigger
+      }, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

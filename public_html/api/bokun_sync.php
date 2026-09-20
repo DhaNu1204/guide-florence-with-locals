@@ -162,6 +162,46 @@ function ensureGroupBucketKeyColumn($conn) {
     }
 }
 
+/**
+ * Step 3.9: validate a date parameter that reaches the sync from a request.
+ * Must be a real calendar date in Y-m-d (so "2026-02-31" is refused, not silently shifted) and
+ * inside a sane window - the sync window drives Bokun paging and the grouping range, so a typo
+ * like "0001-01-01" would ask Bokun for two thousand years of bookings.
+ * Returns null when acceptable, or the message to send with HTTP 400.
+ */
+function bokunDateParamError($value, $label) {
+    if ($value === null || $value === '') {
+        return null; // omitted: the caller's default window applies
+    }
+    if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        return "$label must be a date in YYYY-MM-DD format";
+    }
+    $d = DateTime::createFromFormat('!Y-m-d', $value);
+    if (!$d || $d->format('Y-m-d') !== $value) {
+        return "$label is not a real date";
+    }
+    if ($value < '2015-01-01' || $value > date('Y-m-d', strtotime('+5 years'))) {
+        return "$label is outside the supported range (2015-01-01 .. +5 years)";
+    }
+    return null;
+}
+
+/**
+ * Step 3.9: both ends of a sync window at once, including start <= end.
+ */
+function bokunDateRangeError($startDate, $endDate) {
+    foreach ([['start_date', $startDate], ['end_date', $endDate]] as $pair) {
+        $err = bokunDateParamError($pair[1], $pair[0]);
+        if ($err !== null) {
+            return $err;
+        }
+    }
+    if ($startDate && $endDate && $startDate > $endDate) {
+        return 'start_date must not be after end_date';
+    }
+    return null;
+}
+
 // Self-provision the sync_logs table (idempotent, same pattern as bokun_webhook_logs).
 function ensureSyncLogsTable($conn) {
     $conn->query("CREATE TABLE IF NOT EXISTS sync_logs (
@@ -634,14 +674,9 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
             }
         }
 
-        // Reconcile guide WhatsApp reminders (flag-gated; no-op when disabled).
-        // Fully isolated: any failure here must never affect booking sync.
-        try {
-            require_once __DIR__ . '/twilio_reminders.php';
-            reconcileGuideReminders($conn);
-        } catch (\Throwable $reminderErr) {
-            error_log('Bokun Sync: guide reminder reconcile failed (non-fatal): ' . $reminderErr->getMessage());
-        }
+        // Step 3.9: the per-tour "~60 minutes before" reminder reconcile used to run here.
+        // Step 3.10 retired it (the evening digest replaced it, sent by its own cron), and the
+        // machinery is now deleted - there is nothing left to call.
 
         // Calculate duration and update sync log
         $duration = round(microtime(true) - $startTime, 2);
@@ -1396,12 +1431,14 @@ switch ($method) {
                 echo json_encode(testBokunConnection());
                 break;
 
+            // Step 3.9: a sync changes data, so it is a POST. Answering 405 rather than
+            // quietly running it makes a stale caller obvious instead of invisible.
             case 'sync':
-                $startDate = $_GET['start_date'] ?? null;
-                $endDate = $_GET['end_date'] ?? null;
-                $syncType = $_GET['type'] ?? 'manual';
-                $triggeredBy = $_GET['triggered_by'] ?? 'user';
-                echo json_encode(syncBookings($startDate, $endDate, $syncType, $triggeredBy));
+            case 'full-sync':
+            case 'backfill-names':
+                http_response_code(405);
+                header('Allow: POST');
+                echo json_encode(['error' => "Use POST for action=$action (it changes data)"]);
                 break;
 
             case 'sync-history':
@@ -1411,10 +1448,6 @@ switch ($method) {
 
             case 'sync-info':
                 echo json_encode(getSyncInfo());
-                break;
-
-            case 'backfill-names':
-                echo json_encode(backfillParticipantNames());
                 break;
 
             default:
@@ -1435,9 +1468,20 @@ switch ($method) {
             case 'sync':
                 $startDate = $data['start_date'] ?? null;
                 $endDate = $data['end_date'] ?? null;
+                // Step 3.9: a bad window is a 400, not a Bokun request for two thousand years.
+                $dateError = bokunDateRangeError($startDate, $endDate);
+                if ($dateError !== null) {
+                    http_response_code(400);
+                    echo json_encode(['error' => $dateError]);
+                    break;
+                }
                 $syncType = $data['type'] ?? 'manual';
                 $triggeredBy = $data['triggered_by'] ?? 'user';
                 echo json_encode(syncBookings($startDate, $endDate, $syncType, $triggeredBy));
+                break;
+
+            case 'backfill-names':
+                echo json_encode(backfillParticipantNames());
                 break;
 
             case 'full-sync':
