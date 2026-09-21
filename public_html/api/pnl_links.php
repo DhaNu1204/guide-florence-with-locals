@@ -120,6 +120,7 @@ if (!function_exists('pnlLinkCombineRows')) {
         $retail = 0.0; $commission = 0.0; $net = 0.0;
         $bookings = 0; $cancelled = 0;
         $estimated = false; $revenueOverridden = false;
+        $anyManual = false; $ticketUnknown = false; // step 6.4
         $channels = []; $guideNames = []; $titles = []; $overriddenFields = [];
         $breakdown = [];
 
@@ -137,6 +138,9 @@ if (!function_exists('pnlLinkCombineRows')) {
             $cancelled  += (int) $m['cancelled'];
             if (!empty($m['revenue']['estimated']))  { $estimated = true; }
             if (!empty($m['revenue']['overridden'])) { $revenueOverridden = true; }
+            // Step 6.4: one unknown ticket cost makes the merged ticket total unknown too.
+            if (!empty($m['is_manual']))                { $anyManual = true; }
+            if (!empty($m['costs']['ticket_unknown']))  { $ticketUnknown = true; }
             foreach (($m['channels'] ?? []) as $c) { if (!in_array($c, $channels, true)) { $channels[] = $c; } }
             if (!empty($m['guide_name']) && !in_array($m['guide_name'], $guideNames, true)) { $guideNames[] = $m['guide_name']; }
             $titles[] = $m['title'];
@@ -197,6 +201,7 @@ if (!function_exists('pnlLinkCombineRows')) {
                              }, $titles)),
             'category'    => $category,
             'is_group'    => false,
+            'is_manual'   => $anyManual,
             'is_ticket'   => $allTicket,
             'is_private'  => $anyPrivate,
             'guide_name'  => $guideNames ? implode(' / ', $guideNames) : null,
@@ -210,11 +215,14 @@ if (!function_exists('pnlLinkCombineRows')) {
                 'net'        => $net,
                 'estimated'  => $estimated,
                 'overridden' => $revenueOverridden,
+                'manual'     => $anyManual,
             ],
             'costs'       => array_merge($costs, [
                 'total'      => $totalCost,
                 'auto'       => $auto,
                 'overridden' => $overriddenFields,
+                'ticket_unknown' => $ticketUnknown && !in_array('ticket_cost', $overriddenFields, true),
+                'guide_unknown'  => false, // a merged unit always gets one real fee (step 6.2)
             ]),
             'outsourced'  => $anyOutsourced,
             'profit'      => round($net - $totalCost, 2),

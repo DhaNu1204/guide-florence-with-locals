@@ -3,6 +3,8 @@
 require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
+require_once __DIR__ . '/payment_helpers.php';     // pure helper: paymentAmountError() (step 3.8)
+require_once __DIR__ . '/manual_helpers.php';      // pure helpers: hand-entered departures (step 6.4)
 
 // Require authentication for all tour operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -144,6 +146,9 @@ if ($checkIsPrivateCol && $checkIsPrivateCol->num_rows === 0) {
     $conn->query("ALTER TABLE tours ADD COLUMN `is_private` TINYINT(1) NOT NULL DEFAULT 0 AFTER `product_id`");
     $conn->query("ALTER TABLE tours ADD KEY `idx_tours_is_private` (`is_private`)");
 }
+
+// Step 6.4: source / manual_revenue / manual_currency for hand-entered departures.
+ensureManualColumns($conn);
 
 // Always ensure known ticket products are classified correctly.
 // Runs after the products table is guaranteed to exist, and after
@@ -526,13 +531,20 @@ switch ($method) {
                     $derived = deriveListFields($row['bokun_data'] ?? null, $row['participants'] ?? 0, $row['language'] ?? null, $row['title'] ?? '');
                     $row['language'] = $derived['language'];
                     $row['total_participants'] = $derived['total_participants'];
+                    // Step 6.4: a hand-entered row has no bokun_data, so the start time the list
+                    // shows comes from its own `time` column (otherwise it printed '09:30:00').
+                    // Scoped to manual rows: nothing about a synced row changes here.
                     $row['start_time_str'] = $derived['start_time_str'];
+                    if ($row['start_time_str'] === null && manualIsManualRow($row) && isset($row['time'])) {
+                        $row['start_time_str'] = substr((string) $row['time'], 0, 5);
+                    }
                     $light = [];
                     foreach (['id', 'external_id', 'bokun_confirmation_code', 'title', 'product_id', 'product_type',
                               'is_private', 'date', 'time', 'start_time_str', 'guide_id', 'guide_name',
                               'group_id', 'group_info', 'participants', 'total_participants',
                               'pax_adults', 'pax_children', 'pax_infants', 'participant_names',
                               'customer_name', 'language', 'booking_channel', 'external_source',
+                              'source', 'manual_revenue', 'manual_currency',
                               'cancelled', 'paid', 'payment_status', 'guide_paid', 'bokun_total_price', 'bokun_currency',
                               'rescheduled', 'original_date',
                               'original_time', 'needs_guide_assignment', 'notes', 'last_sync'] as $key) {
@@ -541,8 +553,21 @@ switch ($method) {
                     $row = $light;
                 }
 
+                if (array_key_exists('manual_revenue', $row)) {
+                    $row['manual_revenue'] = $row['manual_revenue'] !== null ? floatval($row['manual_revenue']) : null;
+                }
+                $row['is_manual'] = manualIsManualRow($row);
+
                 $tours[] = $row;
             }
+
+            // Step 6.4: "possible duplicate" flags, computed on READ and never written.
+            // Once the owner connects a GYG listing in Bokun, the same departure starts
+            // arriving from the sync while his manual row is still there. Nothing is merged
+            // automatically - both rows simply carry the other one's id so the page can say
+            // so and offer "remove my manual one". Computed here rather than in the sync
+            // precisely because the sync must never write to a manual row (see bokun_sync.php).
+            $tours = toursAttachDuplicateFlags($conn, $tours);
 
             if ($singleFull) {
                 if (count($tours) === 0) {
@@ -577,6 +602,56 @@ switch ($method) {
         break;
         
     case 'POST':
+        // Step 6.4: POST tours.php?action=manual - record a departure that will never
+        // arrive from Bokun (a GetYourGuide listing whose Connectivity Settings say
+        // "Not connected"). Admin only, like every write here (requireAdminForWrites
+        // above). product_id stays NULL: that is what keeps the row out of the sync's
+        // auto-grouping pass while every read path already tolerates it.
+        if (isset($_GET['action']) && $_GET['action'] === 'manual') {
+            $data = json_decode(file_get_contents('php://input'), true);
+            $err = manualTourErrors($data);
+            if ($err !== null) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => $err]);
+                break;
+            }
+            $guideErr = manualGuideIdError($conn, isset($data['guide_id']) ? $data['guide_id'] : null);
+            if ($guideErr !== null) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => $guideErr]);
+                break;
+            }
+            $fields = manualTourFields($conn, $data);
+            $stmt = $conn->prepare(
+                "INSERT INTO tours (title, date, time, participants, language, guide_id,
+                                    booking_channel, external_source, source, manual_revenue,
+                                    manual_currency, notes, needs_guide_assignment, cancelled,
+                                    is_private, payment_status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, 0, 0, 'unpaid', NOW(), NOW())");
+            $src = MANUAL_TOUR_SOURCE;
+            $stmt->bind_param(
+                'sssisissdssi',
+                $fields['title'], $fields['date'], $fields['time'], $fields['participants'],
+                $fields['language'], $fields['guide_id'], $fields['booking_channel'],
+                $src, $fields['manual_revenue'], $fields['manual_currency'],
+                $fields['notes'], $fields['needs_guide_assignment']
+            );
+            if (!$stmt->execute()) {
+                http_response_code(500);
+                error_log('Step 6.4: manual tour insert failed: ' . $stmt->error);
+                echo json_encode(['success' => false, 'error' => 'Could not save the tour']);
+                break;
+            }
+            $newId = $stmt->insert_id;
+            $stmt->close();
+            echo json_encode([
+                'success' => true,
+                'data' => manualLoadTour($conn, $newId),
+                'message' => 'Tour added'
+            ]);
+            break;
+        }
+
         // Create a new tour
         $data = json_decode(file_get_contents('php://input'), true);
         
@@ -668,6 +743,70 @@ switch ($method) {
         break;
         
     case 'PUT':
+        // Step 6.4: PUT tours.php/{id}?action=manual - edit a hand-entered departure.
+        // Refuses anything that did not come from the Add tour form, so this path can
+        // never rewrite a synced booking.
+        if (isset($_GET['action']) && $_GET['action'] === 'manual') {
+            if (!$tourId) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Tour ID is required']);
+                break;
+            }
+            $existing = manualLoadTour($conn, (int) $tourId);
+            if (!$existing) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => 'Tour not found']);
+                break;
+            }
+            if (!manualIsManualRow($existing)) {
+                http_response_code(400);
+                echo json_encode(['success' => false,
+                    'error' => 'This tour came from Bokun - edit it in Bokun, not here']);
+                break;
+            }
+            $data = json_decode(file_get_contents('php://input'), true);
+            $err = manualTourErrors($data);
+            if ($err !== null) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => $err]);
+                break;
+            }
+            $guideErr = manualGuideIdError($conn, isset($data['guide_id']) ? $data['guide_id'] : null);
+            if ($guideErr !== null) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => $guideErr]);
+                break;
+            }
+            $fields = manualTourFields($conn, $data);
+            $stmt = $conn->prepare(
+                "UPDATE tours SET title = ?, date = ?, time = ?, participants = ?, language = ?,
+                                  guide_id = ?, booking_channel = ?, manual_revenue = ?,
+                                  manual_currency = ?, notes = ?, needs_guide_assignment = ?,
+                                  updated_at = NOW()
+                  WHERE id = ? AND source = ?");
+            $src = MANUAL_TOUR_SOURCE;
+            $stmt->bind_param(
+                'sssisisdssiis',
+                $fields['title'], $fields['date'], $fields['time'], $fields['participants'],
+                $fields['language'], $fields['guide_id'], $fields['booking_channel'],
+                $fields['manual_revenue'], $fields['manual_currency'], $fields['notes'],
+                $fields['needs_guide_assignment'], $tourId, $src
+            );
+            if (!$stmt->execute()) {
+                http_response_code(500);
+                error_log('Step 6.4: manual tour update failed: ' . $stmt->error);
+                echo json_encode(['success' => false, 'error' => 'Could not save the tour']);
+                break;
+            }
+            $stmt->close();
+            echo json_encode([
+                'success' => true,
+                'data' => manualLoadTour($conn, (int) $tourId),
+                'message' => 'Tour updated'
+            ]);
+            break;
+        }
+
         // Update a tour
         if (!$tourId) {
             header("HTTP/1.1 400 Bad Request");
@@ -921,6 +1060,42 @@ switch ($method) {
         break;
         
     case 'DELETE':
+        // Step 6.4: DELETE tours.php/{id}?action=manual - remove a hand-entered departure.
+        // This is also the "this is the same tour, remove my manual one" action offered
+        // beside a possible-duplicate badge, so it refuses to touch a synced booking:
+        // the one-click resolution must never be able to delete Bokun's copy by mistake.
+        if (isset($_GET['action']) && $_GET['action'] === 'manual') {
+            if (!$tourId) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Tour ID is required']);
+                break;
+            }
+            $existing = manualLoadTour($conn, (int) $tourId);
+            if (!$existing) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => 'Tour not found']);
+                break;
+            }
+            if (!manualIsManualRow($existing)) {
+                http_response_code(400);
+                echo json_encode(['success' => false,
+                    'error' => 'This tour came from Bokun and cannot be deleted here']);
+                break;
+            }
+            $src = MANUAL_TOUR_SOURCE;
+            $stmt = $conn->prepare("DELETE FROM tours WHERE id = ? AND source = ?");
+            $stmt->bind_param('is', $tourId, $src);
+            if (!$stmt->execute()) {
+                http_response_code(500);
+                error_log('Step 6.4: manual tour delete failed: ' . $stmt->error);
+                echo json_encode(['success' => false, 'error' => 'Could not delete the tour']);
+                break;
+            }
+            echo json_encode(['success' => true, 'message' => 'Manual tour removed']);
+            $stmt->close();
+            break;
+        }
+
         // Delete a tour
         if (!$tourId) {
             header("HTTP/1.1 400 Bad Request");

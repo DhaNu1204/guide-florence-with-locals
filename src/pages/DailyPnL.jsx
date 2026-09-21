@@ -115,7 +115,7 @@ const CATEGORY_BADGE = {
 // ---------------------------------------------------------------------------
 // Inline editable money chip — shows auto value; click to override; ↺ resets
 // ---------------------------------------------------------------------------
-function EditableChip({ row, field, label, value, autoValue, overridden, onSave, strong = false }) {
+function EditableChip({ row, field, label, value, autoValue, overridden, onSave, strong = false, unknown = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -166,7 +166,9 @@ function EditableChip({ row, field, label, value, autoValue, overridden, onSave,
   return (
     <button
       onClick={(e) => { e.stopPropagation(); startEdit(); }}
-      title={overridden ? `Manual (auto: ${eur(autoValue)}) — click to change` : 'Click to change'}
+      title={unknown
+        ? 'Not known for a tour added by hand - click to enter the real cost.'
+        : (overridden ? `Manual (auto: ${eur(autoValue)}) — click to change` : 'Click to change')}
       className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs transition-colors ${
         overridden
           ? 'border-terracotta-300 bg-terracotta-50 text-terracotta-700 font-semibold'
@@ -174,7 +176,8 @@ function EditableChip({ row, field, label, value, autoValue, overridden, onSave,
       } ${strong ? 'font-semibold' : ''}`}
     >
       <span>{label}</span>
-      <span>{eur(value)}</span>
+      {/* Step 6.4: an unknown cost prints "-", never a confident 0.00. */}
+      <span data-testid={unknown ? 'pnl-unknown-cost' : undefined}>{unknown ? '—' : eur(value)}</span>
       {overridden && (
         <span
           onClick={reset}
@@ -291,6 +294,8 @@ function UnitCard({ row, onCostSave, onOpenDetail, selectable, selected, onToggl
           </p>
           <p className="text-[11px] text-stone-400">
             in {eur(row.revenue.net)} − out {eur(row.costs.total)}
+            {row.costs.ticket_unknown && <span className="text-amber-600"> (tickets not known)</span>}
+            {row.costs.guide_unknown && <span className="text-amber-600"> (guide fee not known)</span>}
           </p>
         </div>
       </div>
@@ -316,6 +321,8 @@ function UnitCard({ row, onCostSave, onOpenDetail, selectable, selected, onToggl
             label={f.label}
             value={row.costs[f.key]}
             autoValue={row.costs.auto[f.key]}
+            unknown={(f.key === 'ticket_cost' && !!row.costs.ticket_unknown)
+                     || (f.key === 'guide_cost' && !!row.costs.guide_unknown)}
             overridden={row.costs.overridden.includes(f.key)}
             onSave={onCostSave}
           />
@@ -744,6 +751,11 @@ function CostDetailModal({ row, settings, onClose, onSave }) {
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const ticketExplain = () => {
+    // Step 6.4: a hand-entered departure has no Bokun product, and if its title names no
+    // museum there is nothing to compute from. Say so instead of implying €0.00.
+    if (row.costs.ticket_unknown) {
+      return 'Not known — this tour was added by hand and its name does not say which museum. Type the real ticket cost here.';
+    }
     const mus = MUSEUMS[row.category];
     if (!mus) return 'Sum over the bookings in this group';
     return mus.map((m) => {
@@ -848,7 +860,11 @@ function CostDetailModal({ row, settings, onClose, onSave }) {
               <div>
                 <p className="text-sm font-semibold text-stone-700">Money in (net)</p>
                 <p className="text-xs text-stone-500 mt-0.5">
-                  Retail {eur(row.revenue.retail)} − {row.channels.join(', ')} commission {row.revenue.estimated && '~'}{eur(row.revenue.commission)}
+                  {row.revenue.manual
+                    ? (row.revenue.estimated
+                        ? 'Added by hand — no amount was entered, so nothing is counted as money in'
+                        : `Added by hand — ${eur(row.revenue.net)} is what the channel pays, net of its commission`)
+                    : <>Retail {eur(row.revenue.retail)} − {row.channels.join(', ')} commission {row.revenue.estimated && '~'}{eur(row.revenue.commission)}</>}
                 </p>
               </div>
               {numInput('revenue')}

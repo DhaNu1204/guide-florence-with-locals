@@ -782,6 +782,26 @@ export const getTourLanguages = async (filters = {}) => {
   return response.data;
 };
 
+// Step 6.4: departures typed in by hand, for a listing that is not connected to Bokun.
+// Admin only on the server; the sync never touches the rows these create.
+export const createManualTour = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/tours.php?action=manual`, payload);
+  clearTourCache();
+  return response.data;
+};
+
+export const updateManualTour = async (id, payload) => {
+  const response = await axios.put(`${API_BASE_URL}/tours.php/${id}?action=manual`, payload);
+  clearTourCache();
+  return response.data;
+};
+
+export const deleteManualTour = async (id) => {
+  const response = await axios.delete(`${API_BASE_URL}/tours.php/${id}?action=manual`);
+  clearTourCache();
+  return response.data;
+};
+
 // Step 6.3: the afternoon radio order for Vox Firenze (admin only).
 export const getRadioPlan = async (date) => {
   const response = await axios.get(`${API_BASE_URL}/radios.php?action=plan&date=${date}`);
@@ -813,6 +833,9 @@ const mysqlDB = {
   getUnassignedReport,
   getUnassignedCount,
   getTourLanguages, // step 6.1
+  createManualTour, // step 6.4
+  updateManualTour,
+  deleteManualTour,
   addTour,
   deleteTour,
   updateTour,

@@ -8,6 +8,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi } from 'vitest';
 
+// Step 6.4: Tours now reads the role to decide whether to offer "Add tour".
+// These tests render the page outside AuthProvider, so useAuth is stubbed as an admin.
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({ isAdmin: () => true, userRole: 'admin', userName: 'test' }),
+}));
+
 vi.mock('../../services/mysqlDB', () => {
   const resolved = (val) => vi.fn().mockResolvedValue(val);
   const p = (n) => String(n).padStart(2, '0');
