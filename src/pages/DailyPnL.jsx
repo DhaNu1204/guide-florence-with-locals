@@ -88,6 +88,12 @@ const SETTING_GROUPS = [
     ]
   },
   {
+    title: 'Card processing fee — direct sales',
+    keys: [
+      ['fee_card_direct', 'Card processing fee — direct sales (%)']
+    ]
+  },
+  {
     title: 'Fallback commission % (only used when Bokun has no invoice data)',
     keys: [
       ['comm_getyourguide', 'GetYourGuide %'],
@@ -252,6 +258,16 @@ function UnitCard({ row, onCostSave, onOpenDetail, selectable, selected, onToggl
             {/* Step 6.6: a guessed figure must never look like a known one. This used to be
                 grey-on-grey and was missed for months while 30% was wrongly deducted from
                 direct sales; it is now as loud as the other "not known" markers. */}
+            {/* Step 6.7: named "card fee" so it can never be read as an OTA commission. */}
+            {row.revenue.card_fee > 0 && (
+              <span
+                className="px-2 py-0.5 rounded-full text-[11px] bg-sky-100 text-sky-800"
+                data-testid="pnl-card-fee-chip"
+                title="Your own sale — the only deduction is what the card processor keeps"
+              >
+                card fee {eur(row.revenue.card_fee)}
+              </span>
+            )}
             {row.revenue.estimated && (
               <span
                 className="px-2 py-0.5 rounded-full text-[11px] bg-amber-100 text-amber-800 font-medium"
@@ -641,7 +657,9 @@ export default function DailyPnL() {
             <p className="text-xs text-stone-500 uppercase tracking-wide">Net Revenue</p>
             <p className="text-xl font-bold text-stone-800 mt-1">{eur(totals.net)}</p>
             <p className="text-xs text-stone-400 mt-1">
+              {/* Step 6.7: the card fee is NOT an OTA commission and is named separately. */}
               Retail {eur(totals.retail)} − commission {eur(totals.commission)}
+              {totals.card_fee > 0 && <> − card fee {eur(totals.card_fee)}</>}
             </p>
             {/* Step 6.6: how much of this number is known and how much is guessed. */}
             {totals.estimated_units > 0 && (
@@ -880,7 +898,12 @@ function CostDetailModal({ row, settings, onClose, onSave }) {
                     ? (row.revenue.estimated
                         ? 'Added by hand — no amount was entered, so nothing is counted as money in'
                         : `Added by hand — ${eur(row.revenue.net)} is what the channel pays, net of its commission`)
-                    : <>Retail {eur(row.revenue.retail)} − {row.channels.join(', ')} commission {row.revenue.estimated && '~'}{eur(row.revenue.commission)}</>}
+                    : <>
+                        Retail {eur(row.revenue.retail)} − {row.channels.join(', ')} commission{' '}
+                        {row.revenue.estimated && '~'}{eur(row.revenue.commission)}
+                        {/* Step 6.7: his own sale, so the only deduction is what the card costs him. */}
+                        {row.revenue.card_fee > 0 && <> − card fee {eur(row.revenue.card_fee)}</>}
+                      </>}
                 </p>
               </div>
               {numInput('revenue')}

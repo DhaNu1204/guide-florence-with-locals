@@ -117,7 +117,7 @@ if (!function_exists('pnlLinkCombineRows')) {
                   'gelato_cost' => 0.0, 'staff_cost' => 0.0, 'other_cost' => 0.0];
         $auto  = $costs;
         $pax = ['adults' => 0, 'children' => 0, 'infants' => 0, 'total' => 0];
-        $retail = 0.0; $commission = 0.0; $net = 0.0;
+        $retail = 0.0; $commission = 0.0; $net = 0.0; $cardFee = 0.0; // step 6.7
         $bookings = 0; $cancelled = 0;
         $estimated = false; $revenueOverridden = false;
         $anyManual = false; $ticketUnknown = false; // step 6.4
@@ -133,6 +133,7 @@ if (!function_exists('pnlLinkCombineRows')) {
             foreach (['adults', 'children', 'infants', 'total'] as $k) { $pax[$k] += (int) $m['pax'][$k]; }
             $retail     += (float) $m['revenue']['retail'];
             $commission += (float) $m['revenue']['commission'];
+            $cardFee    += (float) ($m['revenue']['card_fee'] ?? 0);
             $net        += (float) $m['revenue']['net'];
             $bookings   += (int) $m['bookings'];
             $cancelled  += (int) $m['cancelled'];
@@ -212,6 +213,7 @@ if (!function_exists('pnlLinkCombineRows')) {
             'revenue'     => [
                 'retail'     => round($retail, 2),
                 'commission' => round($commission, 2),
+                'card_fee'   => round($cardFee, 2),
                 'net'        => $net,
                 'estimated'  => $estimated,
                 'overridden' => $revenueOverridden,
