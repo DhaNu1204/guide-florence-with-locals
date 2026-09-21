@@ -129,7 +129,9 @@ describe('perfBeacon (step 4.7)', () => {
 
   it('flags the first load after a new release, and only that one', async () => {
     let m = await loadFresh();
-    store['fwl:last-release'] = 'fwl@0.0.1';
+    // the build id, not the version string: a deploy changes the entry hash every time
+    document.head.innerHTML = '<script type="module" src="/assets/index-NEWHASH1.js"></scr' + 'ipt>';
+    store['fwl:last-build'] = 'OLDHASH9';
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
     vi.advanceTimersByTime(30000);

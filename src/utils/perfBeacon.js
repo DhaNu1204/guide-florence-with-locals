@@ -21,7 +21,24 @@
 const ENDPOINT = `${import.meta.env.VITE_API_URL || '/api'}/client_perf.php`;
 const HARD_DEADLINE_MS = 30000; // a load that has not finished by now is the case we are hunting
 const SETTLE_GRACE_MS = 1500;   // let a late request register before we call the load complete
-const RELEASE_KEY = 'fwl:last-release';
+const RELEASE_KEY = 'fwl:last-build';
+
+/**
+ * What identifies "this build" for the post-deploy question.
+ *
+ * The release tag is `fwl@<package.json version>`, which we hardly ever bump, so on its own
+ * it would miss almost every deploy. The entry script's content hash changes on every single
+ * one, so that is what is compared. In dev there is no hashed entry and it falls back to the
+ * release tag.
+ */
+function buildId(release) {
+  try {
+    const el = document.querySelector('script[type="module"][src]');
+    const m = el && el.getAttribute('src').match(/-([A-Za-z0-9_-]{6,})\.js$/);
+    if (m) return m[1];
+  } catch (e) { /* fall through */ }
+  return String(release || 'dev');
+}
 
 // 'none' = never started on this load (e.g. a route that shows no list).
 const state = {
@@ -175,9 +192,10 @@ export const markEntry = safe((release) => {
 
   // "Is this the first load since we deployed?" - the slowest load of all, per Part 1.
   try {
+    const id = buildId(state.release);
     const last = localStorage.getItem(RELEASE_KEY);
-    state.firstAfterRelease = last !== null && last !== state.release;
-    localStorage.setItem(RELEASE_KEY, state.release);
+    state.firstAfterRelease = last !== null && last !== id;
+    localStorage.setItem(RELEASE_KEY, id);
   } catch (e) {
     state.firstAfterRelease = false; // storage blocked: simply unknown, never a failure
   }
@@ -200,4 +218,4 @@ export const markRateLimited = safe(() => { state.rateLimited += 1; });
 
 // Testing seams only - not used by the app.
 export const __state = state;
-export const __internals = { routeName, deviceLabel, freeze, buildPayload, allSettled };
+export const __internals = { routeName, deviceLabel, freeze, buildPayload, allSettled, buildId };
