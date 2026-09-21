@@ -71,7 +71,13 @@ $first = $all[0];
 $departureDate = substr((string) $first['date'], 0, 10);
 $departureTime = substr((string) ($first['group_time'] ?: $first['time']), 0, 5);
 $product = trim((string) ($first['group_display_name'] ?: $first['title']));
-$museum = function_exists('radioMuseumForTitle') ? radioMuseumForTitle($first['title']) : '';
+// radioMuseumForTitle() (step 6.3) returns ['museum','confident','why'] - take the heading.
+// Its catch-all section 'Altro' means "this title names no museum": there is no museum door to
+// stand at, so the sheet falls back to the product name rather than printing an Italian word
+// that means nothing on an English participant list.
+$museumInfo = function_exists('radioMuseumForTitle') ? radioMuseumForTitle($first['title']) : null;
+$museum = (is_array($museumInfo) && isset($museumInfo['museum']) && $museumInfo['museum'] !== RADIO_OTHER_SECTION)
+    ? (string) $museumInfo['museum'] : '';
 $guideName = $first['guide_name'] ?: '';
 $guidePhone = $first['guide_phone'] ?: '';
 
