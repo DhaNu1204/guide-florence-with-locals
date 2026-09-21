@@ -810,6 +810,24 @@ export const downloadParticipantsPdf = async (unit) => {
   return name;
 };
 
+// Step 6.9: the owner's paper fallback - every departure still to run on the Viator account
+// he is retiring, with Viator's own reference numbers. Admin only on the server.
+export const downloadViatorLegacyCsv = async () => {
+  const response = await axios.get(`${API_BASE_URL}/viator_legacy_export.php`, { responseType: 'blob' });
+  const disposition = response.headers?.['content-disposition'] || '';
+  const match = /filename="?([^"]+)"?/.exec(disposition);
+  const name = match ? match[1] : 'viator-old-account-departures.csv';
+  const url = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+  return name;
+};
+
 // Step 6.4: departures typed in by hand, for a listing that is not connected to Bokun.
 // Admin only on the server; the sync never touches the rows these create.
 export const createManualTour = async (payload) => {
@@ -862,6 +880,7 @@ const mysqlDB = {
   getUnassignedCount,
   getTourLanguages, // step 6.1
   downloadParticipantsPdf, // step 6.8
+  downloadViatorLegacyCsv, // step 6.9
   createManualTour, // step 6.4
   updateManualTour,
   deleteManualTour,
