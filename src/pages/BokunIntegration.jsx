@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { FiRefreshCw, FiSettings, FiCloud, FiActivity, FiClock, FiCheck, FiCalendar, FiDatabase } from 'react-icons/fi';
+import { FiRefreshCw, FiSettings, FiCloud, FiActivity, FiClock, FiCheck, FiCalendar, FiDatabase, FiDownload } from 'react-icons/fi';
 import { usePageTitle } from '../contexts/PageTitleContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useBokunAutoSync } from '../hooks/useBokunAutoSync';
-import { fullSyncBokun, getSyncInfo } from '../services/mysqlDB';
+import { fullSyncBokun, getSyncInfo, downloadViatorLegacyCsv } from '../services/mysqlDB';
 import BokunSync from '../components/BokunSync';
 import BokunMonitor from '../components/BokunMonitor';
 import Card from '../components/UI/Card';
@@ -17,6 +17,9 @@ const BokunIntegration = () => {
   const [fullSyncLoading, setFullSyncLoading] = useState(false);
   const [fullSyncResult, setFullSyncResult] = useState(null);
   const [syncInfo, setSyncInfo] = useState(null);
+  const [viatorCsvBusy, setViatorCsvBusy] = useState(false);
+  // Step 6.9: the watchdog's latest reading, which rides along on sync-info.
+  const viatorWatchdog = syncInfo?.viator_watchdog || null;
 
   useEffect(() => {
     setPageTitle('Bokun Integration');
@@ -35,6 +38,19 @@ const BokunIntegration = () => {
     };
     loadSyncInfo();
   }, []);
+
+  // Step 6.9: the list of departures still to honour on the retiring Viator account.
+  const handleDownloadViatorCsv = async () => {
+    if (viatorCsvBusy) return;
+    setViatorCsvBusy(true);
+    try {
+      await downloadViatorLegacyCsv();
+    } catch (error) {
+      console.error('Failed to download the old-Viator list:', error);
+    } finally {
+      setViatorCsvBusy(false);
+    }
+  };
 
   // Handle full sync (1 year)
   const handleFullSync = async () => {
@@ -252,6 +268,31 @@ const BokunIntegration = () => {
               </ul>
             </div>
           </div>
+
+          {/* Step 6.9: the old Viator account. While there are still departures to honour on it,
+              this is the one thing he needs off his phone - a list he can print and keep. */}
+          {viatorWatchdog && viatorWatchdog.future_bookings > 0 && (
+            <div className="mt-6 p-4 bg-stone-100 rounded-tuscan-lg" data-testid="viator-legacy-panel">
+              <h4 className="font-medium text-stone-900">Old Viator account</h4>
+              <p className="text-sm text-stone-700 mt-1">
+                {viatorWatchdog.future_bookings} booking{viatorWatchdog.future_bookings === 1 ? '' : 's'}
+                {' '}across {viatorWatchdog.future_departures} departure{viatorWatchdog.future_departures === 1 ? '' : 's'}
+                {' '}({viatorWatchdog.future_pax} guests) still have to be run on the Viator account being retired
+                {viatorWatchdog.latest_date ? `, the last on ${viatorWatchdog.latest_date}` : ''}.
+                {' '}Once it is disconnected these stop updating here, so keep this list.
+              </p>
+              <button
+                type="button"
+                onClick={handleDownloadViatorCsv}
+                disabled={viatorCsvBusy}
+                data-testid="viator-legacy-csv"
+                className="mt-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-tuscan bg-white border border-stone-300 text-stone-800 hover:bg-stone-50 disabled:opacity-50"
+              >
+                <FiDownload className="w-4 h-4" />
+                {viatorCsvBusy ? 'Preparing...' : 'Download the list (CSV)'}
+              </button>
+            </div>
+          )}
 
           <div className="mt-6 p-4 bg-olive-50 rounded-tuscan-lg">
             <div className="flex items-start gap-3">
