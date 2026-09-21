@@ -57,7 +57,7 @@ describe('perfBeacon (step 4.7)', () => {
       expect(typeof p[k]).toBe('number');
       expect(p[k]).toBeGreaterThanOrEqual(0);
     }
-    expect(beacons[0].url).toBe(ENDPOINT);
+    expect(beacons[0].url).toContain(ENDPOINT);
   });
 
   it('a load where the list never returns STILL sends a row, marked pending', async () => {

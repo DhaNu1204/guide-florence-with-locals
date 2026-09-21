@@ -17,7 +17,8 @@
  * beyond the route name, no free text. Timings, statuses and connection facts only.
  */
 
-const ENDPOINT = '/api/client_perf.php';
+// Same base as every other call, so a dev build posts to its own API instead of a 404.
+const ENDPOINT = `${import.meta.env.VITE_API_URL || '/api'}/client_perf.php`;
 const HARD_DEADLINE_MS = 30000; // a load that has not finished by now is the case we are hunting
 const SETTLE_GRACE_MS = 1500;   // let a late request register before we call the load complete
 const RELEASE_KEY = 'fwl:last-release';
@@ -135,7 +136,10 @@ function send(reason) {
     if (!navigator.sendBeacon) return;
     const payload = buildPayload(reason);
     if (!payload.token) return; // not logged in: nothing to attribute, nothing to send
-    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    // text/plain on purpose: it is a CORS-safelisted content type, so this request can
+    // never trigger a preflight. A beacon cannot answer a preflight, and a blocked
+    // preflight means no measurement at all - which is how this was found while testing.
+    const blob = new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=UTF-8' });
     navigator.sendBeacon(ENDPOINT, blob);
   } catch (e) { /* silent by design */ }
 }
