@@ -85,45 +85,90 @@ foreach ([
 check('the amount check IS paymentAmountError',
     manualTourErrors(array_merge($good, ['manual_revenue' => 'abc'])) === paymentAmountError('abc'));
 
+// --- title similarity (step 6.4a) ----------------------------------------------------------------------
+$MANUAL  = "Florence: Michelangelo's Life and Legacy 3.5 Hr Guided Tour";
+$REAL    = 'Michelangelo Private Guided Tour';                      // the same experience in Bokun
+$BARGELLO = 'Private Tour in Bargello Museum';                      // false match #1 on staging
+$UFFIZI_VASARI = 'Uffizi Gallery Guided Tour with Optional Vasari Corridor Visit'; // #2
+$UFFIZI_COMBO  = 'Uffizi & Accademia Walking Tour with Gelato & Art Historian';    // #3
+
+check('generic words are dropped from a title',
+    manualTitleTokens($MANUAL) === ['michelangelo', 'life', 'legacy'],
+    json_encode(manualTitleTokens($MANUAL)));
+check("the possessive is handled (Michelangelo's -> michelangelo)",
+    in_array('michelangelo', manualTitleTokens($MANUAL), true));
+check('a title of nothing but generic words has no tokens',
+    manualTitleTokens('Private Guided Tour in Florence') === [],
+    json_encode(manualTitleTokens('Private Guided Tour in Florence')));
+
+check('the real product scores 1.0 (short title fully contained)',
+    manualTitleSimilarity($MANUAL, $REAL) === 1.0, (string) manualTitleSimilarity($MANUAL, $REAL));
+check('Bargello scores 0.0',        manualTitleSimilarity($MANUAL, $BARGELLO) === 0.0);
+check('Uffizi+Vasari scores 0.0',   manualTitleSimilarity($MANUAL, $UFFIZI_VASARI) === 0.0);
+check('Uffizi combo scores 0.0',    manualTitleSimilarity($MANUAL, $UFFIZI_COMBO) === 0.0);
+check('and two Uffizi products DO look alike to each other',
+    manualTitlesLookAlike($UFFIZI_VASARI, $UFFIZI_COMBO));
+
 // --- duplicate matching ------------------------------------------------------------------------------
+// The exact staging case: one hand-entered departure and the three unrelated bookings that
+// shared its date, time and PAX. Only the real one may survive.
 $rows = [
-    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30:00', 'participants' => 2, 'source' => 'manual', 'cancelled' => 0],
-    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30',    'participants' => 2, 'source' => null,     'cancelled' => 0],
-    ['id' => 3, 'date' => '2026-08-21', 'time' => '09:30',    'participants' => 3, 'source' => null,     'cancelled' => 0],
-    ['id' => 4, 'date' => '2026-08-22', 'time' => '09:30',    'participants' => 2, 'source' => null,     'cancelled' => 0],
-    ['id' => 5, 'date' => '2026-08-21', 'time' => '14:30',    'participants' => 2, 'source' => null,     'cancelled' => 0],
+    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30:00', 'participants' => 2, 'title' => $MANUAL,        'source' => 'manual', 'cancelled' => 0],
+    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30',    'participants' => 2, 'title' => $REAL,          'source' => null,     'cancelled' => 0],
+    ['id' => 6, 'date' => '2026-08-21', 'time' => '09:30',    'participants' => 2, 'title' => $BARGELLO,      'source' => null,     'cancelled' => 0],
+    ['id' => 7, 'date' => '2026-08-21', 'time' => '09:30',    'participants' => 2, 'title' => $UFFIZI_VASARI, 'source' => null,     'cancelled' => 0],
+    ['id' => 8, 'date' => '2026-08-21', 'time' => '09:30',    'participants' => 2, 'title' => $UFFIZI_COMBO,  'source' => null,     'cancelled' => 0],
+    ['id' => 3, 'date' => '2026-08-21', 'time' => '09:30',    'participants' => 3, 'title' => $REAL,          'source' => null,     'cancelled' => 0],
+    ['id' => 4, 'date' => '2026-08-22', 'time' => '09:30',    'participants' => 2, 'title' => $REAL,          'source' => null,     'cancelled' => 0],
+    ['id' => 5, 'date' => '2026-08-21', 'time' => '14:30',    'participants' => 2, 'title' => $REAL,          'source' => null,     'cancelled' => 0],
 ];
 $d = manualFindDuplicates($rows);
-check('the manual row is paired with the synced one', ($d[1] ?? []) === [2], json_encode($d[1] ?? null));
+check('the genuine duplicate still flags', ($d[1] ?? []) === [2], json_encode($d[1] ?? null));
 check('and the synced row points back at it', ($d[2] ?? []) === [1], json_encode($d[2] ?? null));
+check('same time and PAX, unrelated product (Bargello) does NOT match', !isset($d[6]));
+check('same time and PAX, unrelated product (Uffizi/Vasari) does NOT match', !isset($d[7]));
+check('same time and PAX, unrelated product (Uffizi combo) does NOT match', !isset($d[8]));
 check('different PAX is not a match', !isset($d[3]));
 check('different date is not a match', !isset($d[4]));
 check('different time is not a match', !isset($d[5]));
 check("MySQL's 09:30:00 matches Bokun's 09:30", count($d) === 2);
 
 $cancelled = [
-    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => 'manual', 'cancelled' => 0],
-    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => null,     'cancelled' => 1],
+    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $MANUAL, 'source' => 'manual', 'cancelled' => 0],
+    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $REAL,   'source' => null,     'cancelled' => 1],
 ];
 check('a cancelled booking is never a duplicate', manualFindDuplicates($cancelled) === []);
+$cancelledManual = [
+    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $MANUAL, 'source' => 'manual', 'cancelled' => 1],
+    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $REAL,   'source' => null,     'cancelled' => 0],
+];
+check('a cancelled MANUAL row never pairs either', manualFindDuplicates($cancelledManual) === []);
 
 $twoManual = [
-    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => 'manual', 'cancelled' => 0],
-    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => 'manual', 'cancelled' => 0],
+    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $MANUAL, 'source' => 'manual', 'cancelled' => 0],
+    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $MANUAL, 'source' => 'manual', 'cancelled' => 0],
 ];
 check('two manual rows are never paired with each other', manualFindDuplicates($twoManual) === []);
 
 $multi = [
-    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => 'manual', 'cancelled' => 0],
-    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => null,     'cancelled' => 0],
-    ['id' => 3, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => null,     'cancelled' => 0],
+    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $MANUAL, 'source' => 'manual', 'cancelled' => 0],
+    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $REAL,   'source' => null,     'cancelled' => 0],
+    ['id' => 3, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $REAL,   'source' => null,     'cancelled' => 0],
 ];
 $dm = manualFindDuplicates($multi);
-check('a manual row can point at several synced candidates', ($dm[1] ?? []) === [2, 3], json_encode($dm[1] ?? null));
+check('a manual row can still point at several real candidates', ($dm[1] ?? []) === [2, 3], json_encode($dm[1] ?? null));
 
 check('no manual rows at all -> no flags', manualFindDuplicates([
-    ['id' => 9, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'source' => null, 'cancelled' => 0],
+    ['id' => 9, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $REAL, 'source' => null, 'cancelled' => 0],
 ]) === []);
+
+// a manual title made only of generic words can match nothing - deliberately: better silent
+// than crying wolf on every booking in the slot.
+$vague = [
+    ['id' => 1, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => 'Private Guided Tour', 'source' => 'manual', 'cancelled' => 0],
+    ['id' => 2, 'date' => '2026-08-21', 'time' => '09:30', 'participants' => 2, 'title' => $REAL,                 'source' => null,     'cancelled' => 0],
+];
+check('a title with no distinctive word raises no flag', manualFindDuplicates($vague) === []);
 
 echo $failures === 0 ? "\nall checks passed\n" : "\n$failures check(s) FAILED\n";
 exit($failures === 0 ? 0 : 1);

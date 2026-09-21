@@ -143,6 +143,83 @@ if (!function_exists('manualTourErrors')) {
     }
 }
 
+if (!defined('MANUAL_TITLE_MATCH_MIN')) {
+    // Step 6.4a: how much of the SHORTER title must be shared. 0.3 = one distinctive word
+    // in common out of three - enough that two different Uffizi products still warn each
+    // other (they score 0.33), while the staging false matches score a flat 0.0.
+    define('MANUAL_TITLE_MATCH_MIN', 0.3);
+}
+
+if (!function_exists('manualTitleTokens')) {
+    /**
+     * The words that actually identify a product, from a title written by whoever.
+     *
+     * Everything generic is dropped - "tour", "guided", "private", "gallery", "ticket",
+     * "florence", durations - because almost every product here contains several of them
+     * and they are exactly what made date+time+PAX matching flag unrelated departures.
+     * What survives is the distinctive part: michelangelo, uffizi, accademia, bargello,
+     * vasari, gelato, medici...
+     */
+    function manualTitleTokens($title) {
+        static $stop = null;
+        if ($stop === null) {
+            $stop = array_flip([
+                'tour', 'tours', 'guided', 'guide', 'guides', 'private', 'semi', 'small',
+                'group', 'groups', 'shared', 'exclusive', 'vip', 'skip', 'line', 'priority',
+                'entry', 'entrance', 'ticket', 'tickets', 'reserved', 'admission', 'access',
+                'visit', 'experience', 'walking', 'walk', 'tour_', 'gallery', 'galleries',
+                'museum', 'museums', 'florence', 'florencia', 'firenze', 'italy', 'italian',
+                'english', 'spanish', 'french', 'german', 'audio', 'app', 'digital', 'optional',
+                'with', 'and', 'the', 'a', 'an', 'of', 'in', 'to', 'for', 'from', 'at', 'on',
+                'by', 'or', 'hr', 'hrs', 'hour', 'hours', 'h', 'min', 'mins', 'day', 'half',
+                'full', 'best', 'top', 'new', 'de', 'la', 'el', 'y',
+            ]);
+        }
+        $t = (string) $title;
+        if (function_exists('iconv')) {
+            $conv = @iconv('UTF-8', 'ASCII//TRANSLIT', $t);
+            if ($conv !== false) { $t = $conv; }
+        }
+        $t = mb_strtolower($t);
+        $t = preg_replace("/['\x{2019}]s\\b/u", '', $t);   // Michelangelo's -> Michelangelo
+        $t = preg_replace('/[^a-z0-9]+/', ' ', $t);
+        $out = [];
+        foreach (preg_split('/\s+/', trim($t)) as $w) {
+            if ($w === '' || isset($stop[$w])) { continue; }
+            if (preg_match('/^\d+$/', $w)) { continue; }   // 3, 35, 2026 - never identifying
+            if (mb_strlen($w) < 3) { continue; }
+            $out[$w] = true;
+        }
+        return array_keys($out);
+    }
+}
+
+if (!function_exists('manualTitleSimilarity')) {
+    /**
+     * Overlap coefficient: shared words / the SHORTER of the two token sets.
+     *
+     * Deliberately not Jaccard. "Florence: Michelangelo's Life and Legacy 3.5 Hr Guided
+     * Tour" keeps 3 tokens and "Michelangelo Private Guided Tour" keeps 1; Jaccard would
+     * score that 0.33 and a long-vs-short pair would keep sliding below any threshold.
+     * The overlap coefficient scores it 1.0, which is the right answer - the short title
+     * is entirely contained in the long one.
+     */
+    function manualTitleSimilarity($a, $b) {
+        $ta = manualTitleTokens($a);
+        $tb = manualTitleTokens($b);
+        if (count($ta) === 0 || count($tb) === 0) { return 0.0; }
+        $shared = count(array_intersect($ta, $tb));
+        return (float) $shared / (float) min(count($ta), count($tb));
+    }
+}
+
+if (!function_exists('manualTitlesLookAlike')) {
+    /** Do these two titles plausibly name the same experience? */
+    function manualTitlesLookAlike($a, $b) {
+        return manualTitleSimilarity($a, $b) >= MANUAL_TITLE_MATCH_MIN;
+    }
+}
+
 if (!function_exists('manualDuplicateKey')) {
     /**
      * What makes two departures "possibly the same one": the same DATE, the same
@@ -273,7 +350,7 @@ if (!function_exists('toursAttachDuplicateFlags')) {
             return $tours;
         }
 
-        $stmt = $conn->prepare("SELECT id, date, time, participants, source, cancelled
+        $stmt = $conn->prepare("SELECT id, date, time, participants, title, source, cancelled
                                   FROM tours WHERE date IN ($ph)");
         $stmt->bind_param($types, ...$dates);
         $stmt->execute();
@@ -298,7 +375,7 @@ if (!function_exists('manualCountDuplicateCandidates')) {
      * sending. Used only for the one line the sync report prints - it writes nothing.
      */
     function manualCountDuplicateCandidates($conn, $startDate, $endDate) {
-        $stmt = $conn->prepare("SELECT id, date, time, participants, source, cancelled
+        $stmt = $conn->prepare("SELECT id, date, time, participants, title, source, cancelled
                                   FROM tours WHERE date >= ? AND date <= ?");
         $stmt->bind_param('ss', $startDate, $endDate);
         $stmt->execute();
@@ -324,11 +401,18 @@ if (!function_exists('manualFindDuplicates')) {
     /**
      * Pair hand-entered rows with synced rows that look like the same departure.
      *
-     * Input: rows with id, date, time, participants, source, cancelled.
+     * Input: rows with id, date, time, participants, title, source, cancelled.
      * Output: tourId => [counterpart ids], set on BOTH sides so either row can show
      * the badge. Cancelled rows on either side are ignored (a cancelled booking is
      * not a departure), and two manual rows are never paired with each other - the
      * point of the flag is "Bokun has started sending this one as well".
+     *
+     * Step 6.4a: date + HH:MM + PAX is necessary but nowhere near sufficient - on a
+     * busy morning one hand-entered departure flagged three unrelated bookings, and a
+     * warning that is usually wrong gets ignored. The titles must ALSO look like the
+     * same experience (manualTitlesLookAlike). The channel is deliberately NOT part of
+     * the rule: the false matches came from the same channel as the real one, so it
+     * discriminates nothing here.
      */
     function manualFindDuplicates($rows) {
         $manual = [];
@@ -341,21 +425,26 @@ if (!function_exists('manualFindDuplicates')) {
                 isset($r['participants']) ? $r['participants'] : 0
             );
             if ($key === null) { continue; }
+            $entry = ['id' => (int) $r['id'], 'title' => isset($r['title']) ? $r['title'] : ''];
             if (manualIsManualRow($r)) {
-                $manual[$key][] = (int) $r['id'];
+                $manual[$key][] = $entry;
             } else {
-                $synced[$key][] = (int) $r['id'];
+                $synced[$key][] = $entry;
             }
         }
         $out = [];
-        foreach ($manual as $key => $manualIds) {
+        foreach ($manual as $key => $manualRows) {
             if (!isset($synced[$key])) { continue; }
-            foreach ($manualIds as $mid) {
-                $out[$mid] = array_values($synced[$key]);
+            foreach ($manualRows as $m) {
+                foreach ($synced[$key] as $s) {
+                    if (!manualTitlesLookAlike($m['title'], $s['title'])) { continue; }
+                    $out[$m['id']][] = $s['id'];
+                    $out[$s['id']][] = $m['id'];
+                }
             }
-            foreach ($synced[$key] as $sid) {
-                $out[$sid] = array_values($manualIds);
-            }
+        }
+        foreach ($out as $id => $ids) {
+            $out[$id] = array_values(array_unique($ids));
         }
         return $out;
     }
