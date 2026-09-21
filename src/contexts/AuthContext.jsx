@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { markVerifyStart, markVerifyEnd } from '../utils/perfBeacon'; // step 4.7: measurement only
 
 const AuthContext = createContext(null);
 
@@ -18,11 +19,13 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const API_BASE = import.meta.env.VITE_API_URL || '/api';
+        markVerifyStart(); // step 4.7
         const response = await fetch(`${API_BASE}/auth.php?action=verify`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         });
+        markVerifyEnd(response.ok); // step 4.7
 
         if (response.ok) {
           const data = await response.json();
@@ -40,6 +43,7 @@ export const AuthProvider = ({ children }) => {
           setUserName(null);
         }
       } catch (error) {
+        markVerifyEnd(false); // step 4.7
         console.error('Token verification failed:', error);
         localStorage.removeItem('token');
         localStorage.removeItem('userRole');

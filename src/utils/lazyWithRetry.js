@@ -1,4 +1,5 @@
 import { lazy } from 'react';
+import { markChunkStart, markChunkEnd } from './perfBeacon'; // step 4.7: measurement only
 
 // Step 4.1b: a lazy route whose chunk request fails is fatal today - React caches the rejected
 // promise, so the route stays broken until the tab is reloaded, and "Try Again" re-renders into
@@ -34,8 +35,10 @@ export function importWithRetry(importer, deps = {}) {
     reload = () => window.location.reload(),
   } = deps;
 
+  markChunkStart(); // step 4.7: records the FIRST route chunk of a load and ignores later ones
   const attempt = (i) =>
     importer().then((mod) => {
+      markChunkEnd(true); // step 4.7
       // A chunk loaded: the tab is healthy, so a later failure may use its own one-shot reload.
       clearChunkReloadFlag(storage);
       return mod;
@@ -44,6 +47,7 @@ export function importWithRetry(importer, deps = {}) {
         await sleep(delays[i]);
         return attempt(i + 1);
       }
+      markChunkEnd(false); // step 4.7: out of retries
 
       // Out of retries. Reload once - a stale build heals itself, a dead connection does not.
       let alreadyReloaded = true; // if storage is unusable, never reload (safer than looping)

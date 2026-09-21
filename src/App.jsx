@@ -29,6 +29,7 @@ const BokunIntegration = lazyWithRetry(() => import('./pages/BokunIntegration'))
 const PriorityTickets = lazyWithRetry(() => import('./pages/PriorityTickets'));
 const DailyPnL = lazyWithRetry(() => import('./pages/DailyPnL'));
 const Radios = lazyWithRetry(() => import('./pages/Radios'));
+const ClientPerf = lazyWithRetry(() => import('./pages/ClientPerf')); // step 4.7
 const GuideRespond = lazyWithRetry(() => import('./pages/GuideRespond'));
 
 // Bridges non-React 401 handling (axios interceptor + authFetch) to React.
@@ -194,6 +195,18 @@ function AppRoutes() {
             <AdminRoute>
               <ModernLayout>
                 <DailyPnL />
+              </ModernLayout>
+            </AdminRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/load-measurements"
+        element={
+          <ProtectedRoute>
+            <AdminRoute>
+              <ModernLayout>
+                <ClientPerf />
               </ModernLayout>
             </AdminRoute>
           </ProtectedRoute>

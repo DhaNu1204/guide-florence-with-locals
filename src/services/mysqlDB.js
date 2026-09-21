@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { markRateLimited } from '../utils/perfBeacon'; // step 4.7: measurement only
 import { notifySessionExpired, notifyForbidden } from './sessionExpiry';
 
 // Use environment variable for API base URL
@@ -31,6 +32,11 @@ axios.interceptors.request.use(
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Step 4.7: count 429s for the field beacon. Observation only - nothing is retried,
+    // nothing is swallowed, and the rejection below is unchanged.
+    if (error?.response?.status === 429) {
+      try { markRateLimited(); } catch (e) { /* never matters */ }
+    }
     if (error?.response?.status === 401) {
       notifySessionExpired();
     } else if (error?.response?.status === 403) {

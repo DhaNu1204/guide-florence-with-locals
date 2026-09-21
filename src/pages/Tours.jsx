@@ -18,6 +18,7 @@ import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { getMaxPax, countActivePax, tourCategory, getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 import { isGuidePaid } from '../utils/paymentBadges';
 import { buildUnassignedReportText } from '../utils/unassignedReport';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.7: measurement only
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -338,6 +339,10 @@ const Tours = () => {
       // 100 per request, total checked). A failed or incomplete group request is an error - it is
       // no longer swallowed, because bookings would then silently render as loose, ungrouped rows.
       const { guide_id: _guideFilter, view: _view, ...countFilters } = apiFilters;
+      // Step 4.7: the field beacon's "list" phase covers exactly what the user waits for -
+      // the whole fan-out this Promise.all resolves. Only the first load of a page is
+      // recorded; a later filter change is ignored. Measurement only.
+      markListStart();
       const [toursResponse, guidesData, groupsResponse, unassignedTotal] = await Promise.all([
         mysqlDB.fetchTours(forceRefresh, page, toursPerPage, apiFilters),
         mysqlDB.getAllGuides(),
@@ -362,8 +367,10 @@ const Tours = () => {
 
       // Set tour groups
       setTourGroups(groupsResponse?.data || []);
+      markListEnd(true); // step 4.7
 
     } catch (err) {
+      markListEnd(false); // step 4.7
       console.error('Load error:', err);
       setError(err.message);
       // Step 5.2: never show a half-loaded list (e.g. tours without their groups)
