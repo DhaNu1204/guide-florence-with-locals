@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
+import ParticipantsButton from './ParticipantsButton';
 
 // Small per-booking category badge; Combo gets the gold treatment so a
 // higher-pay booking hiding inside a group is easy to spot.
@@ -175,6 +176,10 @@ const TourGroupCardMobile = ({
 
         {/* Row 3: PAX + Guide */}
         <div className="flex items-center gap-2">
+          {/* Step 6.8: the participant list for this departure (one group = one sheet). */}
+          <span onClick={(e) => e.stopPropagation()}>
+            <ParticipantsButton unit={`g${group.id}`} />
+          </span>
           <div className="flex items-center gap-1 text-sm flex-shrink-0">
             <FiUsers size={14} className="text-stone-500" />
             <span className="font-semibold text-stone-900">{totalPax}/{maxPax} PAX</span>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiSave, FiX, FiUsers, FiChevronDown } from 'react-icons/fi';
 import { getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
+import ParticipantsButton from './ParticipantsButton';
 import { isGuidePaid } from '../utils/paymentBadges';
 
 const getChannelColor = (channel) => {
@@ -127,6 +128,11 @@ const TourCardMobile = ({
             Possible duplicate
           </span>
         )}
+        {/* Step 6.8: the participant list for this departure. Pushed to the right so it
+            never costs the card any width. */}
+        <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
+          <ParticipantsButton unit={`t${tour.id}`} />
+        </span>
         {tourLanguage && (
           <>
             <span className="text-stone-300">·</span>

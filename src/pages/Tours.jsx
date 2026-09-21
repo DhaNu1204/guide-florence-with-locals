@@ -8,6 +8,7 @@ import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
 import AskGuideModal from '../components/AskGuideModal';
 import ManualTourModal from '../components/ManualTourModal';
+import ParticipantsButton from '../components/ParticipantsButton';
 import TourGroup from '../components/TourGroup';
 import TourCardMobile from '../components/TourCardMobile';
 import TourGroupCardMobile from '../components/TourGroupCardMobile';
@@ -1590,6 +1591,10 @@ const Tours = () => {
                                         </span>
                                       )}
                                       {/* Step 6.4: a hand-entered row is the only kind the owner may edit or remove here. */}
+                                      {/* Step 6.8: the participant list for THIS departure, as a PDF for the museum door.
+                                    Icon only - he opens this page on his phone in the street and the row
+                                    must not get any wider. */}
+                                      <ParticipantsButton unit={`t${tour.id}`} onError={setError} />
                                       {tour.is_manual && isAdmin() && (
                                         <>
                                           <button
