@@ -7,11 +7,13 @@ import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
 import AskGuideModal from '../components/AskGuideModal';
+import ManualTourModal from '../components/ManualTourModal';
 import TourGroup from '../components/TourGroup';
 import TourCardMobile from '../components/TourCardMobile';
 import TourGroupCardMobile from '../components/TourGroupCardMobile';
 import DateFilter from '../components/DateFilter';
 import { useToast } from '../components/Toast/ToastProvider';
+import { useAuth } from '../contexts/AuthContext';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { getMaxPax, countActivePax, tourCategory, getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 import { isGuidePaid } from '../utils/paymentBadges';
@@ -289,6 +291,11 @@ const Tours = () => {
   const [askTour, setAskTour] = useState(null);          // tour being asked about
   const [openRequests, setOpenRequests] = useState({});  // tour_id -> { status, guide_name } (persistent badges)
   const [autoGrouping, setAutoGrouping] = useState(false);
+  // Step 6.4: departures typed in by hand (a channel listing not connected to Bokun).
+  const { isAdmin } = useAuth();
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualEditTour, setManualEditTour] = useState(null);
+  const [manualSaving, setManualSaving] = useState(false);
   const [dragState, setDragState] = useState({ draggedId: null, draggedType: null, overTargetId: null, overTargetType: null });
   // Mobile merge selection mode
   const [selectionMode, setSelectionMode] = useState(false);
@@ -755,6 +762,49 @@ const Tours = () => {
     setIsModalOpen(true);
   };
 
+  // Step 6.4: hand-entered departures. The sync never touches these rows, so the only
+  // way one changes is here.
+  const handleOpenManualAdd = () => {
+    setManualEditTour(null);
+    setManualModalOpen(true);
+  };
+
+  const handleOpenManualEdit = (tour) => {
+    setManualEditTour(tour);
+    setManualModalOpen(true);
+  };
+
+  const handleSaveManualTour = async (payload) => {
+    setManualSaving(true);
+    try {
+      if (manualEditTour) {
+        await mysqlDB.updateManualTour(manualEditTour.id, payload);
+        setSuccess('Tour updated');
+      } else {
+        await mysqlDB.createManualTour(payload);
+        setSuccess('Tour added');
+      }
+      setManualModalOpen(false);
+      setManualEditTour(null);
+      await loadData(true, currentPage, getCurrentFilters());
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not save the tour');
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
+  const handleDeleteManualTour = async (tour, confirmText) => {
+    if (!window.confirm(confirmText)) return;
+    try {
+      await mysqlDB.deleteManualTour(tour.id);
+      setSuccess('Manual tour removed');
+      await loadData(true, currentPage, getCurrentFilters());
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not delete the tour');
+    }
+  };
+
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedTour(null);
@@ -1092,6 +1142,19 @@ const Tours = () => {
               {selectionMode ? <FiCheckSquare className="h-4 w-4" /> : <FiSquare className="h-4 w-4" />}
               {selectionMode ? 'Cancel' : 'Select'}
             </button>
+            {isAdmin() && (
+              <Button
+                variant="outline"
+                onClick={handleOpenManualAdd}
+                disabled={loading}
+                data-testid="add-manual-tour"
+                className="flex items-center gap-2 flex-1 md:flex-none justify-center"
+              >
+                <FiPlus className="h-4 w-4" />
+                <span className="hidden sm:inline">Add tour</span>
+                <span className="sm:hidden">Add</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={handleAutoGroup}
@@ -1336,6 +1399,25 @@ const Tours = () => {
                                 <div className="truncate">
                                   {tour.booking_channel || 'Website'}
                                 </div>
+                                {/* Step 6.4: this departure was typed in, not synced. */}
+                                {tour.is_manual && (
+                                  <span
+                                    className="inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-tuscan bg-amber-100 text-amber-800"
+                                    data-testid="manual-tour-badge"
+                                    title="Added by hand - the Bokun sync never changes this row"
+                                  >
+                                    Added by hand
+                                  </span>
+                                )}
+                                {tour.possible_duplicate_of && tour.possible_duplicate_of.length > 0 && (
+                                  <span
+                                    className="inline-block mt-1 ml-1 px-2 py-0.5 text-xs font-medium rounded-tuscan bg-red-100 text-red-800"
+                                    data-testid="duplicate-badge"
+                                    title={`Same date, time and PAX as tour ${tour.possible_duplicate_of.join(', ')} - nothing was merged`}
+                                  >
+                                    Possible duplicate
+                                  </span>
+                                )}
                               </td>
                               <td className="px-6 py-4 text-sm text-stone-900">
                                 <div className="break-words">
@@ -1499,6 +1581,36 @@ const Tours = () => {
                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gold-100 text-gold-800" title={`Originally scheduled for ${tour.original_date} at ${tour.original_time}`}>
                                           Rescheduled
                                         </span>
+                                      )}
+                                      {/* Step 6.4: a hand-entered row is the only kind the owner may edit or remove here. */}
+                                      {tour.is_manual && isAdmin() && (
+                                        <>
+                                          <button
+                                            onClick={() => handleOpenManualEdit(tour)}
+                                            data-testid={`manual-edit-${tour.id}`}
+                                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-700 hover:bg-stone-200"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteManualTour(tour,
+                                              `Remove the hand-entered tour "${tour.title}" on ${tour.date}? This cannot be undone.`)}
+                                            data-testid={`manual-delete-${tour.id}`}
+                                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100"
+                                          >
+                                            Remove
+                                          </button>
+                                        </>
+                                      )}
+                                      {tour.is_manual && isAdmin() && tour.possible_duplicate_of && tour.possible_duplicate_of.length > 0 && (
+                                        <button
+                                          onClick={() => handleDeleteManualTour(tour,
+                                            'Bokun is now sending this departure as well. Remove your hand-entered copy and keep the synced one?')}
+                                          data-testid={`manual-dedupe-${tour.id}`}
+                                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-600 text-white hover:bg-red-700"
+                                        >
+                                          Same tour — remove mine
+                                        </button>
                                       )}
                                     </div>
                                   </div>
@@ -1744,6 +1856,16 @@ const Tours = () => {
           )}
         </div>
       </div>
+
+      {/* Step 6.4: add / edit a departure by hand */}
+      <ManualTourModal
+        isOpen={manualModalOpen}
+        onClose={() => { setManualModalOpen(false); setManualEditTour(null); }}
+        onSave={handleSaveManualTour}
+        guides={guides}
+        tour={manualEditTour}
+        saving={manualSaving}
+      />
 
       {/* Booking Details Modal */}
       <BookingDetailsModal

@@ -2,7 +2,8 @@
 require_once 'config.php';
 require_once 'BokunAPI.php';
 require_once __DIR__ . '/tour_classification.php';
-require_once __DIR__ . '/group_helpers.php'; // step 3.5: fillMissingGroupGuide()
+require_once __DIR__ . '/group_helpers.php';
+require_once __DIR__ . '/manual_helpers.php';   // step 6.4: manual rows are invisible to the sync // step 3.5: fillMissingGroupGuide()
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -91,6 +92,7 @@ function bokunPriceBackfillSql() {
                SET bokun_total_price = ROUND($priceExpr, 2),
                    bokun_currency = UPPER(LEFT($currencyExpr, 3))
              WHERE bokun_total_price IS NULL
+               AND (source IS NULL OR source <> 'manual')
                AND bokun_data IS NOT NULL AND JSON_VALID(bokun_data)
                AND $priceExpr IS NOT NULL";
 }
@@ -461,6 +463,10 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
     // Step 3.1: columns for Bokun's customer price (the UPDATE/INSERT below write them).
     ensureBokunPriceColumns($conn);
 
+    // Step 6.4: tours.source, which every write path below tests so a hand-entered
+    // departure is never matched, updated, regrouped or backfilled by a sync.
+    ensureManualColumns($conn);
+
     // Default to past 7 days and next 4 MONTHS (120 days) to catch advance bookings
     // This allows guide assignment for tours booked months in advance
     if (!$startDate) {
@@ -516,14 +522,25 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                 // the split form picked a different row (no duplicated bokun_booking_id exists).
                 $existing = null;
                 if ($tourData['external_id'] !== null && $tourData['external_id'] !== '') {
-                    $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE external_id = ?");
+                    // Step 6.4: `source <> 'manual'` on BOTH lookups. A hand-entered departure has no
+                    // external_id and no bokun_booking_id, so it cannot match today - the guard is
+                    // here so it still cannot match if one is ever typed in by mistake. Without it a
+                    // manual row could be adopted as "existing" and rewritten by the UPDATE below.
+                    $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time
+                                              FROM tours
+                                             WHERE external_id = ?
+                                               AND (source IS NULL OR source <> 'manual')");
                     $stmt->bind_param("s", $tourData['external_id']);
                     $stmt->execute();
                     $existing = $stmt->get_result()->fetch_assoc();
                     $stmt->close();
                 }
                 if (!$existing && $tourData['bokun_booking_id'] !== '') {
-                    $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time FROM tours WHERE bokun_booking_id = ? ORDER BY id ASC LIMIT 1");
+                    $stmt = $conn->prepare("SELECT id, date, time, rescheduled, original_date, original_time
+                                              FROM tours
+                                             WHERE bokun_booking_id = ?
+                                               AND (source IS NULL OR source <> 'manual')
+                                             ORDER BY id ASC LIMIT 1");
                     $stmt->bind_param("s", $tourData['bokun_booking_id']);
                     $stmt->execute();
                     $existing = $stmt->get_result()->fetch_assoc();
@@ -692,6 +709,15 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         $errorMsg = count($errors) > 0 ? implode('; ', array_slice($errors, 0, 5)) : null;
         updateSyncLog($logId, $status, $stats, $errorMsg, $duration);
 
+        // Step 6.4: the sync never writes to a hand-entered row, but it does say whether any of
+        // them now look like a departure Bokun has started sending as well (same date, time and
+        // PAX). Counting only - the flag itself is computed on read, in tours.php.
+        $manualDupes = manualCountDuplicateCandidates($conn, $startDate, $endDate);
+        if ($manualDupes['manual'] > 0) {
+            error_log("Bokun Sync [$syncType]: {$manualDupes['manual']} manual departure(s) in range, "
+                . "{$manualDupes['flagged']} now look like a possible duplicate of a synced booking");
+        }
+
         // Step 3.4: one line per sync saying what it cost Bokun - this is how "Bokun request count
         // per sync" is measured before/after. Never gated by BOKUN_DEBUG_LOG (it is one line).
         $apiStats = BokunAPI::requestStats();
@@ -701,6 +727,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
 
         return [
             'success' => true,
+            'manual_departures' => $manualDupes['manual'],
+            'manual_possible_duplicates' => $manualDupes['flagged'],
             'synced_count' => $syncedCount,
             'created_count' => $createdCount,
             'updated_count' => $updatedCount,
@@ -1068,6 +1096,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
           AND t.cancelled = 0
           AND t.is_private = 0
           AND t.product_id IS NOT NULL
+          AND (t.source IS NULL OR t.source <> 'manual')
           AND (t.group_id IS NULL OR tg.id IS NULL OR tg.is_manual_merge = 0)
         ORDER BY t.product_id, t.date, t.time, t.id
     ");
@@ -1354,6 +1383,7 @@ function backfillParticipantNames() {
     $result = $conn->query("
         SELECT id, bokun_data FROM tours
         WHERE participant_names IS NULL
+          AND (source IS NULL OR source <> 'manual')
           AND bokun_data IS NOT NULL
           AND bokun_data != ''
         ORDER BY id ASC

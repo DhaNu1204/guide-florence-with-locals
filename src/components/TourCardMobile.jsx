@@ -110,6 +110,23 @@ const TourCardMobile = ({
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getChannelColor(tour.booking_channel)}`}>
           {tour.booking_channel || 'Direct'}
         </span>
+        {/* Step 6.4: typed in by hand - the sync never touches this row. */}
+        {tour.is_manual && (
+          <span
+            className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800"
+            data-testid="manual-tour-badge-mobile"
+          >
+            By hand
+          </span>
+        )}
+        {tour.possible_duplicate_of && tour.possible_duplicate_of.length > 0 && (
+          <span
+            className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-800"
+            data-testid="duplicate-badge-mobile"
+          >
+            Possible duplicate
+          </span>
+        )}
         {tourLanguage && (
           <>
             <span className="text-stone-300">·</span>

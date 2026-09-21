@@ -25,6 +25,7 @@ require_once 'Middleware.php';
 require_once 'tour_classification.php';
 require_once __DIR__ . '/group_helpers.php'; // step 3.7: groupBucketKey()
 require_once __DIR__ . '/pnl_links.php';     // step 6.2: merged costing units
+require_once __DIR__ . '/manual_helpers.php'; // step 6.4: hand-entered departures
 
 // Financial data: admin only
 Middleware::requireRole($conn, 'admin');
@@ -350,8 +351,10 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
 // Core: build per-unit P&L rows for a date range.
 // ---------------------------------------------------------------------------
 function pnlBuildRows($conn, $start, $end, $settings) {
+    ensureManualColumns($conn); // step 6.4
     $sql = "SELECT t.id, t.group_id, t.product_id, t.title, t.date, t.time, t.participants,
                    t.cancelled, t.booking_channel, t.total_amount_paid, t.bokun_data,
+                   t.source, t.manual_revenue, t.manual_currency,
                    t.is_private, t.guide_id, g.name AS guide_name,
                    tg.display_name AS group_display_name, tg.group_time,
                    (CASE WHEN pr.product_type = 'ticket' THEN 1 ELSE 0 END) AS is_ticket_product
@@ -394,6 +397,11 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 'net'             => 0.0,
                 'estimated'       => false,
                 'ticket_cost_auto'=> 0.0,
+                // Step 6.4: a hand-entered departure has no Bokun product, so the museum
+                // ticket cost cannot be derived when its title names no museum. That is
+                // UNKNOWN, not zero - the UI must not print a confident 0.00.
+                'has_manual'      => false,
+                'ticket_known'    => true,
                 'has_gelato'      => false
             ];
         }
@@ -424,14 +432,33 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         list($retail, $comm, $net, $estimated) = pnlExtractRevenue(
             $row['bokun_data'], $row['booking_channel'], floatval($row['total_amount_paid']), $settings
         );
+        // Step 6.4: a hand-entered departure has no Bokun invoice. What the owner types in
+        // is what GetYourGuide actually pays him - already NET of their commission - so it is
+        // taken as net and no commission is subtracted a second time. `manual` on the row tells
+        // the UI that the retail figure is that same net number, not a gross price we know.
+        if (manualIsManualRow($row)) {
+            $manualNet = $row['manual_revenue'] !== null ? round((float) $row['manual_revenue'], 2) : 0.0;
+            $retail = $manualNet;
+            $comm   = 0.0;
+            $net    = $manualNet;
+            $estimated = ($row['manual_revenue'] === null);
+            $u['has_manual'] = true;
+        }
         $u['retail']     += $retail;
         $u['commission'] += $comm;
         $u['net']        += $net;
         if ($estimated && $retail > 0) $u['estimated'] = true;
+        if (manualIsManualRow($row) && $row['manual_revenue'] === null) { $u['estimated'] = true; }
 
         // Museum ticket cost for THIS booking (per museum mentioned in ITS title).
         // Uffizi has a cheaper afternoon rate for entries from 16:00.
-        foreach (pnlMuseumsInTitle($row['title']) as $museum) {
+        $museumsHere = pnlMuseumsInTitle($row['title']);
+        if (manualIsManualRow($row) && count($museumsHere) === 0) {
+            // No Bokun product and no museum in the title: we genuinely do not know what the
+            // tickets cost. Marked unknown so the P&L shows "-" and asks for an override.
+            $u['ticket_known'] = false;
+        }
+        foreach ($museumsHere as $museum) {
             $adultKey = 'ticket_' . $museum . '_adult';
             $childKey = 'ticket_' . $museum . '_child';
             if ($museum === 'uffizi' && substr((string)$row['time'], 0, 5) >= '16:00') {
@@ -442,6 +469,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 $pax['adults']   * $settings[$adultKey] +
                 $pax['children'] * $settings[$childKey];
         }
+        unset($museumsHere);
         if (strpos(mb_strtolower($row['title']), 'gelato') !== false) {
             $u['has_gelato'] = true;
         }
@@ -569,6 +597,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             'title'       => $u['title'],
             'category'    => $category,
             'is_group'    => $u['is_group'],
+            'is_manual'   => !empty($u['has_manual']),
             'is_ticket'   => $u['is_ticket'],
             'is_private'  => $u['is_private'],
             'guide_name'  => $u['guide_name'],
@@ -586,12 +615,18 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 'commission' => round($u['commission'], 2),
                 'net'        => $net,
                 'estimated'  => $u['estimated'],
-                'overridden' => $revenueOverridden
+                'overridden' => $revenueOverridden,
+                // Step 6.4: retail here IS the net the owner typed in, not a gross price.
+                'manual'     => !empty($u['has_manual'])
             ],
             'costs'       => array_merge($costs, [
                 'total'      => $totalCost,
                 'auto'       => $auto,
-                'overridden' => $overriddenFields
+                'overridden' => $overriddenFields,
+                // Step 6.4: true when this is a hand-entered departure whose title names no
+                // museum and no ticket override has been entered - the number in ticket_cost
+                // is 0.00 only because nothing is known, so the UI prints "-" instead.
+                'ticket_unknown' => empty($u['ticket_known']) && !in_array('ticket_cost', $overriddenFields, true)
             ]),
             'outsourced'  => $isOutsourced,
             'profit'      => round($net - $totalCost, 2),
