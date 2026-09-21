@@ -531,7 +531,13 @@ switch ($method) {
                     $derived = deriveListFields($row['bokun_data'] ?? null, $row['participants'] ?? 0, $row['language'] ?? null, $row['title'] ?? '');
                     $row['language'] = $derived['language'];
                     $row['total_participants'] = $derived['total_participants'];
+                    // Step 6.4: a hand-entered row has no bokun_data, so the start time the list
+                    // shows comes from its own `time` column (otherwise it printed '09:30:00').
+                    // Scoped to manual rows: nothing about a synced row changes here.
                     $row['start_time_str'] = $derived['start_time_str'];
+                    if ($row['start_time_str'] === null && manualIsManualRow($row) && isset($row['time'])) {
+                        $row['start_time_str'] = substr((string) $row['time'], 0, 5);
+                    }
                     $light = [];
                     foreach (['id', 'external_id', 'bokun_confirmation_code', 'title', 'product_id', 'product_type',
                               'is_private', 'date', 'time', 'start_time_str', 'guide_id', 'guide_name',
