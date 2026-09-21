@@ -126,6 +126,15 @@ if (!function_exists('participantsFilename')) {
         $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
         $slug = trim((string) $slug, '-');
         if ($slug === '') { $slug = 'tour'; }
+        // A tour that names no museum falls back to its product name, which can run to 60
+        // characters; cut it at a word boundary so the file is still readable in a phone's
+        // download list. The date and time after it are what actually identify the sheet.
+        if (strlen($slug) > 40) {
+            $slug = substr($slug, 0, 40);
+            $cut = strrpos($slug, '-');
+            if ($cut !== false && $cut >= 20) { $slug = substr($slug, 0, $cut); }
+            $slug = rtrim($slug, '-');
+        }
         $d = date_create_from_format('Y-m-d', substr((string) $date, 0, 10));
         $datePart = $d ? $d->format('m-d-Y') : 'unknown-date';
         $timePart = preg_replace('/[^0-9]/', '', substr((string) $time, 0, 5));

@@ -71,6 +71,9 @@ check('uffizi-09-30-2026-1000-participants.pdf',
 check('spaces and accents become hyphens',
     participantsFilename('Palazzo Vecchio', '2026-08-21', '14:15') === 'palazzo-vecchio-08-21-2026-1415-participants.pdf',
     participantsFilename('Palazzo Vecchio', '2026-08-21', '14:15'));
+$long = participantsFilename("Florence: Michelangelo's Life and Legacy 3.5 Hr Guided Tour", '2026-08-21', '09:30');
+check('a long product name is cut at a word, not left 90 characters long',
+    $long === 'florence-michelangelo-s-life-and-legacy-08-21-2026-0930-participants.pdf', $long);
 check('a missing museum still produces a usable name',
     participantsFilename('', '2026-08-21', '09:30') === 'tour-08-21-2026-0930-participants.pdf',
     participantsFilename('', '2026-08-21', '09:30'));
