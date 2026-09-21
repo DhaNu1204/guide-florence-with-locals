@@ -3,7 +3,8 @@ require_once 'config.php';
 require_once 'BokunAPI.php';
 require_once __DIR__ . '/tour_classification.php';
 require_once __DIR__ . '/group_helpers.php';
-require_once __DIR__ . '/manual_helpers.php';   // step 6.4: manual rows are invisible to the sync // step 3.5: fillMissingGroupGuide()
+require_once __DIR__ . '/manual_helpers.php';
+require_once __DIR__ . '/viator_helpers.php';   // step 6.4: manual rows are invisible to the sync // step 3.5: fillMissingGroupGuide()
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -466,6 +467,9 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
     // Step 6.4: tours.source, which every write path below tests so a hand-entered
     // departure is never matched, updated, regrouped or backfilled by a sync.
     ensureManualColumns($conn);
+
+    // Step 6.9: tours.viator_account - the INSERT below writes it, the UPDATE must not.
+    ensureViatorAccountColumn($conn);
 
     // Default to past 7 days and next 4 MONTHS (120 days) to catch advance bookings
     // This allows guide assignment for tours booked months in advance

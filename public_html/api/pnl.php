@@ -25,7 +25,8 @@ require_once 'Middleware.php';
 require_once 'tour_classification.php';
 require_once __DIR__ . '/group_helpers.php'; // step 3.7: groupBucketKey()
 require_once __DIR__ . '/pnl_links.php';     // step 6.2: merged costing units
-require_once __DIR__ . '/manual_helpers.php'; // step 6.4: hand-entered departures
+require_once __DIR__ . '/manual_helpers.php';
+require_once __DIR__ . '/viator_helpers.php'; // step 6.4: hand-entered departures
 
 // Financial data: admin only
 Middleware::requireRole($conn, 'admin');
@@ -440,6 +441,7 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
 // ---------------------------------------------------------------------------
 function pnlBuildRows($conn, $start, $end, $settings) {
     ensureManualColumns($conn); // step 6.4
+    ensureViatorAccountColumn($conn); // step 6.9
     $sql = "SELECT t.id, t.group_id, t.product_id, t.title, t.date, t.time, t.participants,
                    t.cancelled, t.booking_channel, t.total_amount_paid, t.bokun_data,
                    t.source, t.manual_revenue, t.manual_currency,

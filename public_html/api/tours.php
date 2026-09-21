@@ -4,7 +4,8 @@ require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
 require_once __DIR__ . '/payment_helpers.php';     // pure helper: paymentAmountError() (step 3.8)
-require_once __DIR__ . '/manual_helpers.php';      // pure helpers: hand-entered departures (step 6.4)
+require_once __DIR__ . '/manual_helpers.php';
+require_once __DIR__ . '/viator_helpers.php';      // pure helpers: hand-entered departures (step 6.4)
 
 // Require authentication for all tour operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -149,6 +150,7 @@ if ($checkIsPrivateCol && $checkIsPrivateCol->num_rows === 0) {
 
 // Step 6.4: source / manual_revenue / manual_currency for hand-entered departures.
 ensureManualColumns($conn);
+ensureViatorAccountColumn($conn);   // step 6.9: the old-Viator-account label
 
 // Always ensure known ticket products are classified correctly.
 // Runs after the products table is guaranteed to exist, and after
