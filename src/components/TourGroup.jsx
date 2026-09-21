@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
+import ParticipantsButton from './ParticipantsButton';
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 
@@ -188,6 +189,11 @@ const TourGroup = ({
               {lang}
             </span>
           ))}
+        </div>
+
+        {/* Step 6.8: one sheet for the whole group - it is one departure at the museum door. */}
+        <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <ParticipantsButton unit={`g${group.id}`} />
         </div>
 
         {/* PAX badge */}

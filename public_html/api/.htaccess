@@ -27,6 +27,10 @@ RewriteBase /api/
 # tests/ is never web-served (step 0.2)
 RewriteRule ^tests(/.*)?$ - [F,L]
 
+# lib/ is vendored library code (step 6.8: FPDF), required by PHP and never fetched
+# over HTTP - serving it would only ever leak version information.
+RewriteRule ^lib(/.*)?$ - [F,L]
+
 # Allow direct access to existing files and directories
 RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^ - [L]

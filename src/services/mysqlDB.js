@@ -788,6 +788,28 @@ export const getTourLanguages = async (filters = {}) => {
   return response.data;
 };
 
+// Step 6.8: the printable participant list for one departure (one product, one time, one
+// date). The PDF is built on the server so it looks the same wherever he prints it; the
+// browser only has to save the bytes.
+export const downloadParticipantsPdf = async (unit) => {
+  const response = await axios.get(
+    `${API_BASE_URL}/participants.php?unit=${encodeURIComponent(unit)}`,
+    { responseType: 'blob' }
+  );
+  const disposition = response.headers?.['content-disposition'] || '';
+  const match = /filename="?([^"]+)"?/.exec(disposition);
+  const name = match ? match[1] : `${unit}-participants.pdf`;
+  const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+  return name;
+};
+
 // Step 6.4: departures typed in by hand, for a listing that is not connected to Bokun.
 // Admin only on the server; the sync never touches the rows these create.
 export const createManualTour = async (payload) => {
@@ -839,6 +861,7 @@ const mysqlDB = {
   getUnassignedReport,
   getUnassignedCount,
   getTourLanguages, // step 6.1
+  downloadParticipantsPdf, // step 6.8
   createManualTour, // step 6.4
   updateManualTour,
   deleteManualTour,
