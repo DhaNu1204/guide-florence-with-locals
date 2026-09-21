@@ -9,6 +9,7 @@ import BookingDetailsModal from '../components/BookingDetailsModal';
 import AskGuideModal from '../components/AskGuideModal';
 import ManualTourModal from '../components/ManualTourModal';
 import ParticipantsButton from '../components/ParticipantsButton';
+import ViatorLegacyChip from '../components/ViatorLegacyChip';
 import TourGroup from '../components/TourGroup';
 import TourCardMobile from '../components/TourCardMobile';
 import TourGroupCardMobile from '../components/TourGroupCardMobile';
@@ -1407,6 +1408,8 @@ const Tours = () => {
                                 <div className="truncate">
                                   {tour.booking_channel || 'Website'}
                                 </div>
+                                {/* Step 6.9: booked through the Viator account he is retiring. */}
+                                <ViatorLegacyChip account={tour.viator_account} className="mt-1" />
                                 {/* Step 6.4: this departure was typed in, not synced. */}
                                 {tour.is_manual && (
                                   <span

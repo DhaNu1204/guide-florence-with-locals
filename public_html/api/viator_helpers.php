@@ -124,3 +124,160 @@ if (!function_exists('viatorAccountForInsert')) {
         return $created < $cut ? VIATOR_ACCOUNT_LEGACY : VIATOR_ACCOUNT_CURRENT;
     }
 }
+
+if (!function_exists('ensureViatorWatchdogTable')) {
+    /**
+     * One row per check. This is the record the owner (or I) look at to answer the only
+     * question that matters after the switch: are the bookings he still has to honour
+     * still there?
+     */
+    function ensureViatorWatchdogTable($conn) {
+        static $done = false;
+        if ($done) { return; }
+        $done = true;
+        $conn->query("CREATE TABLE IF NOT EXISTS viator_watchdog (
+            id                 INT AUTO_INCREMENT PRIMARY KEY,
+            checked_at         DATETIME NOT NULL,
+            horizon            DATE NOT NULL,
+            future_bookings    INT NOT NULL,
+            future_departures  INT NOT NULL,
+            future_pax         INT NOT NULL,
+            latest_date        DATE NULL,
+            expected_bookings  INT NULL,
+            passed_since_last  INT NOT NULL DEFAULT 0,
+            cancelled_future   INT NOT NULL DEFAULT 0,
+            status             VARCHAR(16) NOT NULL,
+            note               VARCHAR(255) NULL,
+            KEY idx_viator_watchdog_checked (checked_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
+}
+
+if (!function_exists('viatorWatchdogStatus')) {
+    /**
+     * Pure, so the alarm itself can be tested without a database.
+     *
+     * `$expected` is the previous count with the departures that have since PASSED already
+     * subtracted - a tour running is not a disappearance. Anything below that is one.
+     * A rise is fine (he is still taking bookings on the old account until he switches).
+     */
+    function viatorWatchdogStatus($expected, $actual) {
+        if ($expected === null) { return 'baseline'; }
+        return ((int) $actual < (int) $expected) ? 'ALERT' : 'ok';
+    }
+}
+
+if (!function_exists('viatorWatchdogRun')) {
+    /**
+     * Count the live future legacy-Viator bookings and compare them with what the previous
+     * check implies. Read-only apart from the one row it records.
+     *
+     * Runs at most once a day (the sync itself fires every 15 minutes); `$force` is for the
+     * CLI check and for tests.
+     */
+    function viatorWatchdogRun($conn, $force = false) {
+        ensureViatorAccountColumn($conn);
+        ensureViatorWatchdogTable($conn);
+
+        $horizon = (new DateTime('now', new DateTimeZone('Europe/Rome')))->format('Y-m-d');
+
+        $prev = null;
+        $r = $conn->query("SELECT * FROM viator_watchdog ORDER BY id DESC LIMIT 1");
+        if ($r && $r->num_rows > 0) { $prev = $r->fetch_assoc(); }
+        if (!$force && $prev && substr((string) $prev['checked_at'], 0, 10) === $horizon) {
+            return null; // already checked today
+        }
+
+        $legacy = VIATOR_ACCOUNT_LEGACY;
+        $scope = "viator_account = '" . $conn->real_escape_string($legacy) . "'";
+        $one = function ($sql) use ($conn) { $r = $conn->query($sql); $x = $r ? $r->fetch_row() : null; return $x ? $x[0] : null; };
+
+        $bookings   = (int) $one("SELECT COUNT(*) FROM tours WHERE $scope AND cancelled = 0 AND date >= '$horizon'");
+        $pax        = (int) $one("SELECT COALESCE(SUM(participants),0) FROM tours WHERE $scope AND cancelled = 0 AND date >= '$horizon'");
+        $latest     = $one("SELECT MAX(date) FROM tours WHERE $scope AND cancelled = 0");
+        $departures = (int) $one("SELECT COUNT(*) FROM (SELECT IF(t.group_id IS NOT NULL, CONCAT('g',t.group_id), CONCAT('t',t.id)) u
+                                    FROM tours t WHERE t.$scope AND t.cancelled = 0 AND t.date >= '$horizon' GROUP BY u) x");
+
+        // expected = what was live-and-future last time
+        //            - every legacy row whose date has since passed (cancelled or not)
+        //            - the change in how many future rows Bokun has marked cancelled.
+        // Both corrections are computed from rows we still hold, so this is exact rather than a
+        // tolerance: a tour running is not a disappearance, and neither is a cancellation Bokun
+        // told us about.
+        // Recorded on EVERY run, including the baseline: the next run subtracts the change in
+        // it, so a baseline that stored 0 would make the first comparison too lenient.
+        $cancelled = (int) $one("SELECT COUNT(*) FROM tours WHERE $scope AND cancelled = 1 AND date >= '$horizon'");
+        $expected = null; $passed = 0;
+        if ($prev) {
+            $prevHorizon = $conn->real_escape_string((string) $prev['horizon']);
+            $passed   = (int) $one("SELECT COUNT(*) FROM tours WHERE $scope AND date >= '$prevHorizon' AND date < '$horizon'");
+            $expected = max(0, (int) $prev['future_bookings'] - $passed + (int) $prev['cancelled_future'] - $cancelled);
+        }
+        $status = viatorWatchdogStatus($expected, $bookings);
+        $note   = $status === 'ALERT'
+            ? 'live future legacy-Viator bookings fell below what the previous check implies'
+            : ($prev ? null : 'baseline taken');
+
+        $stmt = $conn->prepare("INSERT INTO viator_watchdog
+            (checked_at, horizon, future_bookings, future_departures, future_pax, latest_date,
+             expected_bookings, passed_since_last, cancelled_future, status, note)
+            VALUES (NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param('siiisiiiss', $horizon, $bookings, $departures, $pax, $latest,
+                          $expected, $passed, $cancelled, $status, $note);
+        $stmt->execute();
+        $stmt->close();
+
+        if ($status === 'ALERT') {
+            // Loud on purpose: this is the line that says the thing we built all of 6.9 to prevent
+            // may have happened. ~/logs/api-error.log since step 2.1.
+            error_log("Step 6.9 VIATOR WATCHDOG ALERT: live future legacy-Viator bookings are {$bookings}, "
+                . "expected at least {$expected} ({$passed} departure(s) passed, {$cancelled} cancelled since the last check). "
+                . "Backup: ~/backups/viator_bookings_*.jsonl");
+        } else {
+            error_log("Step 6.9 viator watchdog: {$bookings} booking(s) / {$departures} departure(s) / {$pax} pax still to honour"
+                . ($expected === null ? ' (baseline)' : ", expected >= {$expected}"));
+        }
+
+        return ['horizon' => $horizon, 'future_bookings' => $bookings, 'future_departures' => $departures,
+                'future_pax' => $pax, 'latest_date' => $latest, 'expected_bookings' => $expected,
+                'passed_since_last' => $passed, 'cancelled_future' => $cancelled, 'status' => $status];
+    }
+}
+
+if (!function_exists('viatorWatchdogLatest')) {
+    /** The most recent check, for sync-info. Null before the first one has run. */
+    function viatorWatchdogLatest($conn) {
+        $c = $conn->query("SHOW TABLES LIKE 'viator_watchdog'");
+        if (!$c || $c->num_rows === 0) { return null; }
+        $r = $conn->query("SELECT checked_at, future_bookings, future_departures, future_pax,
+                                  latest_date, expected_bookings, status
+                             FROM viator_watchdog ORDER BY id DESC LIMIT 1");
+        $row = $r ? $r->fetch_assoc() : null;
+        if (!$row) { return null; }
+        return [
+            'checked_at'        => $row['checked_at'],
+            'future_bookings'   => (int) $row['future_bookings'],
+            'future_departures' => (int) $row['future_departures'],
+            'future_pax'        => (int) $row['future_pax'],
+            'latest_date'       => $row['latest_date'],
+            'expected_bookings' => $row['expected_bookings'] === null ? null : (int) $row['expected_bookings'],
+            'status'            => $row['status'],
+        ];
+    }
+}
+
+if (!function_exists('viatorChannelLabel')) {
+    /**
+     * What to SHOW for a booking's channel. `tours.booking_channel` itself is never changed -
+     * the P&L's commission ladder matches on it (`strpos($ch,'viator')` -> comm_viator, step
+     * 6.6/6.7), the sync rewrites it on every update, and every historical figure depends on
+     * it. This is display only, so the owner can see at a glance which of two Viator lines on
+     * the same day belongs to the account he is retiring.
+     */
+    function viatorChannelLabel($channel, $account) {
+        if ($account === VIATOR_ACCOUNT_LEGACY && viatorIsViatorChannel($channel)) {
+            return 'Viator (old account)';
+        }
+        return (string) $channel;
+    }
+}

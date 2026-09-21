@@ -4,8 +4,8 @@ require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
 require_once __DIR__ . '/payment_helpers.php';     // pure helper: paymentAmountError() (step 3.8)
-require_once __DIR__ . '/manual_helpers.php';
-require_once __DIR__ . '/viator_helpers.php';      // pure helpers: hand-entered departures (step 6.4)
+require_once __DIR__ . '/manual_helpers.php';      // pure helpers: hand-entered departures (step 6.4)
+require_once __DIR__ . '/viator_helpers.php';      // pure helpers: the old-Viator-account label (step 6.9)
 
 // Require authentication for all tour operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -545,7 +545,7 @@ switch ($method) {
                               'is_private', 'date', 'time', 'start_time_str', 'guide_id', 'guide_name',
                               'group_id', 'group_info', 'participants', 'total_participants',
                               'pax_adults', 'pax_children', 'pax_infants', 'participant_names',
-                              'customer_name', 'language', 'booking_channel', 'external_source',
+                              'customer_name', 'language', 'booking_channel', 'viator_account', 'external_source',
                               'source', 'manual_revenue', 'manual_currency',
                               'cancelled', 'paid', 'payment_status', 'guide_paid', 'bokun_total_price', 'bokun_currency',
                               'rescheduled', 'original_date',

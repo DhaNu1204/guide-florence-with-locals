@@ -25,8 +25,8 @@ require_once 'Middleware.php';
 require_once 'tour_classification.php';
 require_once __DIR__ . '/group_helpers.php'; // step 3.7: groupBucketKey()
 require_once __DIR__ . '/pnl_links.php';     // step 6.2: merged costing units
-require_once __DIR__ . '/manual_helpers.php';
-require_once __DIR__ . '/viator_helpers.php'; // step 6.4: hand-entered departures
+require_once __DIR__ . '/manual_helpers.php'; // step 6.4: hand-entered departures
+require_once __DIR__ . '/viator_helpers.php'; // step 6.9: the old-Viator-account label
 
 // Financial data: admin only
 Middleware::requireRole($conn, 'admin');
@@ -443,7 +443,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
     ensureManualColumns($conn); // step 6.4
     ensureViatorAccountColumn($conn); // step 6.9
     $sql = "SELECT t.id, t.group_id, t.product_id, t.title, t.date, t.time, t.participants,
-                   t.cancelled, t.booking_channel, t.total_amount_paid, t.bokun_data,
+                   t.cancelled, t.booking_channel, t.viator_account, t.total_amount_paid, t.bokun_data,
                    t.source, t.manual_revenue, t.manual_currency,
                    t.is_private, t.guide_id, g.name AS guide_name,
                    tg.display_name AS group_display_name, tg.group_time,
@@ -510,7 +510,10 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         $u['bookings']++;
         $u['titles'][] = $row['title'];
 
-        $ch = $row['booking_channel'] ?: 'Direct';
+        // Step 6.9: a booking on the retiring Viator account gets its own line here, so a day
+        // that mixes the two accounts shows both. The commission below still reads
+        // $row['booking_channel'], which is untouched, so no figure moves.
+        $ch = viatorChannelLabel($row['booking_channel'] ?: 'Direct', $row['viator_account'] ?? null);
         if (!in_array($ch, $u['channels'])) $u['channels'][] = $ch;
 
         // PAX breakdown (adults/children/infants) from bokun_data

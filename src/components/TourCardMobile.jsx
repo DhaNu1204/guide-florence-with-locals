@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FiSave, FiX, FiUsers, FiChevronDown } from 'react-icons/fi';
 import { getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 import ParticipantsButton from './ParticipantsButton';
+import ViatorLegacyChip from './ViatorLegacyChip';
 import { isGuidePaid } from '../utils/paymentBadges';
 
 const getChannelColor = (channel) => {
@@ -111,6 +112,8 @@ const TourCardMobile = ({
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getChannelColor(tour.booking_channel)}`}>
           {tour.booking_channel || 'Direct'}
         </span>
+        {/* Step 6.9: booked through the Viator account he is retiring. */}
+        <ViatorLegacyChip account={tour.viator_account} />
         {/* Step 6.4: typed in by hand - the sync never touches this row. */}
         {tour.is_manual && (
           <span
