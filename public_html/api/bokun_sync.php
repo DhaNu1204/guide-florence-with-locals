@@ -3,8 +3,8 @@ require_once 'config.php';
 require_once 'BokunAPI.php';
 require_once __DIR__ . '/tour_classification.php';
 require_once __DIR__ . '/group_helpers.php';
-require_once __DIR__ . '/manual_helpers.php';
-require_once __DIR__ . '/viator_helpers.php';   // step 6.4: manual rows are invisible to the sync // step 3.5: fillMissingGroupGuide()
+require_once __DIR__ . '/manual_helpers.php';   // step 6.4: manual rows are invisible to the sync // step 3.5: fillMissingGroupGuide()
+require_once __DIR__ . '/viator_helpers.php';   // step 6.9: the old/new Viator account label
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -470,6 +470,9 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
 
     // Step 6.9: tours.viator_account - the INSERT below writes it, the UPDATE must not.
     ensureViatorAccountColumn($conn);
+    // Read once per run, not once per booking. Null until he connects the new Viator account,
+    // which is what keeps a booking arriving on the OLD account today labelled 'legacy'.
+    $viatorCutoverAt = viatorCutoverAt($conn);
 
     // Default to past 7 days and next 4 MONTHS (120 days) to catch advance bookings
     // This allows guide assignment for tours booked months in advance
@@ -579,6 +582,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                     // Update existing tour with rescheduling information.
                     // Step 3.1: paid, payment_status, total_amount_paid and expected_amount are LOCAL
                     // state - they are deliberately NOT in this column list (INSERT only, below).
+                    // Step 6.9: viator_account joins them. A legacy row must be incapable of being
+                    // relabelled or adopted by the new Viator channel, not merely unlikely to be.
                     $stmt = $conn->prepare("
                         UPDATE tours SET
                         title = ?, date = ?, time = ?, duration = ?, language = ?,
@@ -602,6 +607,16 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $existing['id']
                     );
                 } else {
+                    // Step 6.9: the old/new Viator account label, written on INSERT ONLY. It is
+                    // absent from the UPDATE above and from this statement's ON DUPLICATE KEY
+                    // UPDATE clause for the same reason paid/payment_status are (step 3.1): once
+                    // a booking has been stamped 'legacy' nothing must be able to relabel it,
+                    // because after he disconnects the old account the information needed to
+                    // work the label out again does not exist anywhere.
+                    $viatorAccount = viatorAccountForInsert(
+                        $tourData['booking_channel'], $tourData['bokun_data'], $viatorCutoverAt
+                    );
+
                     // Insert new tour. ON DUPLICATE KEY UPDATE (backed by uniq_tours_external_id)
                     // makes this race-safe: if a concurrent sync inserted the same booking after
                     // our SELECT above, this becomes a light update instead of a duplicate row.
@@ -613,8 +628,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                             booking_channel, total_amount_paid, expected_amount, payment_status, paid,
                             bokun_total_price, bokun_currency,
                             external_source, needs_guide_assignment, guide_id, cancelled,
-                            bokun_data, last_sync, product_id, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                            bokun_data, last_sync, product_id, viator_account, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                         ON DUPLICATE KEY UPDATE
                             id = LAST_INSERT_ID(id),
                             bokun_total_price = VALUES(bokun_total_price),
@@ -623,7 +638,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                             last_sync = VALUES(last_sync),
                             updated_at = NOW()
                     ");
-                    $stmt->bind_param("sssssssssssissddsidssiiissi",
+                    $stmt->bind_param("sssssssssssissddsidssiiissis",
                         $tourData['external_id'], $tourData['bokun_booking_id'], $tourData['bokun_confirmation_code'],
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
@@ -631,7 +646,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         $tourData['expected_amount'], $tourData['payment_status'], $tourData['paid'],
                         $tourData['bokun_total_price'], $tourData['bokun_currency'],
                         $tourData['external_source'], $tourData['needs_guide_assignment'], $tourData['guide_id'],
-                        $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'], $tourData['product_id']
+                        $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'], $tourData['product_id'],
+                        $viatorAccount
                     );
                 }
 
@@ -720,6 +736,15 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
         if ($manualDupes['manual'] > 0) {
             error_log("Bokun Sync [$syncType]: {$manualDupes['manual']} manual departure(s) in range, "
                 . "{$manualDupes['flagged']} now look like a possible duplicate of a synced booking");
+        }
+
+        // Step 6.9: once a day, count the bookings on the retiring Viator account that he still
+        // has to honour, and say so loudly if the number has fallen further than the departures
+        // that simply ran. Read-only apart from its own record; never allowed to fail a sync.
+        try {
+            viatorWatchdogRun($conn);
+        } catch (Throwable $e) {
+            error_log("Step 6.9: viator watchdog failed (sync unaffected): " . $e->getMessage());
         }
 
         // Step 3.4: one line per sync saying what it cost Bokun - this is how "Bokun request count
@@ -1009,8 +1034,15 @@ function getSyncInfo() {
         error_log("getSyncInfo: last_sync lookup failed: " . $e->getMessage());
     }
 
+    // Step 6.9: the latest watchdog reading, so "are the old Viator bookings still there?"
+    // is answerable from one endpoint without opening the database.
+    $viatorWatchdog = null;
+    try { $viatorWatchdog = viatorWatchdogLatest($conn); }
+    catch (Throwable $e) { error_log("getSyncInfo: viator watchdog lookup failed: " . $e->getMessage()); }
+
     return [
         'last_sync' => $lastSync,
+        'viator_watchdog' => $viatorWatchdog,
         'environment' => ENVIRONMENT,
         'sync_enabled_env' => bokunSyncEnabledByEnv(),
         'default_sync_days' => DEFAULT_SYNC_DAYS,

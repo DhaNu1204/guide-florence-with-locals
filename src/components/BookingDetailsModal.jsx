@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getTourById } from '../services/mysqlDB';
 import { formatCustomerPrice } from '../utils/paymentBadges';
+import ViatorLegacyChip from './ViatorLegacyChip';
 import { FiX, FiCalendar, FiClock, FiUser, FiUsers, FiTag, FiMail, FiPhone, FiFileText, FiDollarSign, FiCheckCircle, FiSave, FiCopy, FiCheck } from 'react-icons/fi';
 
 // Helper function to extract booking details from bokun_data
@@ -20,6 +21,7 @@ const extractBookingDetails = (ticket) => {
     },
     booking: {
       channel: ticket.booking_channel || 'Direct',
+      viatorAccount: ticket.viator_account || null,
       confirmationCode: ticket.bokun_confirmation_code || '',
       externalReference: ticket.external_id || '',
       status: ticket.cancelled ? 'CANCELLED' : 'CONFIRMED',
@@ -512,7 +514,11 @@ const BookingDetailsModal = ({ isOpen, onClose, ticket, onUpdateNotes }) => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <span className="text-sm font-medium text-stone-600">Channel:</span>
-                      <p className="text-stone-900 font-medium">{details.booking.channel}</p>
+                      <p className="text-stone-900 font-medium">
+                        {details.booking.channel}
+                        {/* Step 6.9: booked through the Viator account he is retiring. */}
+                        <ViatorLegacyChip account={details.booking.viatorAccount} className="ml-2 align-middle" />
+                      </p>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-stone-600">Status:</span>

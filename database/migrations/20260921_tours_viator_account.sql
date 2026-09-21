@@ -25,3 +25,21 @@ CREATE TABLE IF NOT EXISTS viator_switch (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT IGNORE INTO viator_switch (id, cutover_at, note)
 VALUES (1, NULL, 'no cutover recorded - the old account is still the only one');
+
+-- One row per watchdog run: the count of live future legacy-Viator bookings he still has to
+-- honour. Written by viatorWatchdogRun() (viator_helpers.php), at most once a day from the sync.
+CREATE TABLE IF NOT EXISTS viator_watchdog (
+    id                 INT AUTO_INCREMENT PRIMARY KEY,
+    checked_at         DATETIME NOT NULL,
+    horizon            DATE NOT NULL,
+    future_bookings    INT NOT NULL,
+    future_departures  INT NOT NULL,
+    future_pax         INT NOT NULL,
+    latest_date        DATE NULL,
+    expected_bookings  INT NULL,
+    passed_since_last  INT NOT NULL DEFAULT 0,
+    cancelled_future   INT NOT NULL DEFAULT 0,
+    status             VARCHAR(16) NOT NULL,
+    note               VARCHAR(255) NULL,
+    KEY idx_viator_watchdog_checked (checked_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
