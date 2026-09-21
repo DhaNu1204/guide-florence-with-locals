@@ -174,7 +174,9 @@ function pnlSettingKeys() {
         // Monthly overheads (not per tour)
         'staff_monthly', 'office_monthly', 'other_monthly',
         // Fallback commission % when bokun_data has no invoice info
-        'comm_getyourguide', 'comm_viator', 'comm_airbnb', 'comm_headout', 'comm_default'
+        'comm_getyourguide', 'comm_viator', 'comm_airbnb', 'comm_headout', 'comm_default',
+        // Step 6.7: what the card processor keeps on a direct sale
+        'fee_card_direct'
     ];
 }
 
@@ -198,6 +200,7 @@ function pnlDefaultSettings() {
     $defaults['comm_airbnb']       = 20.0; // step 6.6: what Airbnb really charges
     $defaults['comm_headout']      = 20.0; // step 6.6: was 25.0; Bokun records 20%
     $defaults['comm_default']      = 30.0;
+    $defaults['fee_card_direct']   = 1.5;  // step 6.7: Stripe, the owner's stated rate
     return $defaults;
 }
 
@@ -260,10 +263,53 @@ function pnlPrivateGuideRate($category, $settings) {
 }
 
 // ---------------------------------------------------------------------------
+/**
+ * Step 6.7: did THIS booking's money actually go through the card gateway?
+ *
+ * Not inferred from the channel - read from the booking's own payment record, because a
+ * fee charged on a payment that never touched Stripe would just be a new error replacing
+ * the old one. Measured on production over every direct sale we hold: 202 carry
+ * `paymentProviderType: STRIPE_TOKEN` with an `authorizationCode` beginning `pi_` (a Stripe
+ * PaymentIntent), 2 are VOUCHER redemptions and 1 is a Backend booking with no payment at
+ * all and `paymentStatus: NOT_PAID`. Only the first group is charged a card fee.
+ *
+ * WEB_PAYMENT is accepted alongside the provider name so that changing gateway does not
+ * silently switch the fee off; a voucher, a cash sale or an unpaid booking never matches.
+ */
+function pnlPaidByCard($booking) {
+    if (!is_array($booking)) { return false; }
+    $payments = $booking['customerInvoice']['payments'] ?? null;
+    if (!is_array($payments)) { return false; }
+    foreach ($payments as $p) {
+        if (!is_array($p)) { continue; }
+        $provider = (string) ($p['paymentProviderType'] ?? '');
+        $type     = (string) ($p['paymentType'] ?? '');
+        if (stripos($provider, 'stripe') !== false) { return true; }
+        if (strcasecmp($type, 'WEB_PAYMENT') === 0) { return true; }
+    }
+    return false;
+}
+
+/**
+ * Step 6.7: the card-processing fee on a direct sale, as a percentage of what was charged.
+ *
+ * The owner gave a rate only (Stripe, 1.5%) - there is deliberately NO per-transaction cent
+ * amount here, because he did not give one and inventing one would be a guess in his costs.
+ * The rate lives in Rates & Costs (`fee_card_direct`) so he can correct it himself; set it
+ * to 0 and the deduction disappears entirely.
+ */
+function pnlCardFee($booking, $amount, $settings) {
+    $pct = isset($settings['fee_card_direct']) ? (float) $settings['fee_card_direct'] : 0.0;
+    if ($pct <= 0 || $amount <= 0) { return 0.0; }
+    if (!pnlPaidByCard($booking)) { return 0.0; }
+    return round($amount * $pct / 100, 2);
+}
+
 // Revenue extraction from stored bokun_data JSON.
 // Bokun invoices can appear at several depths depending on which API path
 // stored the booking (search vs detail vs webhook shape) — check them all.
-// Returns [retail, commission, net, estimated(bool)].
+// Returns [retail, commission, net, estimated(bool), cardFee] - step 6.7 added the card
+// fee, which is charged ONLY on a direct sale the customer paid by card (see pnlPaidByCard).
 // ---------------------------------------------------------------------------
 function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) {
     $b = null;
@@ -298,7 +344,9 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
             if ($retail !== null && ($net !== null || $comm !== null)) {
                 if ($net === null)  $net  = $retail - $comm;
                 if ($comm === null) $comm = $retail - $net;
-                return [$retail, $comm, $net, false];
+                // Step 6.7: an OTA collected this money, so no card fee of ours applies.
+                // Viator lands here with commission 0 and must NOT gain a deduction.
+                return [$retail, $comm, $net, false, 0.0];
             }
         }
     }
@@ -319,7 +367,10 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
             if ($retail !== null && ($net !== null || $comm !== null)) {
                 if ($net === null)  { $net  = $retail - $comm; }
                 if ($comm === null) { $comm = $retail - $net; }
-                return [$retail, $comm, $net, false];
+                // Step 6.7: this is the direct sale, so the card fee comes off on TOP of the
+                // invoice figure 6.6 reads - never instead of it.
+                $fee = pnlCardFee($b, $net, $settings);
+                return [$retail, $comm, $net - $fee, false, $fee];
             }
         }
     }
@@ -342,7 +393,7 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
         }
     }
     if ($retail !== null && $retail > 0 && $comm !== null) {
-        return [$retail, $comm, $retail - $comm, false];
+        return [$retail, $comm, $retail - $comm, false, 0.0];
     }
 
     // 3) Fallback: retail from column + estimated commission % by channel
@@ -350,7 +401,7 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
         $retail = floatval($fallbackAmount);
     }
     if ($retail === null || $retail <= 0) {
-        return [0.0, 0.0, 0.0, true];
+        return [0.0, 0.0, 0.0, true, 0.0];
     }
     // Step 6.6: from here down nothing is known - every invoice was missing - so whatever
     // comes out is a GUESS and is returned with estimated = true for the UI to say so.
@@ -378,7 +429,10 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
         $pct = $settings['comm_default'];
     }
     $comm = round($retail * $pct / 100, 2);
-    return [$retail, $comm, $retail - $comm, true];
+    $net  = $retail - $comm;
+    // Step 6.7: only a direct sale (no OTA commission) can carry our card fee.
+    $fee  = ($pct == 0.0) ? pnlCardFee($b, $net, $settings) : 0.0;
+    return [$retail, $comm, $net - $fee, true, $fee];
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +482,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 'infants'         => 0,
                 'retail'          => 0.0,
                 'commission'      => 0.0,
+                'card_fee'        => 0.0, // step 6.7
                 'net'             => 0.0,
                 'estimated'       => false,
                 'ticket_cost_auto'=> 0.0,
@@ -463,7 +518,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         $u['infants']  += $pax['infants'];
 
         // Revenue
-        list($retail, $comm, $net, $estimated) = pnlExtractRevenue(
+        list($retail, $comm, $net, $estimated, $cardFee) = pnlExtractRevenue(
             $row['bokun_data'], $row['booking_channel'], floatval($row['total_amount_paid']), $settings
         );
         // Step 6.4: a hand-entered departure has no Bokun invoice. What the owner types in
@@ -474,12 +529,14 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             $manualNet = $row['manual_revenue'] !== null ? round((float) $row['manual_revenue'], 2) : 0.0;
             $retail = $manualNet;
             $comm   = 0.0;
+            $cardFee = 0.0; // step 6.7: a hand-typed figure is already what he receives
             $net    = $manualNet;
             $estimated = ($row['manual_revenue'] === null);
             $u['has_manual'] = true;
         }
         $u['retail']     += $retail;
         $u['commission'] += $comm;
+        $u['card_fee']   += $cardFee; // step 6.7
         $u['net']        += $net;
         if ($estimated && $retail > 0) $u['estimated'] = true;
         if (manualIsManualRow($row) && $row['manual_revenue'] === null) { $u['estimated'] = true; }
@@ -647,6 +704,9 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             'revenue'     => [
                 'retail'     => round($u['retail'], 2),
                 'commission' => round($u['commission'], 2),
+                // Step 6.7: shown separately because it is NOT an OTA commission - it is what
+                // the card processor keeps on a sale he made himself.
+                'card_fee'   => round($u['card_fee'], 2),
                 'net'        => $net,
                 'estimated'  => $u['estimated'],
                 'overridden' => $revenueOverridden,
@@ -698,7 +758,7 @@ function pnlTotals($rows) {
         // invoice. Surfaced so a total can never quietly mix the two.
         'estimated_units' => 0,
         'bookings' => 0, 'cancelled' => 0, 'pax' => 0,
-        'retail' => 0.0, 'commission' => 0.0, 'net' => 0.0,
+        'retail' => 0.0, 'commission' => 0.0, 'card_fee' => 0.0, 'net' => 0.0,
         'ticket_cost' => 0.0, 'guide_cost' => 0.0, 'radio_cost' => 0.0,
         'gelato_cost' => 0.0, 'staff_cost' => 0.0, 'other_cost' => 0.0,
         'total_cost' => 0.0, 'profit' => 0.0
@@ -713,6 +773,7 @@ function pnlTotals($rows) {
         $t['pax']        += $r['pax']['total'];
         $t['retail']     += $r['revenue']['retail'];
         $t['commission'] += $r['revenue']['commission'];
+        $t['card_fee']   += $r['revenue']['card_fee'] ?? 0.0; // step 6.7
         $t['net']        += $r['revenue']['net'];
         foreach (['ticket_cost', 'guide_cost', 'radio_cost', 'gelato_cost', 'staff_cost', 'other_cost'] as $f) {
             $t[$f] += $r['costs'][$f];

@@ -13,7 +13,7 @@ const mkRow = (over = {}) => ({
   category: 'Uffizi', is_group: false, is_manual: false, is_ticket: false, is_private: false,
   guide_name: 'Anna', channels: ['GetYourGuide'], bookings: 1, cancelled: 0,
   pax: { adults: 2, children: 0, infants: 0, total: 2 },
-  revenue: { retail: 100, commission: 30, net: 70, estimated: false, overridden: false, manual: false },
+  revenue: { retail: 100, commission: 30, card_fee: 0, net: 70, estimated: false, overridden: false, manual: false },
   costs: {
     ticket_cost: 58, guide_cost: 0, radio_cost: 0, gelato_cost: 0, staff_cost: 0, other_cost: 0,
     total: 58, auto: { ticket_cost: 58, guide_cost: 0, radio_cost: 0, gelato_cost: 0, staff_cost: 0, other_cost: 0 },
@@ -46,7 +46,7 @@ const dayPayload = (rows, totalsOver = {}) => ({
     totals: {
       units: rows.length, tour_units: rows.length, ticket_units: 0, estimated_units: 0,
       bookings: rows.length, cancelled: 0, pax: 2,
-      retail: 100, commission: 30, net: 70,
+      retail: 100, commission: 30, card_fee: 0, net: 70,
       ticket_cost: 58, guide_cost: 0, radio_cost: 0, gelato_cost: 0, staff_cost: 0, other_cost: 0,
       total_cost: 58, profit: 12,
       ...totalsOver,
@@ -87,6 +87,30 @@ describe('Daily P&L - a guess must look like a guess (step 6.6)', () => {
     const count = screen.getByTestId('pnl-estimated-count');
     expect(count.textContent).toMatch(/1 of 2/);
     expect(count.textContent).toMatch(/not from an invoice/);
+  });
+
+  it('names the card fee as a card fee, never as a commission (step 6.7)', async () => {
+    PAYLOAD = dayPayload(
+      [
+        mkRow(),
+        mkRow({
+          unit: 't6054', title: 'Uffizi & Accademia Walking Tour', channels: ['www.florencewithlocals.com'],
+          revenue: { retail: 239.12, commission: 0, card_fee: 3.59, net: 235.53,
+                     estimated: false, overridden: false, manual: false },
+        }),
+      ],
+      { units: 2, tour_units: 2, retail: 339.12, commission: 30, card_fee: 3.59, net: 305.53 }
+    );
+    render(<DailyPnL />);
+
+    const chip = await screen.findByTestId('pnl-card-fee-chip');
+    expect(chip.textContent).toMatch(/card fee/);
+    expect(chip.textContent).toMatch(/3\.59/);
+    // only the direct sale carries it - the OTA row must not
+    expect(screen.getAllByTestId('pnl-card-fee-chip').length).toBe(1);
+    // and the header names it separately from the commission
+    expect(document.body.textContent).toMatch(/commission .* card fee/);
+    expect(document.body.textContent).not.toMatch(/commission €3\.59/);
   });
 
   it('the count also appears on the month view, where there are no rows to look at', async () => {
