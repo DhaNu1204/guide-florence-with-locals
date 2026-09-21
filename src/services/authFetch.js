@@ -1,4 +1,5 @@
 import { notifySessionExpired, notifyForbidden } from './sessionExpiry';
+import { markRateLimited } from '../utils/perfBeacon'; // step 4.7: measurement only
 
 // Shared authenticated fetch wrapper.
 //
@@ -19,6 +20,11 @@ export const authFetch = async (url, options = {}) => {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+
+  // Step 4.7: observation only - the response is returned unchanged either way.
+  if (response.status === 429) {
+    try { markRateLimited(); } catch (e) { /* never matters */ }
+  }
 
   if (response.status === 401) {
     notifySessionExpired();

@@ -15,7 +15,8 @@ import {
   FiMapPin,
   FiClipboard,
   FiTrendingUp,
-  FiRadio
+  FiRadio,
+  FiActivity
 } from 'react-icons/fi';
 import { BsBoxSeam } from 'react-icons/bs';
 import { useAuth } from '../../contexts/AuthContext';
@@ -121,6 +122,15 @@ const ModernLayout = ({ children }) => {
       color: 'text-terracotta-600',
       bgColor: 'bg-terracotta-50',
       borderColor: 'border-terracotta-500',
+      adminOnly: true
+    },
+    {
+      title: 'Load measurements',
+      icon: FiActivity,
+      path: '/load-measurements',
+      color: 'text-stone-600',
+      bgColor: 'bg-stone-50',
+      borderColor: 'border-stone-400',
       adminOnly: true
     },
     {

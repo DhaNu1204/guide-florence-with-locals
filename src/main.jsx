@@ -2,7 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as Sentry from "@sentry/react";
 import App from './App';
+import { markEntry } from './utils/perfBeacon';
 import './index.css';
+
+// Step 4.7: field instrumentation (measurement only - see src/utils/perfBeacon.js).
+// First statement after the imports so "entry script executed" is honest.
+markEntry(__APP_VERSION__);
 
 // Initialize Sentry for error monitoring.
 // Step 4.1: Session Replay is NOT part of the production bundle - `Sentry.replayIntegration`
