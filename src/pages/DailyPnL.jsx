@@ -167,7 +167,7 @@ function EditableChip({ row, field, label, value, autoValue, overridden, onSave,
     <button
       onClick={(e) => { e.stopPropagation(); startEdit(); }}
       title={unknown
-        ? 'Not known - added by hand with no museum in the name. Click to enter the real cost.'
+        ? 'Not known for a tour added by hand - click to enter the real cost.'
         : (overridden ? `Manual (auto: ${eur(autoValue)}) — click to change` : 'Click to change')}
       className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs transition-colors ${
         overridden
@@ -295,6 +295,7 @@ function UnitCard({ row, onCostSave, onOpenDetail, selectable, selected, onToggl
           <p className="text-[11px] text-stone-400">
             in {eur(row.revenue.net)} − out {eur(row.costs.total)}
             {row.costs.ticket_unknown && <span className="text-amber-600"> (tickets not known)</span>}
+            {row.costs.guide_unknown && <span className="text-amber-600"> (guide fee not known)</span>}
           </p>
         </div>
       </div>
@@ -320,7 +321,8 @@ function UnitCard({ row, onCostSave, onOpenDetail, selectable, selected, onToggl
             label={f.label}
             value={row.costs[f.key]}
             autoValue={row.costs.auto[f.key]}
-            unknown={f.key === 'ticket_cost' && !!row.costs.ticket_unknown}
+            unknown={(f.key === 'ticket_cost' && !!row.costs.ticket_unknown)
+                     || (f.key === 'guide_cost' && !!row.costs.guide_unknown)}
             overridden={row.costs.overridden.includes(f.key)}
             onSave={onCostSave}
           />

@@ -222,6 +222,7 @@ if (!function_exists('pnlLinkCombineRows')) {
                 'auto'       => $auto,
                 'overridden' => $overriddenFields,
                 'ticket_unknown' => $ticketUnknown && !in_array('ticket_cost', $overriddenFields, true),
+                'guide_unknown'  => false, // a merged unit always gets one real fee (step 6.2)
             ]),
             'outsourced'  => $anyOutsourced,
             'profit'      => round($net - $totalCost, 2),

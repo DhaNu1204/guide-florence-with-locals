@@ -626,7 +626,14 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 // Step 6.4: true when this is a hand-entered departure whose title names no
                 // museum and no ticket override has been entered - the number in ticket_cost
                 // is 0.00 only because nothing is known, so the UI prints "-" instead.
-                'ticket_unknown' => empty($u['ticket_known']) && !in_array('ticket_cost', $overriddenFields, true)
+                'ticket_unknown' => empty($u['ticket_known']) && !in_array('ticket_cost', $overriddenFields, true),
+                // Step 6.4: same honesty for the guide fee. A hand-entered tour falls in the
+                // "Other" category, whose automatic rate is 0 - which is a real setting for a
+                // synced tour, but for a manual one with a guide assigned it only means "we do
+                // not know yet". Flagged for manual rows only; nothing about a synced row moves.
+                'guide_unknown'  => !empty($u['has_manual']) && !empty($u['guide_name'])
+                                    && round((float) $costs['guide_cost'], 2) === 0.0
+                                    && !in_array('guide_cost', $overriddenFields, true)
             ]),
             'outsourced'  => $isOutsourced,
             'profit'      => round($net - $totalCost, 2),
