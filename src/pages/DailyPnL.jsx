@@ -92,6 +92,7 @@ const SETTING_GROUPS = [
     keys: [
       ['comm_getyourguide', 'GetYourGuide %'],
       ['comm_viator', 'Viator %'],
+      ['comm_airbnb', 'Airbnb %'],
       ['comm_headout', 'Headout %'],
       ['comm_default', 'Other channels %']
     ]
@@ -248,9 +249,16 @@ function UnitCard({ row, onCostSave, onOpenDetail, selectable, selected, onToggl
             {row.outsourced && (
               <span className="px-2 py-0.5 rounded-full text-[11px] bg-indigo-100 text-indigo-800">Given to agency</span>
             )}
+            {/* Step 6.6: a guessed figure must never look like a known one. This used to be
+                grey-on-grey and was missed for months while 30% was wrongly deducted from
+                direct sales; it is now as loud as the other "not known" markers. */}
             {row.revenue.estimated && (
-              <span className="px-2 py-0.5 rounded-full text-[11px] bg-stone-100 text-stone-500" title="Commission estimated from % — no exact Bokun invoice">
-                ~ estimated
+              <span
+                className="px-2 py-0.5 rounded-full text-[11px] bg-amber-100 text-amber-800 font-medium"
+                data-testid="pnl-estimated-chip"
+                title="No invoice from Bokun for this booking — the commission below is a percentage we guessed, not a figure we know"
+              >
+                estimated — not from an invoice
               </span>
             )}
           </div>
@@ -635,6 +643,14 @@ export default function DailyPnL() {
             <p className="text-xs text-stone-400 mt-1">
               Retail {eur(totals.retail)} − commission {eur(totals.commission)}
             </p>
+            {/* Step 6.6: how much of this number is known and how much is guessed. */}
+            {totals.estimated_units > 0 && (
+              <p className="text-xs text-amber-700 mt-1" data-testid="pnl-estimated-count">
+                {totals.estimated_units} of {totals.units}{' '}
+                {totals.estimated_units === 1 ? 'departure is' : 'departures are'} estimated,
+                not from an invoice
+              </p>
+            )}
           </div>
           <div className="bg-white rounded-xl shadow-tuscan p-4">
             <p className="text-xs text-stone-500 uppercase tracking-wide">Total Costs</p>

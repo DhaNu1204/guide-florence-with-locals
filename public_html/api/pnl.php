@@ -174,7 +174,7 @@ function pnlSettingKeys() {
         // Monthly overheads (not per tour)
         'staff_monthly', 'office_monthly', 'other_monthly',
         // Fallback commission % when bokun_data has no invoice info
-        'comm_getyourguide', 'comm_viator', 'comm_headout', 'comm_default'
+        'comm_getyourguide', 'comm_viator', 'comm_airbnb', 'comm_headout', 'comm_default'
     ];
 }
 
@@ -195,7 +195,8 @@ function pnlDefaultSettings() {
     $defaults['outsource_fee']           = 10.0;
     $defaults['comm_getyourguide'] = 30.0;
     $defaults['comm_viator']       = 30.0;
-    $defaults['comm_headout']      = 25.0;
+    $defaults['comm_airbnb']       = 20.0; // step 6.6: what Airbnb really charges
+    $defaults['comm_headout']      = 20.0; // step 6.6: was 25.0; Bokun records 20%
     $defaults['comm_default']      = 30.0;
     return $defaults;
 }
@@ -302,6 +303,27 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
         }
     }
 
+    // 1b) Step 6.6: a DIRECT sale has no reseller, so Bokun files it under customerInvoice
+    // with totalCommission 0 and totalSansCommission = total. That is not "no information",
+    // it is the information: the owner pays nobody, so he keeps the lot. Before this step the
+    // code fell past it to the guessed percentage and deducted 30% he never paid - EUR 7,852.21
+    // across 205 bookings since 2025-09-30, every cent of it understating his profit.
+    // An OTA booking never reaches here (path 1 returns first for all 7,047 of them), so this
+    // cannot move a channel figure; the invoice is read as given, whatever the commission says.
+    foreach ($candidates as $c) {
+        if (isset($c['customerInvoice']) && is_array($c['customerInvoice'])) {
+            $inv = $c['customerInvoice'];
+            $retail = isset($inv['total']) ? floatval($inv['total']) : null;
+            $comm   = isset($inv['totalCommission']) ? floatval($inv['totalCommission']) : null;
+            $net    = isset($inv['totalSansCommission']) ? floatval($inv['totalSansCommission']) : null;
+            if ($retail !== null && ($net !== null || $comm !== null)) {
+                if ($net === null)  { $net  = $retail - $comm; }
+                if ($comm === null) { $comm = $retail - $net; }
+                return [$retail, $comm, $net, false];
+            }
+        }
+    }
+
     // 2) sellerCommission + customerInvoice/totalPrice
     $retail = null;
     foreach ($candidates as $c) {
@@ -330,14 +352,26 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
     if ($retail === null || $retail <= 0) {
         return [0.0, 0.0, 0.0, true];
     }
+    // Step 6.6: from here down nothing is known - every invoice was missing - so whatever
+    // comes out is a GUESS and is returned with estimated = true for the UI to say so.
+    // The named channels are a safety net only: today every one of them arrives with an
+    // invoice and never gets this far.
     $ch = mb_strtolower(trim($channel ?? ''));
-    if ($ch === '' || $ch === 'bokun' || strpos($ch, 'direct') !== false || strpos($ch, 'website') !== false) {
-        // Direct sale — no OTA commission
+    if ($ch === '' || $ch === 'bokun'
+        || strpos($ch, 'direct') !== false
+        || strpos($ch, 'website') !== false
+        || strpos($ch, 'florencewithlocals') !== false   // his own site: he pays no commission
+        || strpos($ch, 'payment link') !== false
+        || strpos($ch, 'backend') !== false) {
+        // Direct sale — no OTA commission. (A card-processing fee is a separate, real cost
+        // and is deliberately NOT invented here; it needs the owner's actual rate.)
         $pct = 0.0;
     } elseif (strpos($ch, 'getyourguide') !== false || strpos($ch, 'gyg') !== false) {
         $pct = $settings['comm_getyourguide'];
     } elseif (strpos($ch, 'viator') !== false || strpos($ch, 'tripadvisor') !== false) {
         $pct = $settings['comm_viator'];
+    } elseif (strpos($ch, 'airbnb') !== false) {
+        $pct = $settings['comm_airbnb'];
     } elseif (strpos($ch, 'headout') !== false) {
         $pct = $settings['comm_headout'];
     } else {
@@ -660,6 +694,9 @@ function pnlBuildRows($conn, $start, $end, $settings) {
 function pnlTotals($rows) {
     $t = [
         'units' => 0, 'tour_units' => 0, 'ticket_units' => 0,
+        // Step 6.6: how many of these units carry a GUESSED revenue figure rather than an
+        // invoice. Surfaced so a total can never quietly mix the two.
+        'estimated_units' => 0,
         'bookings' => 0, 'cancelled' => 0, 'pax' => 0,
         'retail' => 0.0, 'commission' => 0.0, 'net' => 0.0,
         'ticket_cost' => 0.0, 'guide_cost' => 0.0, 'radio_cost' => 0.0,
@@ -670,6 +707,7 @@ function pnlTotals($rows) {
         if ($r['bookings'] === 0) { $t['cancelled'] += $r['cancelled']; continue; }
         $t['units']++;
         if ($r['is_ticket']) $t['ticket_units']++; else $t['tour_units']++;
+        if (!empty($r['revenue']['estimated'])) { $t['estimated_units']++; }
         $t['bookings']   += $r['bookings'];
         $t['cancelled']  += $r['cancelled'];
         $t['pax']        += $r['pax']['total'];
