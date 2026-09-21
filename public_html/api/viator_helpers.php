@@ -204,12 +204,14 @@ if (!function_exists('viatorWatchdogRun')) {
         // Both corrections are computed from rows we still hold, so this is exact rather than a
         // tolerance: a tour running is not a disappearance, and neither is a cancellation Bokun
         // told us about.
-        $expected = null; $passed = 0; $cancelled = 0;
+        // Recorded on EVERY run, including the baseline: the next run subtracts the change in
+        // it, so a baseline that stored 0 would make the first comparison too lenient.
+        $cancelled = (int) $one("SELECT COUNT(*) FROM tours WHERE $scope AND cancelled = 1 AND date >= '$horizon'");
+        $expected = null; $passed = 0;
         if ($prev) {
             $prevHorizon = $conn->real_escape_string((string) $prev['horizon']);
-            $passed    = (int) $one("SELECT COUNT(*) FROM tours WHERE $scope AND date >= '$prevHorizon' AND date < '$horizon'");
-            $cancelled = (int) $one("SELECT COUNT(*) FROM tours WHERE $scope AND cancelled = 1 AND date >= '$horizon'");
-            $expected  = max(0, (int) $prev['future_bookings'] - $passed + (int) $prev['cancelled_future'] - $cancelled);
+            $passed   = (int) $one("SELECT COUNT(*) FROM tours WHERE $scope AND date >= '$prevHorizon' AND date < '$horizon'");
+            $expected = max(0, (int) $prev['future_bookings'] - $passed + (int) $prev['cancelled_future'] - $cancelled);
         }
         $status = viatorWatchdogStatus($expected, $bookings);
         $note   = $status === 'ALERT'
