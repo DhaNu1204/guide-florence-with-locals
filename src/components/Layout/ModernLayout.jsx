@@ -29,7 +29,7 @@ const ModernLayout = ({ children }) => {
   const [isMobile, setIsMobile] = useState(false);
   // Step 1.1: role and name come from AuthContext (verified against the server on load),
   // not from localStorage, which anyone can edit in DevTools.
-  const { userRole, userName, logout } = useAuth();
+  const { userRole, userName, logout, canSeePnl } = useAuth();
   const userInfo = { username: userName || 'User', role: userRole || 'viewer' };
 
   useEffect(() => {
@@ -122,7 +122,7 @@ const ModernLayout = ({ children }) => {
       color: 'text-terracotta-600',
       bgColor: 'bg-terracotta-50',
       borderColor: 'border-terracotta-500',
-      adminOnly: true
+      ownerOnly: true // step 6.10: money is the owner's alone, not every admin's
     },
     {
       title: 'Load measurements',
@@ -151,7 +151,8 @@ const ModernLayout = ({ children }) => {
       borderColor: 'border-renaissance-500',
       adminOnly: true // step 1.1: the page is AdminRoute-guarded, the menu must match
     }
-  ].filter((item) => !item.adminOnly || userInfo.role === 'admin');
+  ].filter((item) => (!item.adminOnly || userInfo.role === 'admin')
+                  && (!item.ownerOnly || (typeof canSeePnl === 'function' && canSeePnl())));
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';

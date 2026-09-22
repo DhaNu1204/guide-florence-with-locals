@@ -6,6 +6,7 @@ import { ToastProvider, useToast } from './components/Toast/ToastProvider';
 import { SESSION_EXPIRED_EVENT, FORBIDDEN_EVENT, resetSessionExpiryGuard } from './services/sessionExpiry';
 import ModernLayout from './components/Layout/ModernLayout';
 import AdminRoute from './components/AdminRoute';
+import OwnerRoute from './components/OwnerRoute'; // step 6.10: /daily-pnl is the owner's alone
 import Login from './pages/Login';
 import { PageTitleProvider } from './contexts/PageTitleContext';
 import BokunAutoSyncProvider from './components/BokunAutoSyncProvider';
@@ -192,11 +193,11 @@ function AppRoutes() {
         path="/daily-pnl"
         element={
           <ProtectedRoute>
-            <AdminRoute>
-              <ModernLayout>
+            <ModernLayout>
+              <OwnerRoute>
                 <DailyPnL />
-              </ModernLayout>
-            </AdminRoute>
+              </OwnerRoute>
+            </ModernLayout>
           </ProtectedRoute>
         }
       />

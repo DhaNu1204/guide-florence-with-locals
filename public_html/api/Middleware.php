@@ -209,11 +209,80 @@ class Middleware {
     }
 
     /**
+     * Step 6.10: the accounts allowed to see financial data (Daily P&L: revenue,
+     * costs, profit, the rates behind them). This is deliberately NARROWER than the
+     * admin role - the system has more than one admin, and only the owner sees money.
+     *
+     * The list is `PNL_OWNER_USERS` in the server .env (comma separated usernames or
+     * emails, case-insensitive). It falls back to the built-in default so the gate is
+     * correct the moment the code is deployed and never needs an env edit to work.
+     */
+    const DEFAULT_PNL_OWNER_USERS = 'dhanu';
+
+    public static function pnlOwnerUsers() {
+        $raw = '';
+        if (class_exists('EnvLoader')) {
+            $raw = (string) EnvLoader::get('PNL_OWNER_USERS', '');
+        }
+        if (trim($raw) === '') {
+            $raw = self::DEFAULT_PNL_OWNER_USERS;
+        }
+        $names = [];
+        foreach (explode(',', $raw) as $n) {
+            $n = strtolower(trim($n));
+            if ($n !== '') {
+                $names[] = $n;
+            }
+        }
+        return $names;
+    }
+
+    /**
+     * Step 6.10: is this authenticated user allowed to see money? Admin role AND on
+     * the owner list - so a second admin keeps every other admin power and still gets
+     * a 403 here.
+     *
+     * @param array $user Row returned by verifyAuth()/requireAuth()
+     * @return bool
+     */
+    public static function isPnlOwner($user) {
+        if (!is_array($user) || (isset($user['role']) ? $user['role'] : '') !== 'admin') {
+            return false;
+        }
+        $names = self::pnlOwnerUsers();
+        foreach (['username', 'email'] as $field) {
+            $v = strtolower(trim((string) (isset($user[$field]) ? $user[$field] : '')));
+            if ($v !== '' && in_array($v, $names, true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Step 6.10: authenticate, then require the owner. Anyone else - viewer or a
+     * non-owner admin - gets 403 with a message the UI can show as it is.
+     * An unauthenticated request still gets 401 from requireAuth().
+     *
+     * @param mysqli $conn Database connection
+     * @return array User data
+     */
+    public static function requirePnlOwner($conn) {
+        $user = self::requireAuth($conn);
+
+        if (!self::isPnlOwner($user)) {
+            self::forbidden('You do not have access to this page.');
+        }
+
+        return $user;
+    }
+
+    /**
      * Uniform 403: real status, JSON body, no role names or user details.
      */
-    public static function forbidden() {
+    public static function forbidden($message = 'forbidden') {
         http_response_code(403);
-        echo json_encode(['success' => false, 'error' => 'forbidden']);
+        echo json_encode(['success' => false, 'error' => $message]);
         exit();
     }
 
