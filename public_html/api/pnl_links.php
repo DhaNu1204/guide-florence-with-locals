@@ -13,6 +13,16 @@
  * Functions only - no output, no routing, safe to require_once (same pattern as group_helpers.php).
  */
 
+// Step 6.10: a library, never an entry point. Requested directly over HTTP it answers 404
+// instead of executing as a page, so nothing P&L-shaped is reachable without the owner gate
+// in pnl.php. require_once from another script is unaffected.
+if (PHP_SAPI !== 'cli'
+    && isset($_SERVER['SCRIPT_FILENAME'])
+    && realpath($_SERVER['SCRIPT_FILENAME']) === realpath(__FILE__)) {
+    http_response_code(404);
+    exit;
+}
+
 if (!function_exists('pnlLinkCombineRows')) {
 
     /**

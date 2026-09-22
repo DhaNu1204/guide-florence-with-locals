@@ -3,7 +3,8 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './Toast/ToastProvider';
 
-// Step 1.1: route guard for admin-only pages (/bokun-integration, /daily-pnl).
+// Step 1.1: route guard for admin-only pages (/bokun-integration, /load-measurements,
+// /radios). Since step 6.10 /daily-pnl uses the stricter OwnerRoute instead.
 // Mount inside ProtectedRoute. Non-admins are sent to / with an "Admin only"
 // toast; the server enforces the same rule, this only keeps the UI honest.
 const AdminRoute = ({ children }) => {

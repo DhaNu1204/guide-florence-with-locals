@@ -8,6 +8,9 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [userRole, setUserRole] = useState(localStorage.getItem('userRole'));
   const [userName, setUserName] = useState(localStorage.getItem('userName'));
+  // Step 6.10: may this account see money (Daily P&L)? The server answers it on every
+  // verify; the cached value only avoids a flash before that answer arrives.
+  const [pnlAccess, setPnlAccess] = useState(localStorage.getItem('pnlAccess') === 'true');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,15 +35,19 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(true);
           setUserRole(data.role);
           setUserName(data.username);
+          setPnlAccess(data.pnl_access === true);
           localStorage.setItem('userRole', data.role);
           localStorage.setItem('userName', data.username);
+          localStorage.setItem('pnlAccess', data.pnl_access === true ? 'true' : 'false');
         } else {
           localStorage.removeItem('token');
           localStorage.removeItem('userRole');
           localStorage.removeItem('userName');
+          localStorage.removeItem('pnlAccess');
           setToken(null);
           setUserRole(null);
           setUserName(null);
+          setPnlAccess(false);
         }
       } catch (error) {
         markVerifyEnd(false); // step 4.7
@@ -48,9 +55,11 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('token');
         localStorage.removeItem('userRole');
         localStorage.removeItem('userName');
+        localStorage.removeItem('pnlAccess');
         setToken(null);
         setUserRole(null);
         setUserName(null);
+        setPnlAccess(false);
       }
       setLoading(false);
     };
@@ -75,9 +84,11 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('token', data.token);
         localStorage.setItem('userRole', data.role);
         localStorage.setItem('userName', data.username);
+        localStorage.setItem('pnlAccess', data.pnl_access === true ? 'true' : 'false');
         setToken(data.token);
         setUserRole(data.role);
         setUserName(data.username);
+        setPnlAccess(data.pnl_access === true);
         setIsAuthenticated(true);
         return { success: true };
       } else {
@@ -108,20 +119,25 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
+    localStorage.removeItem('pnlAccess');
     setToken(null);
     setUserRole(null);
     setUserName(null);
+    setPnlAccess(false);
     setIsAuthenticated(false);
   };
 
   const isAdmin = () => userRole === 'admin';
+  // Step 6.10: Daily P&L is the owner's alone. The server is the authority (pnl.php
+  // answers 403 to everyone else); this only keeps the menu and the route honest.
+  const canSeePnl = () => userRole === 'admin' && pnlAccess === true;
 
   if (loading) {
     return <div>Loading...</div>;
   }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout, isAdmin, userRole, userName }}>
+    <AuthContext.Provider value={{ isAuthenticated, login, logout, isAdmin, canSeePnl, userRole, userName }}>
       {children}
     </AuthContext.Provider>
   );

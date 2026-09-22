@@ -230,7 +230,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'message' => 'Login successful',
                     'token' => $sessionToken,
                     'role' => $user['role'],
-                    'username' => $user['username'] ?: $user['email']
+                    'username' => $user['username'] ?: $user['email'],
+                    // Step 6.10: may this account see money (Daily P&L)? The server decides,
+                    // the UI only mirrors it - pnl.php enforces the same rule on every call.
+                    'pnl_access' => Middleware::isPnlOwner($user)
                 ]);
             } else {
                 // Record failed attempt for rate limiting
@@ -290,7 +293,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
             echo json_encode([
                 'success' => true,
                 'role' => $user['role'],
-                'username' => $user['username'] ?: $user['email']
+                'username' => $user['username'] ?: $user['email'],
+                'pnl_access' => Middleware::isPnlOwner($user)  // step 6.10
             ]);
         } else {
             http_response_code(401);

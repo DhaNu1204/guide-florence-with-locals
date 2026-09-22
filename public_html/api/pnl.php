@@ -1,6 +1,6 @@
 <?php
 /**
- * Daily P&L (Profit & Loss) API — ADMIN ONLY
+ * Daily P&L (Profit & Loss) API — OWNER ONLY (step 6.10)
  *
  * Tracks daily operation economics per tour unit (group or standalone booking):
  *   Revenue  — auto-extracted from stored bokun_data (retail, channel commission, net)
@@ -28,8 +28,9 @@ require_once __DIR__ . '/pnl_links.php';     // step 6.2: merged costing units
 require_once __DIR__ . '/manual_helpers.php'; // step 6.4: hand-entered departures
 require_once __DIR__ . '/viator_helpers.php'; // step 6.9: the old-Viator-account label
 
-// Financial data: admin only
-Middleware::requireRole($conn, 'admin');
+// Financial data: the owner only (step 6.10). Narrower than the admin role on purpose -
+// revenue, costs and profit are not visible to any other account, admin or viewer.
+Middleware::requirePnlOwner($conn);
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? trim($_GET['action']) : '';
