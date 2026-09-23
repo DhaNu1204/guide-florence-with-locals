@@ -818,6 +818,28 @@ export const downloadParticipantsPdf = async (unit) => {
   return name;
 };
 
+// Step 6.11: the DAY sheet - every Uffizi or Accademia ticket booking on one date, in time
+// order (Priority Tickets tabs). Same endpoint, so the same 90 s file timeout and no auto-retry.
+export const downloadDayParticipantsPdf = async (museum, date) => {
+  const params = new URLSearchParams({ museum, date });
+  const response = await axios.get(
+    `${API_BASE_URL}/participants.php?${params.toString()}`,
+    { responseType: 'blob' }
+  );
+  const disposition = response.headers?.['content-disposition'] || '';
+  const match = /filename="?([^"]+)"?/.exec(disposition);
+  const name = match ? match[1] : `${String(museum).toLowerCase()}-participants-${date}.pdf`;
+  const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+  return name;
+};
+
 // Step 6.9: the owner's paper fallback - every departure still to run on the Viator account
 // he is retiring, with Viator's own reference numbers. Admin only on the server.
 export const downloadViatorLegacyCsv = async () => {
@@ -888,6 +910,7 @@ const mysqlDB = {
   getUnassignedCount,
   getTourLanguages, // step 6.1
   downloadParticipantsPdf, // step 6.8
+  downloadDayParticipantsPdf, // step 6.11
   downloadViatorLegacyCsv, // step 6.9
   createManualTour, // step 6.4
   updateManualTour,

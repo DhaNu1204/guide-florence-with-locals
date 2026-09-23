@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FiCalendar, FiUsers, FiTag, FiAlertCircle, FiSave, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiCalendar, FiUsers, FiTag, FiAlertCircle, FiSave, FiX, FiChevronLeft, FiChevronRight, FiDownload } from 'react-icons/fi';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
-import { getTours, updateTour } from '../services/mysqlDB';
+import { getTours, updateTour, downloadDayParticipantsPdf } from '../services/mysqlDB';
 import LoadProblem from '../components/UI/LoadProblem';
-import { writeFailureMessage } from '../services/netPolicy';
+import { writeFailureMessage, describeLoadError } from '../services/netPolicy';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
-import { filterTicketsOnly } from '../utils/tourFilters';
+import { ticketMuseum, TICKET_TABS } from '../utils/ticketMuseum';
 import { format } from 'date-fns';
 
 // Helper function to extract participant breakdown (adults/children) from bokun_data
@@ -87,9 +87,12 @@ const PriorityTickets = () => {
   const [loadedAt, setLoadedAt] = useState(null);
   const [filters, setFilters] = useState({
     date: '',
-    location: '',
     bookingChannel: ''
   });
+  // Step 6.11: All museums | Uffizi | Accademia. Replaces the old Museum picker; not remembered,
+  // like the page's other filters. "All museums" is exactly the page as it was.
+  const [museumTab, setMuseumTab] = useState('');
+  const [downloadingSheet, setDownloadingSheet] = useState(false);
   const [editingNotes, setEditingNotes] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -106,7 +109,7 @@ const PriorityTickets = () => {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters]);
+  }, [filters, museumTab]);
 
   const loadTicketBookings = async (forceRefresh = false) => {
     setLoading(true);
@@ -118,8 +121,11 @@ const PriorityTickets = () => {
       const toursData = toursResponse && toursResponse.data ? toursResponse.data : toursResponse;
 
       if (toursData) {
-        // Backend now filters by product_type='ticket'; client-side filter kept as safety net
-        const tickets = filterTicketsOnly(toursData);
+        // The server returns product_type='ticket' rows only (the products table decides, see
+        // CLAUDE.md). Step 6.11: the old title-keyword "safety net" (filterTicketsOnly) is gone -
+        // it silently dropped every "Uffizi Gallery Reserved Ticket & Digital Audio Guide"
+        // booking (79 live upcoming on 2026-09-23), which the printed day sheet does include.
+        const tickets = Array.isArray(toursData) ? [...toursData] : [];
 
         // Sort by date and time (earliest first)
         const sortedTickets = tickets.sort((a, b) => {
@@ -155,14 +161,10 @@ const PriorityTickets = () => {
       filtered = filtered.filter(ticket => ticket.date === filters.date);
     }
 
-    // Filter by location (museum)
-    if (filters.location) {
-      filtered = filtered.filter(ticket => {
-        if (!ticket.title) return false;
-        if (filters.location === 'Uffizi') return ticket.title.includes('Uffizi');
-        if (filters.location === 'Accademia') return ticket.title.includes('Accademia');
-        return true;
-      });
+    // Step 6.11: the museum tab. The museum is read from the booking's own title with the same
+    // rule the printed day sheet uses (radios, step 6.3), so the tab and the sheet always agree.
+    if (museumTab) {
+      filtered = filtered.filter(ticket => ticketMuseum(ticket.title) === museumTab);
     }
 
     // Filter by booking channel
@@ -173,7 +175,7 @@ const PriorityTickets = () => {
     }
 
     return filtered;
-  }, [ticketBookings, filters]);
+  }, [ticketBookings, filters, museumTab]);
 
   // Group tickets by date for day-wise display
   const ticketsByDate = useMemo(() => {
@@ -277,7 +279,6 @@ const PriorityTickets = () => {
   const clearFilters = () => {
     setFilters({
       date: '',
-      location: '',
       bookingChannel: ''
     });
   };
@@ -292,6 +293,22 @@ const PriorityTickets = () => {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(tomorrow);
     handleFilterChange('date', tomorrowStr);
+  };
+
+  // Step 6.11: the printable day list for the museum tab in view.
+  const downloadDaySheet = async () => {
+    if (!museumTab || !filters.date || downloadingSheet) return;
+    setDownloadingSheet(true);
+    try {
+      await downloadDayParticipantsPdf(museumTab, filters.date);
+    } catch (err) {
+      console.error('Error downloading participants list:', err);
+      setError(err?.response
+        ? 'Could not build the participants list. Please try again.'
+        : `Could not download the participants list. ${describeLoadError(err)}`);
+    } finally {
+      setDownloadingSheet(false);
+    }
   };
 
   const saveNotes = async (ticketId) => {
@@ -449,6 +466,25 @@ const PriorityTickets = () => {
       {/* Filters */}
       <Card>
         <div className="space-y-4">
+          {/* Step 6.11: museum tabs (replace the old Museum picker) */}
+          <div role="tablist" aria-label="Museum" className="flex gap-1 p-1 bg-stone-100 rounded-tuscan-lg w-full sm:w-auto sm:inline-flex">
+            {TICKET_TABS.map(tab => (
+              <button
+                key={tab.key || 'all'}
+                role="tab"
+                aria-selected={museumTab === tab.key}
+                onClick={() => setMuseumTab(tab.key)}
+                className={`flex-1 sm:flex-none px-4 min-h-[44px] text-sm font-medium rounded-tuscan transition-colors touch-manipulation ${
+                  museumTab === tab.key
+                    ? 'bg-white text-terracotta-700 shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
           {/* Quick Date Filters */}
           <div className="flex flex-wrap gap-2">
             <span className="text-xs font-medium text-stone-600 self-center mr-2">Quick Filters:</span>
@@ -488,20 +524,6 @@ const PriorityTickets = () => {
               />
             </div>
 
-            {/* Location Filter */}
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-stone-700 mb-1">Museum</label>
-              <select
-                value={filters.location}
-                onChange={(e) => handleFilterChange('location', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-stone-300 rounded-tuscan focus:ring-2 focus:ring-terracotta-500 focus:border-terracotta-500"
-              >
-                <option value="">All Museums</option>
-                <option value="Uffizi">Uffizi Gallery</option>
-                <option value="Accademia">Accademia Gallery</option>
-              </select>
-            </div>
-
             {/* Booking Channel Filter */}
             <div className="flex-1">
               <label className="block text-xs font-medium text-stone-700 mb-1">Booking Channel</label>
@@ -531,18 +553,38 @@ const PriorityTickets = () => {
 
       {/* Ticket Bookings List - Day-wise */}
       <Card>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h2 className="text-lg md:text-xl font-semibold text-stone-900">
             <span className="hidden md:inline">Ticket Bookings ({filteredTickets.length} of {ticketBookings.length})</span>
             <span className="md:hidden">Tickets ({filteredTickets.length}/{ticketBookings.length})</span>
           </h2>
+          {museumTab && (
+            <div className="flex flex-col sm:items-end gap-1">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={downloadDaySheet}
+                disabled={!filters.date || downloadingSheet}
+                data-testid="download-day-sheet"
+                className="w-full sm:w-auto min-h-[44px] whitespace-nowrap"
+              >
+                <FiDownload className={`mr-2 ${downloadingSheet ? 'animate-pulse' : ''}`} />
+                {downloadingSheet ? 'Preparing…' : 'Download participants list'}
+              </Button>
+              <p className="text-xs text-stone-500">
+                {filters.date
+                  ? `Every ${museumTab} booking on ${new Date(filters.date + 'T00:00:00').toLocaleDateString('en-GB')}, in time order`
+                  : 'Pick a day first (Today, Tomorrow or the date box)'}
+              </p>
+            </div>
+          )}
         </div>
 
         {filteredTickets.length === 0 ? (
           <div className="text-center py-12 text-stone-500">
             <FiTag className="text-4xl mx-auto mb-2 opacity-50" />
             <p>No ticket bookings found</p>
-            {(filters.date || filters.location || filters.bookingChannel) && (
+            {(filters.date || filters.bookingChannel) && (
               <Button variant="outline" size="sm" onClick={clearFilters} className="mt-4">
                 Clear Filters
               </Button>
