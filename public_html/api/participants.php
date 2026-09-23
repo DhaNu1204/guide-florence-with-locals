@@ -25,7 +25,52 @@ require_once __DIR__ . '/participant_helpers.php';
 Middleware::requireAuth($conn);
 autoRateLimit('participants');
 
-$unit = participantsParseUnit($_GET['unit'] ?? '');
+// ---------------------------------------------------------------------------------------
+// Step 6.11: the DAY sheet for one museum's ticket bookings (Priority Tickets tabs).
+//   GET participants.php?museum=Accademia&date=2026-09-23[&format=json]
+// Same access as the rest of this file and as Priority Tickets itself: any logged-in user.
+// ---------------------------------------------------------------------------------------
+if (isset($_GET['museum'])) {
+    $museum = participantsDayMuseum($_GET['museum']);
+    $date = (string) ($_GET['date'] ?? '');
+    $dt = date_create_from_format('!Y-m-d', $date);
+    if ($museum === null || !$dt || $dt->format('Y-m-d') !== $date) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'A museum (Uffizi or Accademia) and a date (YYYY-MM-DD) are required']);
+        exit();
+    }
+    // Ticket products only (the products table decides tour vs ticket, as on Priority Tickets);
+    // the museum is then read from each booking's own title in participantsDayBuild().
+    $stmt = $conn->prepare("SELECT t.* FROM tours t
+                              JOIN products pr ON pr.bokun_product_id = t.product_id
+                             WHERE pr.product_type = 'ticket' AND t.date = ?
+                             ORDER BY t.time, t.id");
+    $stmt->bind_param('s', $date);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $dayRows = [];
+    while ($r = $res->fetch_assoc()) { $dayRows[] = $r; }
+    $stmt->close();
+
+    $data = participantsDayBuild($dayRows, $museum, $date, 'computePaxBreakdown');
+
+    if (($_GET['format'] ?? '') === 'json') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => $data]);
+        exit();
+    }
+    require_once __DIR__ . '/participant_sheet.php';
+    $out = participantsRenderDayPdf($data);
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="' . $data['filename'] . '"');
+    header('Content-Length: ' . strlen($out));
+    header('Cache-Control: no-store');
+    echo $out;
+    exit();
+}
+
+$unit =participantsParseUnit($_GET['unit'] ?? '');
 if ($unit === null) {
     http_response_code(400);
     header('Content-Type: application/json');
