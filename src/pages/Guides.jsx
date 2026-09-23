@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiPlus, FiUsers, FiPhone, FiX, FiCalendar, FiEdit2, FiTrash2, FiMail, FiGlobe } from 'react-icons/fi';
 import { getGuides, addGuide, updateGuide, deleteGuide } from '../services/mysqlDB';
+import LoadProblem from '../components/UI/LoadProblem';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 import { usePageTitle } from '../contexts/PageTitleContext';
 import { useAuth } from '../contexts/AuthContext';
 import Card from '../components/UI/Card';
@@ -24,6 +26,10 @@ const Guides = () => {
   const { setPageTitle } = usePageTitle();
   const [guides, setGuides] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Step 4.8: a failed load is said out loud (with Retry), never shown as "No guides available".
+  const [loadError, setLoadError] = useState(null);
+  const [loadedAt, setLoadedAt] = useState(null);
+  const [shownAt, setShownAt] = useState(null);
   const toast = useToast();
   // Page/action feedback surfaces as toasts now; thin wrappers keep the existing
   // setError/setSuccess call sites unchanged (setError(null) becomes a no-op).
@@ -70,6 +76,7 @@ const Guides = () => {
   }, [setPageTitle, currentPage]);
 
   const fetchGuides = async (page = 1) => {
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
       setLoading(true);
       console.log('Fetching guides from MySQL database, page:', page);
@@ -100,9 +107,16 @@ const Guides = () => {
         });
       }
       setError(null);
+      setLoadError(null);
+      setShownAt(null);
+      setLoadedAt(Date.now());
+      markListEnd(true);
     } catch (err) {
+      markListEnd(false);
       console.error('Error fetching guides:', err);
-      setError('Failed to load guides. Please try again later.');
+      setLoadError(err);
+      setShownAt(loadedAt); // keep the list on screen with its time - or show nothing
+      if (!loadedAt) setGuides([]);
     } finally {
       setLoading(false);
     }
@@ -452,6 +466,8 @@ const Guides = () => {
         </div>
       )}
       
+      <LoadProblem error={loadError} what="the guides" shownAt={shownAt} onRetry={() => fetchGuides(currentPage)} retrying={loading} />
+
       {/* Guides List */}
       <div>
         {loading && !showAddForm ? (
@@ -461,7 +477,7 @@ const Guides = () => {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           </div>
-        ) : guides.length === 0 ? (
+        ) : loadError && !shownAt ? null : guides.length === 0 ? (
           <Card className="text-center py-12">
             <div className="w-16 h-16 mx-auto mb-4 text-stone-400">
               <FiUsers className="w-full h-full" />

@@ -1,5 +1,6 @@
 import { lazy } from 'react';
-import { markChunkStart, markChunkEnd } from './perfBeacon'; // step 4.7: measurement only
+import { markChunkStart, markChunkEnd, markTimeout } from './perfBeacon'; // step 4.7/4.8: measurement only
+import { TimeoutError } from '../services/netPolicy';
 
 // Step 4.1b: a lazy route whose chunk request fails is fatal today - React caches the rejected
 // promise, so the route stays broken until the tab is reloaded, and "Try Again" re-renders into
@@ -18,7 +19,20 @@ export const RELOAD_FLAG = 'fwl:chunk-reload';
 // Backoff before retry 1 and retry 2. Exported so the test does not have to hard-code them.
 export const RETRY_DELAYS_MS = [300, 900];
 
+// Step 4.8: a route chunk that has not arrived after this long is treated as failed. A page
+// chunk is at most ~70 KB brotli, so 20 s is generous on any link that still works.
+export const CHUNK_TIMEOUT_MS = 20000;
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** importer() with a deadline; the late module (if it ever comes) is simply ignored. */
+const withDeadline = (importer, ms) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new TimeoutError(ms)), ms);
+  importer().then(
+    (mod) => { clearTimeout(timer); resolve(mod); },
+    (err) => { clearTimeout(timer); reject(err); }
+  );
+});
 
 /**
  * Import with retries. Returns the module, or rejects with the last error after triggering
@@ -33,17 +47,22 @@ export function importWithRetry(importer, deps = {}) {
     sleep = wait,
     storage = typeof sessionStorage !== 'undefined' ? sessionStorage : null,
     reload = () => window.location.reload(),
+    chunkTimeoutMs = CHUNK_TIMEOUT_MS,
   } = deps;
 
   markChunkStart(); // step 4.7: records the FIRST route chunk of a load and ignores later ones
   const attempt = (i) =>
-    importer().then((mod) => {
+    withDeadline(importer, chunkTimeoutMs).then((mod) => {
       markChunkEnd(true); // step 4.7
       // A chunk loaded: the tab is healthy, so a later failure may use its own one-shot reload.
       clearChunkReloadFlag(storage);
       return mod;
     }).catch(async (error) => {
-      if (i < delays.length) {
+      // Step 4.8: a timed-out import is not retried in place - the browser would only wait on
+      // the same stalled fetch again. It goes straight to the one-shot reload below.
+      const timedOut = error && error.name === 'TimeoutError';
+      if (timedOut) markTimeout();
+      if (i < delays.length && !timedOut) {
         await sleep(delays[i]);
         return attempt(i + 1);
       }

@@ -19,6 +19,7 @@ const loadPdfLib = async () => {
 };
 import { getAllGuides, getGuideTourReport } from '../services/mysqlDB';
 import { useToast } from '../components/Toast/ToastProvider';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 // Tuscan PDF palette (mirrors src/utils/pdfGenerator.js)
 const PDF_COLORS = {
@@ -105,10 +106,13 @@ const GuideReports = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      markListStart(); // step 4.8: the page's own data fetch, for the field recorder
       try {
         const all = await getAllGuides();
         if (!cancelled) setGuides(Array.isArray(all) ? all : (all?.data || []));
+        markListEnd(true);
       } catch (err) {
+        markListEnd(false);
         console.error('Failed to load guides:', err);
       }
     })();

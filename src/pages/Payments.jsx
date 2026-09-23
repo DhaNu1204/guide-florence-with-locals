@@ -9,9 +9,14 @@ import { FiDollarSign, FiTrendingUp, FiUsers, FiCalendar, FiDownload, FiPlus, Fi
 // Step 4.1: the PDF generator (and jsPDF behind it) is fetched the first time a
 // report is downloaded, not when this page loads.
 const loadPdfGenerator = () => import('../utils/pdfGenerator');
-import { authFetch } from '../services/authFetch';
+import { authFetch } from '../services/authFetch';
+
+
 import { buildBatchPlan, batchTotalLine, batchButtonLabel, batchRequests, summariseResults, formatEuro, tourUnitKey } from '../utils/batchPayment';
 import { useToast } from '../components/Toast/ToastProvider';
+import LoadProblem from '../components/UI/LoadProblem';
+import { writeFailureMessage, httpError } from '../services/netPolicy';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 const Payments = () => {
   const { setPageTitle } = usePageTitle();
@@ -35,6 +40,14 @@ const Payments = () => {
   const [recordReference, setRecordReference] = useState('');
   const [recordGuideOverride, setRecordGuideOverride] = useState('');
   const [recordSubmitting, setRecordSubmitting] = useState(false);
+  // Step 4.8: a payment whose answer was lost. Until the page has reloaded its data from the
+  // server, recording is blocked - pressing Record again could pay the same tour twice.
+  const [paymentUnknown, setPaymentUnknown] = useState(null);
+  // Step 4.8: the payment data could not be loaded (loadError), and when what is on screen
+  // arrived (loadedAt / shownAt), so a failed refresh keeps the page with a banner.
+  const [loadError, setLoadError] = useState(null);
+  const [loadedAt, setLoadedAt] = useState(null);
+  const [shownAt, setShownAt] = useState(null);
   const [guides, setGuides] = useState([]);
 
   // Show action feedback as a toast (visible regardless of page scroll).
@@ -69,6 +82,7 @@ const Payments = () => {
   }, [setPageTitle]);
 
   const loadPaymentData = async () => {
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
       setLoading(true);
       setError(null);
@@ -77,12 +91,12 @@ const Payments = () => {
 
       // Load payment overview
       const overviewResponse = await authFetch(`${API_BASE_URL}/guide-payments.php?action=overview`);
-      if (!overviewResponse.ok) throw new Error('Failed to load payment overview');
+      if (!overviewResponse.ok) throw httpError(overviewResponse);
       const overviewResult = await overviewResponse.json();
 
       // Load guide payment summaries
       const guidesResponse = await authFetch(`${API_BASE_URL}/guide-payments.php`);
-      if (!guidesResponse.ok) throw new Error('Failed to load guide payments');
+      if (!guidesResponse.ok) throw httpError(guidesResponse);
       const guidesResult = await guidesResponse.json();
 
       if (overviewResult.success) setPaymentOverview(overviewResult.data);
@@ -90,18 +104,26 @@ const Payments = () => {
 
       // Load unpaid tours from API - uses server-side logic checking payments table
       // This ensures consistency with the database (tours with NO payment record)
+      // Step 4.8: a failed pending list is a failed load - it used to be skipped silently, which
+      // left "no tours to pay" (or the previous list) on screen as if it were current.
       const pendingToursResponse = await authFetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
-      if (pendingToursResponse.ok) {
-        const pendingToursResult = await pendingToursResponse.json();
-        if (pendingToursResult.success) {
-          const unpaidToursData = pendingToursResult.data || [];
-          setUnpaidTours(unpaidToursData);
-          setShowUnpaidAlert(unpaidToursData.length > 0);
-        }
+      if (!pendingToursResponse.ok) throw httpError(pendingToursResponse);
+      const pendingToursResult = await pendingToursResponse.json();
+      if (pendingToursResult.success) {
+        const unpaidToursData = pendingToursResult.data || [];
+        setUnpaidTours(unpaidToursData);
+        setShowUnpaidAlert(unpaidToursData.length > 0);
       }
+      setLoadError(null);
+      setShownAt(null);
+      setLoadedAt(Date.now());
+      setPaymentUnknown(null); // the list on screen is the server's truth again
+      markListEnd(true);
     } catch (err) {
-      setError(err.message);
+      markListEnd(false);
       console.error('Error loading payment data:', err);
+      setLoadError(err);
+      setShownAt(loadedAt); // keep what is on screen, with its time - or nothing at all
     } finally {
       setLoading(false);
     }
@@ -203,12 +225,17 @@ const Payments = () => {
     });
 
     const results = [];
-    for (const body of requests) {
+    // Step 4.8: a POST whose answer is lost may still have been recorded. It is never retried,
+    // the rest of the batch is not sent, and the user is told plainly what we do and don't know.
+    let unknown = null;
+    for (let i = 0; i < requests.length; i++) {
+      const body = requests[i];
       try {
         const response = await authFetch(`${API_BASE_URL}/payments.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
+          quietUnknown: true // this page says it itself, in more detail
         });
         const result = await response.json();
         if (response.ok && result.success) {
@@ -218,8 +245,23 @@ const Payments = () => {
           results.push({ ok: false, error: result.error || result.message || 'Unknown error' });
         }
       } catch (err) {
+        if (err && err.outcomeUnknown) {
+          unknown = { amount: body.amount, notSent: requests.length - i - 1 };
+          break;
+        }
         results.push({ ok: false, error: err.message });
       }
+    }
+
+    if (unknown) {
+      const recorded = results.filter(r => r.ok).length;
+      const notSent = unknown.notSent;
+      setPaymentUnknown(
+        `${recorded > 0 ? `${recorded} payment${recorded > 1 ? 's were' : ' was'} recorded. ` : ''}` +
+        `The next one (${formatEuro(unknown.amount)}) may or may not have been recorded — the connection ` +
+        `dropped before the server answered.${notSent > 0 ? ` ${notSent} more ${notSent > 1 ? 'were' : 'was'} not sent.` : ''} ` +
+        'Refresh the list and check before recording anything again.'
+      );
     }
 
     const summary = summariseResults(results);
@@ -242,8 +284,9 @@ const Payments = () => {
       setRecordMethod('cash');
       setRecordReference('');
       setRecordGuideOverride('');
-      // Reload data in background
-      loadPaymentData();
+      // Reload data in background - but not after a lost answer (step 4.8): that reload could
+      // race the unconfirmed POST on the server, so the user refreshes it themselves.
+      if (!unknown) loadPaymentData();
     }
 
     if (errorMessages.length > 0) {
@@ -365,6 +408,7 @@ const Payments = () => {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
       const response = await authFetch(`${API_BASE_URL}/payments.php?id=${transactionId}`, {
         method: 'PUT',
+        quietUnknown: true, // step 4.8: the toast below says it
         headers: {
           'Content-Type': 'application/json'
         },
@@ -387,7 +431,7 @@ const Payments = () => {
       }
     } catch (error) {
       console.error('Error updating payment transaction:', error);
-      showNotification('Network error. Please try again.', 'error');
+      showNotification(writeFailureMessage(error, 'Network error. Please try again.'), 'error');
     }
   };
 
@@ -405,6 +449,7 @@ const Payments = () => {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
       const response = await authFetch(`${API_BASE_URL}/payments.php?id=${paymentId}`, {
         method: 'DELETE',
+        quietUnknown: true, // step 4.8: the toast below says it
         headers: {
           'Content-Type': 'application/json'
         }
@@ -423,7 +468,7 @@ const Payments = () => {
       }
     } catch (error) {
       console.error('Error deleting payment:', error);
-      showNotification('Network error. Please try again.', 'error');
+      showNotification(writeFailureMessage(error, 'Network error. Please try again.'), 'error');
     }
   };
 
@@ -535,6 +580,15 @@ const Payments = () => {
     );
   }
 
+  // Step 4.8: nothing loaded at all - say so, with Retry; never a page of zeros.
+  if (loadError && !shownAt) {
+    return (
+      <div className="p-6">
+        <LoadProblem error={loadError} what="the payment data" onRetry={loadPaymentData} />
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="p-6">
@@ -556,6 +610,22 @@ const Payments = () => {
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 overflow-x-hidden">
+      <LoadProblem error={loadError} what="the payment data" shownAt={shownAt} onRetry={loadPaymentData} />
+
+      {paymentUnknown && (
+        <div
+          role="alert"
+          data-testid="payment-outcome-unknown"
+          className="rounded-tuscan-lg border border-terracotta-300 bg-terracotta-50 px-4 py-3 text-terracotta-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+        >
+          <div className="flex items-start gap-3">
+            <FiAlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <p className="text-sm"><span className="font-medium">Payment not confirmed.</span> {paymentUnknown}</p>
+          </div>
+          <Button onClick={loadPaymentData} icon={FiRefreshCw} className="min-h-[44px]">Refresh the list</Button>
+        </div>
+      )}
+
       {/* Header with Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
@@ -1278,7 +1348,7 @@ const Payments = () => {
                     <div className="mt-4 flex justify-end">
                       <Button
                         onClick={handleRecordPayment}
-                        disabled={recordSubmitting || !batchPlan.canSubmit}
+                        disabled={recordSubmitting || !batchPlan.canSubmit || Boolean(paymentUnknown)}
                         loading={recordSubmitting}
                         icon={FiDollarSign}
                       >
@@ -1480,7 +1550,7 @@ const Payments = () => {
                     {/* Submit */}
                     <Button
                       onClick={handleRecordPayment}
-                      disabled={recordSubmitting || !batchPlan.canSubmit}
+                      disabled={recordSubmitting || !batchPlan.canSubmit || Boolean(paymentUnknown)}
                       loading={recordSubmitting}
                       icon={FiDollarSign}
                       fullWidth

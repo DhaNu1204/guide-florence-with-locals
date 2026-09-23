@@ -123,4 +123,20 @@ describe('importWithRetry', () => {
       removeItem: () => { throw new Error('blocked'); },
     })).not.toThrow();
   });
+
+  // Step 4.8: a chunk request that is accepted and never answered used to leave the page on an
+  // endless spinner. It now times out and goes straight to the one-shot reload (retrying in place
+  // would only wait on the same stalled fetch).
+  it('a chunk that never arrives times out, is not retried in place, and reloads once', async () => {
+    vi.useFakeTimers();
+    const importer = vi.fn(() => new Promise(() => {})); // stalled forever
+    const p = importWithRetry(importer, { ...deps(), chunkTimeoutMs: 20000 });
+    const assertion = expect(p).rejects.toMatchObject({ name: 'TimeoutError' });
+    await vi.advanceTimersByTimeAsync(20000);
+    await assertion;
+    expect(importer).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
 });

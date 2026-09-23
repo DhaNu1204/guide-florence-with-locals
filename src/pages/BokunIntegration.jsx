@@ -8,6 +8,7 @@ import BokunSync from '../components/BokunSync';
 import BokunMonitor from '../components/BokunMonitor';
 import Card from '../components/UI/Card';
 import { format } from 'date-fns';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 const BokunIntegration = () => {
   const { setPageTitle } = usePageTitle();
@@ -29,10 +30,13 @@ const BokunIntegration = () => {
   // Load sync configuration info
   useEffect(() => {
     const loadSyncInfo = async () => {
+      markListStart(); // step 4.8: the page's own data fetch, for the field recorder
       try {
         const info = await getSyncInfo();
         setSyncInfo(info);
+        markListEnd(true);
       } catch (error) {
+        markListEnd(false);
         console.error('Failed to load sync info:', error);
       }
     };

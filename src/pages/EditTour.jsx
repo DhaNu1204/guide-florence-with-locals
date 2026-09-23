@@ -18,6 +18,7 @@ import {
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 // Predefined tour names and durations (same as in Tours.jsx)
 const TOUR_NAMES = [
@@ -141,6 +142,7 @@ const EditTour = () => {
   }, [id, setPageTitle]);
 
   const fetchTourAndGuides = async () => {
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
       setIsLoading(true);
       
@@ -148,7 +150,7 @@ const EditTour = () => {
       const [toursData, guidesData] = await Promise.all([
         getTours(),
         getAllGuides()
-      ]);
+      ]).then((r) => { markListEnd(true); return r; }, (e) => { markListEnd(false); throw e; });
       
       // Debug logging
       console.log('URL ID:', id, 'Type:', typeof id);

@@ -1,5 +1,9 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { markVerifyStart, markVerifyEnd } from '../utils/perfBeacon'; // step 4.7: measurement only
+import {
+  markVerifyStart, markVerifyEnd, markVerifyError, markVerifyRetryStart, markVerifyRetryEnd, markTimeout,
+} from '../utils/perfBeacon'; // step 4.7/4.8: measurement only
+import { fetchWithTimeout, classifyError, VERIFY_TIMEOUT_MS, WRITE_TIMEOUT_MS } from '../services/netPolicy';
+import { notifySessionExpired } from '../services/sessionExpiry';
 
 const AuthContext = createContext(null);
 
@@ -13,70 +17,134 @@ export const AuthProvider = ({ children }) => {
   const [pnlAccess, setPnlAccess] = useState(localStorage.getItem('pnlAccess') === 'true');
   const [loading, setLoading] = useState(true);
 
+  // Step 4.8: the token is cleared ONLY when the server has actually said the session is
+  // invalid - a real 401 from auth.php?action=verify. On 2026-09-23 the owner's phone lost the
+  // connection during this check, the old catch deleted a perfectly valid token, and he was
+  // thrown out (and the field recorder lost its row with it). Now a network error, a timeout,
+  // a 5xx or the edge's 504 keep the token, the app renders as logged in with the role it
+  // already knew, and the check is repeated quietly in the background. The server enforces
+  // auth on every data call anyway: if the token really is dead, the next call gets its 401
+  // and the normal session-expired path runs.
   useEffect(() => {
-    const verifyToken = async () => {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const API_BASE = import.meta.env.VITE_API_URL || '/api';
-        markVerifyStart(); // step 4.7
-        const response = await fetch(`${API_BASE}/auth.php?action=verify`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        markVerifyEnd(response.ok); // step 4.7
-
-        if (response.ok) {
-          const data = await response.json();
-          setIsAuthenticated(true);
-          setUserRole(data.role);
-          setUserName(data.username);
-          setPnlAccess(data.pnl_access === true);
-          localStorage.setItem('userRole', data.role);
-          localStorage.setItem('userName', data.username);
-          localStorage.setItem('pnlAccess', data.pnl_access === true ? 'true' : 'false');
-        } else {
-          localStorage.removeItem('token');
-          localStorage.removeItem('userRole');
-          localStorage.removeItem('userName');
-          localStorage.removeItem('pnlAccess');
-          setToken(null);
-          setUserRole(null);
-          setUserName(null);
-          setPnlAccess(false);
-        }
-      } catch (error) {
-        markVerifyEnd(false); // step 4.7
-        console.error('Token verification failed:', error);
-        localStorage.removeItem('token');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userName');
-        localStorage.removeItem('pnlAccess');
-        setToken(null);
-        setUserRole(null);
-        setUserName(null);
-        setPnlAccess(false);
-      }
+    if (!token) {
       setLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    let retryTimer = null;
+    let backgroundTries = 0;
+
+    const clearSession = () => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('userName');
+      localStorage.removeItem('pnlAccess');
+      setToken(null);
+      setUserRole(null);
+      setUserName(null);
+      setPnlAccess(false);
+      setIsAuthenticated(false);
     };
 
-    verifyToken();
+    const accept = (data) => {
+      setIsAuthenticated(true);
+      setUserRole(data.role);
+      setUserName(data.username);
+      setPnlAccess(data.pnl_access === true);
+      localStorage.setItem('userRole', data.role);
+      localStorage.setItem('userName', data.username);
+      localStorage.setItem('pnlAccess', data.pnl_access === true ? 'true' : 'false');
+    };
+
+    // One check. Returns 'ok' | 'invalid' | 'unknown' (plus the reason, for the recorder).
+    const check = async () => {
+      const API_BASE = import.meta.env.VITE_API_URL || '/api';
+      try {
+        const response = await fetchWithTimeout(`${API_BASE}/auth.php?action=verify`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }, VERIFY_TIMEOUT_MS);
+        if (response.ok) return { result: 'ok', data: await response.json() };
+        if (response.status === 401) return { result: 'invalid' };
+        return { result: 'unknown', reason: `http:${response.status}` };
+      } catch (error) {
+        const { kind } = classifyError(error);
+        if (kind === 'timeout') markTimeout();
+        return { result: 'unknown', reason: kind === 'timeout' ? 'timeout' : 'network' };
+      }
+    };
+
+    // Quiet background re-checks after an unknown answer: 3 s, 15 s, 30 s, then every 60 s,
+    // and at once when the phone says it is back online. The FIRST one is the "automatic
+    // retry" the recorder reports on (its phase opens as soon as it is scheduled, so the row
+    // waits for its outcome); the rest are not recorded.
+    const BACKGROUND_DELAYS_MS = [3000, 15000, 30000];
+    const scheduleBackground = () => {
+      if (backgroundTries === 0) markVerifyRetryStart();
+      retryTimer = setTimeout(runBackground, BACKGROUND_DELAYS_MS[backgroundTries] ?? 60000);
+    };
+    const runBackground = async () => {
+      if (cancelled) return;
+      retryTimer = null;
+      const first = backgroundTries === 0;
+      backgroundTries += 1;
+      const outcome = await check();
+      if (cancelled) return;
+      if (first) markVerifyRetryEnd(outcome.result === 'ok');
+      if (outcome.result === 'ok') {
+        accept(outcome.data);
+      } else if (outcome.result === 'invalid') {
+        clearSession();
+        notifySessionExpired();
+      } else {
+        scheduleBackground();
+      }
+    };
+    const onOnline = () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        runBackground();
+      }
+    };
+
+    (async () => {
+      markVerifyStart(); // step 4.7
+      const outcome = await check();
+      if (cancelled) return;
+      markVerifyEnd(outcome.result === 'ok'); // step 4.7
+      if (outcome.result === 'ok') {
+        accept(outcome.data);
+      } else if (outcome.result === 'invalid') {
+        markVerifyError('http:401');
+        clearSession();
+      } else {
+        // Keep the token. Render as logged in with what this device already knew.
+        markVerifyError(outcome.reason);
+        console.warn('Token check could not reach the server - keeping the session:', outcome.reason);
+        setIsAuthenticated(true);
+        window.addEventListener('online', onOnline);
+        scheduleBackground();
+      }
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      window.removeEventListener('online', onOnline);
+    };
   }, [token]);
 
   const login = async (username, password) => {
     try {
       const API_BASE = import.meta.env.VITE_API_URL || '/api';
-      const response = await fetch(`${API_BASE}/auth.php`, {
+      // Step 4.8: a login that never gets an answer ends with a message, not an endless button.
+      const response = await fetchWithTimeout(`${API_BASE}/auth.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ username, password }),
-      });
+      }, WRITE_TIMEOUT_MS);
 
       const data = await response.json();
 
@@ -96,6 +164,10 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Login failed:', error);
+      const { kind } = classifyError(error);
+      if (kind === 'timeout' || kind === 'network') {
+        return { success: false, message: 'Could not reach the server — check your signal and try again.' };
+      }
       return { success: false, message: 'Login failed. Please try again.' };
     }
   };
@@ -108,10 +180,10 @@ export const AuthProvider = ({ children }) => {
     if (current) {
       try {
         const API_BASE = import.meta.env.VITE_API_URL || '/api';
-        await fetch(`${API_BASE}/auth.php?action=logout`, {
+        await fetchWithTimeout(`${API_BASE}/auth.php?action=logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${current}` },
-        });
+        }, VERIFY_TIMEOUT_MS); // step 4.8: never hang the Log out button
       } catch (error) {
         console.error('Logout call failed (clearing locally anyway):', error);
       }

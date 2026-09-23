@@ -4,6 +4,9 @@ import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import BookingDetailsModal from '../components/BookingDetailsModal';
 import { getTours, updateTour } from '../services/mysqlDB';
+import LoadProblem from '../components/UI/LoadProblem';
+import { writeFailureMessage } from '../services/netPolicy';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 import { filterTicketsOnly } from '../utils/tourFilters';
 import { format } from 'date-fns';
 
@@ -78,6 +81,10 @@ const PriorityTickets = () => {
   const [ticketBookings, setTicketBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Step 4.8: see Tickets.jsx - a failed load is said out loud, never shown as an empty list.
+  const [loadError, setLoadError] = useState(null);
+  const [shownAt, setShownAt] = useState(null);
+  const [loadedAt, setLoadedAt] = useState(null);
   const [filters, setFilters] = useState({
     date: '',
     location: '',
@@ -104,6 +111,7 @@ const PriorityTickets = () => {
   const loadTicketBookings = async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
 
     try {
       const toursResponse = await getTours(forceRefresh, 1, 500, { upcoming: true, product_type: 'ticket' });
@@ -122,9 +130,17 @@ const PriorityTickets = () => {
 
         setTicketBookings(sortedTickets);
       }
+      setLoadError(null);
+      setShownAt(null);
+      setLoadedAt(Date.now());
+      markListEnd(true);
     } catch (err) {
+      markListEnd(false);
       console.error('Error loading ticket bookings:', err);
-      setError('Failed to load ticket bookings. Please try again.');
+      // Keep the bookings already on screen (with their time) - or show nothing at all.
+      setLoadError(err);
+      setShownAt(loadedAt);
+      if (!loadedAt) setTicketBookings([]);
     } finally {
       setLoading(false);
     }
@@ -300,7 +316,7 @@ const PriorityTickets = () => {
       setError(null);
     } catch (err) {
       console.error('Error saving notes:', err);
-      setError('Failed to save notes. Please try again.');
+      setError(writeFailureMessage(err, 'Failed to save notes. Please try again.'));
     } finally {
       setSavingChanges(prev => ({ ...prev, [ticketId]: false }));
     }
@@ -349,8 +365,19 @@ const PriorityTickets = () => {
     );
   }
 
+  // Step 4.8: nothing trustworthy to show - no zero stats, no "No ticket bookings found".
+  if (loadError && !shownAt) {
+    return (
+      <div className="space-y-4 md:space-y-6 overflow-x-hidden">
+        <LoadProblem error={loadError} what="the ticket bookings" onRetry={() => loadTicketBookings(true)} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 md:space-y-6 overflow-x-hidden">
+      <LoadProblem error={loadError} what="the ticket bookings" shownAt={shownAt} onRetry={() => loadTicketBookings(true)} />
+
       {/* Error Alert */}
       {error && (
         <div className="bg-terracotta-50 border border-terracotta-200 text-terracotta-700 px-4 py-3 rounded-tuscan-lg flex items-start">

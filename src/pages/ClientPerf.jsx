@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { FiRefreshCw } from 'react-icons/fi';
 import authFetch from '../services/authFetch';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 /**
  * Step 4.7 — the reading end of the field instrumentation. Admin only.
@@ -72,6 +73,7 @@ const ClientPerf = () => {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
       const qs = new URLSearchParams({ action: 'list' });
       if (day) qs.set('date', day);
@@ -81,7 +83,9 @@ const ClientPerf = () => {
       const json = await res.json();
       setRows(json?.data?.rows || []);
       setSummary(json?.data?.summary || null);
+      markListEnd(true);
     } catch (e) {
+      markListEnd(false);
       setError(e.message || 'Could not load the measurements');
       setRows([]);
       setSummary(null);
@@ -184,6 +188,12 @@ const ClientPerf = () => {
                     )}
                     {r.sw_controlled === 1 && <div>service worker</div>}
                     {r.rate_limited > 0 && <div className="text-red-600">{r.rate_limited}× rate limited</div>}
+                    {/* Step 4.8: how a bad load resolved */}
+                    {r.shell_fallback === 1 && <div className="text-red-600">started from cached page</div>}
+                    {r.verify_error && <div className="text-red-600">login check: {r.verify_error}{r.verify_retry && r.verify_retry !== 'none' ? ` (re-check ${r.verify_retry})` : ''}</div>}
+                    {r.timeouts > 0 && <div className="text-red-600">{r.timeouts}× timed out</div>}
+                    {r.auto_retries > 0 && <div>auto-retry {r.auto_retry_ok}/{r.auto_retries} ok</div>}
+                    {r.user_retries > 0 && <div>Retry pressed {r.user_retries}×</div>}
                     <div className="text-stone-400">sent: {r.reason}</div>
                   </td>
                 </tr>

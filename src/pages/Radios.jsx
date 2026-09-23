@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FiChevronLeft, FiChevronRight, FiCopy, FiDownload, FiCheck, FiRadio } from 'react-icons/fi';
 import { getRadioPlan, markRadioOrderSent } from '../services/mysqlDB';
+import LoadProblem from '../components/UI/LoadProblem';
+import { writeFailureMessage } from '../services/netPolicy';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 // Step 6.3: the afternoon radio order for Vox Firenze.
 // One line per departure, grouped by museum, guests only - the supplier adds the guide's
@@ -25,6 +28,8 @@ export default function Radios() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Step 4.8: the plan could not be loaded - shown with a Retry, and no half-empty order below.
+  const [loadError, setLoadError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState(null);
@@ -34,15 +39,22 @@ export default function Radios() {
     setError(null);
     setCopied(false);
     setSavedNote(null);
+    setLoadError(null);
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
       const res = await getRadioPlan(d);
       setPlan(res.data);
       setMessage(res.data.message);
+      markListEnd(true);
     } catch (e) {
-      setError(e?.response?.status === 403
-        ? 'Admin access required for the radio order.'
-        : 'Failed to load the radio order.');
+      markListEnd(false);
+      if (e?.response?.status === 403) {
+        setError('Admin access required for the radio order.');
+      } else {
+        setLoadError(e);
+      }
       setPlan(null);
+      setMessage('');
     } finally {
       setLoading(false);
     }
@@ -84,7 +96,7 @@ export default function Radios() {
       setSavedNote(res.data);
       setPlan((p) => (p ? { ...p, last_order: res.data } : p));
     } catch (e) {
-      setError(e?.response?.data?.error || 'Could not record that order.');
+      setError(writeFailureMessage(e, e?.response?.data?.error || 'Could not record that order.'));
     } finally {
       setSaving(false);
     }
@@ -126,9 +138,15 @@ export default function Radios() {
         </div>
       )}
 
+      {loadError && (
+        <div className="mb-4">
+          <LoadProblem error={loadError} what="the radio order" onRetry={() => load(date)} />
+        </div>
+      )}
+
       {loading ? (
         <div className="bg-white rounded-xl shadow-tuscan p-10 text-center text-stone-500">Loading…</div>
-      ) : (
+      ) : loadError ? null : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* The message, exactly as it will be sent */}
           <div className="bg-white rounded-xl shadow-tuscan p-4">

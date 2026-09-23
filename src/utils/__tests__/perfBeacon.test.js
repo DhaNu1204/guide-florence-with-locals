@@ -68,8 +68,8 @@ describe('perfBeacon (step 4.7)', () => {
     m.markListStart();                       // and never ends - the bad morning
 
     vi.advanceTimersByTime(5000);
-    expect(beacons.length).toBe(0);          // not yet: we wait the full 30s
-    vi.advanceTimersByTime(25000);
+    expect(beacons.length).toBe(0);          // not yet: we wait the full 45s (step 4.8)
+    vi.advanceTimersByTime(40000);
     expect(beacons.length).toBe(1);
 
     const p = payloadOf();
@@ -83,7 +83,7 @@ describe('perfBeacon (step 4.7)', () => {
     const m = await loadFresh();
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart();                     // the white-screen case from Part 1
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(45000);
 
     const p = payloadOf();
     expect(p.verify_status).toBe('pending');
@@ -118,7 +118,7 @@ describe('perfBeacon (step 4.7)', () => {
     m.markEntry('fwl@0.0.2');
     m.markRateLimited(); m.markRateLimited();
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(45000);
     const p = payloadOf();
     expect(p.rate_limited).toBe(2);
     expect(p).toHaveProperty('effective_type');
@@ -134,7 +134,7 @@ describe('perfBeacon (step 4.7)', () => {
     store['fwl:last-build'] = 'OLDHASH9';
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(45000);
     expect((payloadOf()).first_after_release).toBe(1);
 
     // the next load, same release, same device (the store survives)
@@ -143,7 +143,7 @@ describe('perfBeacon (step 4.7)', () => {
     m = await import('../perfBeacon');
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(45000);
     expect((payloadOf()).first_after_release).toBe(0);
   });
 
@@ -152,7 +152,7 @@ describe('perfBeacon (step 4.7)', () => {
     delete store.token;
     mod.markEntry('fwl@0.0.2');
     mod.markVerifyStart();
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(45000);
     expect(beacons.length).toBe(0);
   });
 
@@ -169,7 +169,7 @@ describe('perfBeacon (step 4.7)', () => {
     navigator.sendBeacon = () => { throw new Error('beacon exploded'); };
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    expect(() => vi.advanceTimersByTime(30000)).not.toThrow();
+    expect(() => vi.advanceTimersByTime(45000)).not.toThrow();
   });
 
   it('cannot break the page: a missing sendBeacon is simply skipped', async () => {
@@ -177,6 +177,76 @@ describe('perfBeacon (step 4.7)', () => {
     navigator.sendBeacon = undefined;
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    expect(() => vi.advanceTimersByTime(30000)).not.toThrow();
+    expect(() => vi.advanceTimersByTime(45000)).not.toThrow();
   });
 });
+
+describe('perfBeacon (step 4.8 repairs)', () => {
+  it('a token wiped mid-load no longer silences the row (the 2026-09-23 morning)', async () => {
+    const m = await loadFresh();
+    m.markEntry('fwl@0.0.2');
+    m.markVerifyStart();
+    delete store.token;                       // the old verify catch deleted it here
+    m.markVerifyEnd(false);
+    m.markVerifyError('network');
+    vi.advanceTimersByTime(1600);
+    expect(beacons.length).toBe(1);
+    const p = payloadOf();
+    expect(p.token).toBe('a'.repeat(64));     // the start-of-load token still identifies the user
+    expect(p.verify_error).toBe('network');
+  });
+
+  it('records how the load resolved: timeouts, automatic retries, Retry presses, the verify re-check', async () => {
+    const m = await loadFresh();
+    m.markEntry('fwl@0.0.2');
+    m.markVerifyStart(); m.markVerifyEnd(false); m.markVerifyError('timeout');
+    m.markVerifyRetryStart();                 // holds the row open until it answers
+    m.markTimeout(); m.markTimeout();
+    m.markAutoRetry(true); m.markAutoRetry(false);
+    m.markUserRetry();
+    m.markListStart(); m.markListEnd(false);
+    vi.advanceTimersByTime(5000);
+    expect(beacons.length).toBe(0);           // the re-check is still running
+    m.markVerifyRetryEnd(true);
+    vi.advanceTimersByTime(1600);
+    const p = payloadOf();
+    expect(p.verify_error).toBe('timeout');
+    expect(p.verify_retry).toBe('ok');
+    expect(p.timeouts).toBe(2);
+    expect(p.auto_retries).toBe(2);
+    expect(p.auto_retry_ok).toBe(1);
+    expect(p.user_retries).toBe(1);
+    expect(p.list_status).toBe('failed');
+  });
+
+  it('reports whether the service worker started the page from its cached shell', async () => {
+    const m = await loadFresh();
+    document.head.innerHTML = '<meta name="fwl-shell" content="cached">';
+    m.markEntry('fwl@0.0.2');
+    m.markVerifyStart(); m.markVerifyEnd(true);
+    vi.advanceTimersByTime(1600);
+    expect(payloadOf().shell_fallback).toBe(1);
+    document.head.innerHTML = '';
+    expect(m.__internals.shellFallback()).toBe(0);
+  });
+
+  it('a load with no token does not use up the post-deploy flag', async () => {
+    let m = await loadFresh();
+    document.head.innerHTML = '<script type="module" src="/assets/index-NEWHASH1.js"></scr' + 'ipt>';
+    store['fwl:last-build'] = 'OLDHASH9';
+    delete store.token;                       // the login page after a deploy
+    m.markEntry('fwl@0.0.2');
+    expect(store['fwl:last-build']).toBe('OLDHASH9');
+
+    vi.resetModules();
+    beacons = [];
+    store.token = 'a'.repeat(64);             // logged in: the first REPORTED load after the deploy
+    m = await import('../perfBeacon');
+    m.markEntry('fwl@0.0.2');
+    m.markVerifyStart(); m.markVerifyEnd(true);
+    vi.advanceTimersByTime(1600);
+    expect(payloadOf().first_after_release).toBe(1);
+    expect(store['fwl:last-build']).toBe('NEWHASH1');
+  });
+});
+
