@@ -700,20 +700,29 @@ export const tourGroupsAPI = {
     return response.data;
   },
 
-  // Step 5.2: EVERY group for the given filters. tour-groups.php pages at 100 max; this walks the
-  // pages until the server says there is no next one and then checks that what arrived covers the
-  // server's total - an incomplete group list would make grouped bookings render as loose rows.
+  // Step 5.2: EVERY group for the given filters, with the total checked - an incomplete group list
+  // would make grouped bookings render as loose rows.
+  // Step 4.9: one request. tour-groups.php now serves up to 500 per page, which covers every
+  // upcoming or past-40-days list on production (102 / 162 groups) in a single round trip instead
+  // of a serial page-by-page walk. A custom date range that is larger still gets its remaining
+  // pages IN PARALLEL, never one after another.
   async listAll(filters = {}) {
-    const PER_PAGE = 100;
-    const MAX_PAGES = 50;
-    const all = [];
-    let total = 0;
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      const res = await this.list({ ...filters, page, per_page: PER_PAGE });
-      const rows = Array.isArray(res?.data) ? res.data : [];
-      all.push(...rows);
-      total = Number(res?.pagination?.total ?? all.length);
-      if (!res?.pagination?.has_next || rows.length === 0) break;
+    const PER_PAGE = 500;
+    const MAX_PAGES = 20;
+    const rowsOf = (res) => (Array.isArray(res?.data) ? res.data : []);
+    const first = await this.list({ ...filters, page: 1, per_page: PER_PAGE });
+    const all = [...rowsOf(first)];
+    const total = Number(first?.pagination?.total ?? all.length);
+    // Pages are counted with the page size the SERVER used, so an API that still caps at 100
+    // (an old deploy) is walked correctly too - in parallel.
+    const servedPerPage = Number(first?.pagination?.per_page) || PER_PAGE;
+    const totalPages = Math.min(MAX_PAGES,
+      Number(first?.pagination?.total_pages) || Math.max(1, Math.ceil(total / servedPerPage)));
+    if (first?.pagination?.has_next && totalPages > 1) {
+      const rest = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, i) => this.list({ ...filters, page: i + 2, per_page: PER_PAGE }))
+      );
+      rest.forEach((res) => all.push(...rowsOf(res)));
     }
     if (all.length < total) {
       throw new Error(`Tour groups incomplete: received ${all.length} of ${total}`);

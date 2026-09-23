@@ -7,15 +7,30 @@ import { notifySessionExpired } from '../services/sessionExpiry';
 
 const AuthContext = createContext(null);
 
+// Step 4.9: a device that already has a token AND the user from its last successful check
+// (role, name, P&L access) renders the app at once and checks the token in parallel, so the
+// page's code and its data requests start during the check instead of after it - one round
+// trip less on every open. The server authorises every data call, so nothing can leak while
+// the check is in flight; a real 401 still logs out. Without a cached role (first login on
+// this device, or an install from before roles were cached) the app waits for the check as
+// before, so an admin-only route can never bounce a real admin to the Dashboard.
+const readStored = (key) => {
+  try { return localStorage.getItem(key); } catch (_) { return null; }
+};
+
 export const AuthProvider = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [userRole, setUserRole] = useState(localStorage.getItem('userRole'));
+  const [token, setToken] = useState(() => readStored('token'));
+  const [userRole, setUserRole] = useState(() => readStored('userRole'));
+  // Rendering before the check is only safe when this device already knows who the user is.
+  const [optimistic] = useState(() => Boolean(readStored('token') && readStored('userRole')));
+  const [isAuthenticated, setIsAuthenticated] = useState(optimistic);
   const [userName, setUserName] = useState(localStorage.getItem('userName'));
   // Step 6.10: may this account see money (Daily P&L)? The server answers it on every
   // verify; the cached value only avoids a flash before that answer arrives.
-  const [pnlAccess, setPnlAccess] = useState(localStorage.getItem('pnlAccess') === 'true');
-  const [loading, setLoading] = useState(true);
+  // Step 4.9: only an explicit 'true' from a previous check shows the P&L item before this
+  // check answers; no cached value means the item waits for the server.
+  const [pnlAccess, setPnlAccess] = useState(() => readStored('pnlAccess') === 'true');
+  const [loading, setLoading] = useState(!optimistic);
 
   // Step 4.8: the token is cleared ONLY when the server has actually said the session is
   // invalid - a real 401 from auth.php?action=verify. On 2026-09-23 the owner's phone lost the
@@ -115,6 +130,9 @@ export const AuthProvider = ({ children }) => {
         accept(outcome.data);
       } else if (outcome.result === 'invalid') {
         markVerifyError('http:401');
+        // Step 4.9: the app may already be on screen (optimistic render) - take the normal
+        // session-expired path: one toast and the redirect to /login.
+        if (optimistic) notifySessionExpired();
         clearSession();
       } else {
         // Keep the token. Render as logged in with what this device already knew.

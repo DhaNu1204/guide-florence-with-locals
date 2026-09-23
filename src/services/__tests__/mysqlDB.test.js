@@ -123,7 +123,9 @@ describe('MySQL Database Service', () => {
       data: { data: Array.from({ length: n }, (_, i) => ({ id: page * 1000 + i })), pagination: { total, current_page: page, per_page: 100, has_next: hasNext } },
     });
 
-    it('walks every page (100 per request) and returns all groups', async () => {
+    // Step 4.9: asks for 500 at once; if the server still answers 100 per page (an old API), the
+    // rest is fetched by page number, in parallel.
+    it('asks for 500 per request; a server that still pages at 100 is walked completely', async () => {
       axios.get
         .mockResolvedValueOnce(pageOf(100, 1, 163, true))
         .mockResolvedValueOnce(pageOf(63, 2, 163, false));
@@ -132,7 +134,7 @@ describe('MySQL Database Service', () => {
 
       expect(res.data).toHaveLength(163);
       expect(axios.get).toHaveBeenCalledTimes(2);
-      expect(axios.get.mock.calls[0][0]).toContain('per_page=100');
+      expect(axios.get.mock.calls[0][0]).toContain('per_page=500');
       expect(axios.get.mock.calls[0][0]).toContain('page=1');
       expect(axios.get.mock.calls[1][0]).toContain('page=2');
       expect(axios.get.mock.calls[1][0]).toContain('upcoming=true');
