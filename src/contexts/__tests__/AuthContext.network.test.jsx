@@ -57,7 +57,8 @@ describe('AuthContext verify (step 4.8)', () => {
     vi.useFakeTimers();
     globalThis.fetch = vi.fn(hanging);
     renderAuth();
-    expect(screen.queryByTestId('state')).toBeNull(); // still checking
+    // Step 4.9: a device that knows its user renders at once and checks in parallel
+    expect(screen.getByTestId('state')).toHaveTextContent('in:admin');
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(screen.getByTestId('state')).toHaveTextContent('in:admin');
     expect(store.token).toBe('valid-token');

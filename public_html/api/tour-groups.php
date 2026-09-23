@@ -146,7 +146,9 @@ function ensureTourGroupsTable($conn) {
  */
 function listGroups($conn) {
     $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-    $perPage = isset($_GET['per_page']) ? max(1, min(100, intval($_GET['per_page']))) : 50;
+    // Step 4.9: up to 500 per page, so the Tours page gets every upcoming group in ONE request
+    // (production: 102 upcoming, 162 in the past 40 days; ~27 KB brotli per 100 groups).
+    $perPage = isset($_GET['per_page']) ? max(1, min(500, intval($_GET['per_page']))) : 50;
     $offset = ($page - 1) * $perPage;
 
     // Optional filters
