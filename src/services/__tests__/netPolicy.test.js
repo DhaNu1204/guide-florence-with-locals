@@ -7,6 +7,7 @@ import {
   timeoutFor, mayAutoRetry, classifyError, isTransient, isOutcomeUnknown, describeLoadError,
   fetchWithTimeout, TimeoutError, writeFailureMessage, WRITE_UNKNOWN_MESSAGE, formatShownAt,
   VERIFY_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS, FILE_TIMEOUT_MS, SYNC_TIMEOUT_MS,
+  FULL_ROWS_TIMEOUT_MS,
 } from '../netPolicy';
 
 afterEach(() => { vi.useRealTimers(); });
@@ -17,6 +18,13 @@ describe('timeoutFor', () => {
     expect(timeoutFor('get', '/api/tickets.php?_=1')).toBe(READ_TIMEOUT_MS);
     expect(timeoutFor('POST', '/api/payments.php')).toBe(WRITE_TIMEOUT_MS);
     expect(timeoutFor('put', '/api/tours.php/5')).toBe(WRITE_TIMEOUT_MS);
+  });
+
+  it('gives the big full-rows tour list (Priority Tickets, 314 KB) 45 s, the light list 15 s', () => {
+    expect(timeoutFor('GET', '/api/tours.php?page=1&per_page=500&upcoming=true&product_type=ticket&_=1')).toBe(FULL_ROWS_TIMEOUT_MS);
+    expect(timeoutFor('GET', '/api/tours.php?page=1&per_page=500&upcoming=true&view=list&_=1')).toBe(READ_TIMEOUT_MS);
+    expect(timeoutFor('GET', '/api/tours.php?action=unassigned-report&upcoming=true')).toBe(READ_TIMEOUT_MS);
+    expect(timeoutFor('PUT', '/api/tours.php/5?action=manual')).toBe(WRITE_TIMEOUT_MS);
   });
 
   it('exempts the long operations: sync 180 s, server PDFs/CSV 90 s', () => {

@@ -13,6 +13,9 @@
  * 124–360 ms and the whole tour list in 0.9–3.2 s; the largest boot payload is the tour list
  * at ~58 KB brotli, which even a poor 2G link (~6 KB/s) delivers in about 10 s. So 15 s kills
  * nothing that is slow-but-working, and the one automatic retry gives a second full window.
+ * One read is far bigger: the full tour rows (tours.php without view=list, with bokun_data) that
+ * Priority Tickets and Edit Tour load - 314 KB brotli on production on 2026-09-23, about 50 s at
+ * 6 KB/s - so it gets 45 s per attempt instead of 15.
  * Writes get 30 s because giving up on a write early only turns "saved" into "unknown".
  * The sync endpoints and server-side files are exempt from the short values: a sync is
  * allowed 180 s (longer than the hosting edge's own ~110 s cut, so the timer never fires
@@ -21,6 +24,7 @@
 
 export const VERIFY_TIMEOUT_MS = 10000;
 export const READ_TIMEOUT_MS = 15000;
+export const FULL_ROWS_TIMEOUT_MS = 45000;
 export const WRITE_TIMEOUT_MS = 30000;
 export const FILE_TIMEOUT_MS = 90000;
 export const SYNC_TIMEOUT_MS = 180000;
@@ -28,6 +32,9 @@ export const SYNC_TIMEOUT_MS = 180000;
 const SYNC_URL = /\/bokun_sync\.php/;
 const FILE_URL = /\/(participants|viator_legacy_export)\.php/;
 const VERIFY_URL = /\/auth\.php\?(?:.*&)?action=verify/;
+// the full tour list: tours.php with a query but no view=list and no action= (the list screens
+// ask for view=list; action=... are small reports)
+const FULL_ROWS_URL = /\/tours\.php\?(?!(?:.*&)?view=list)(?!(?:.*&)?action=)/;
 
 const isRead = (method) => {
   const m = String(method || 'get').toLowerCase();
@@ -40,6 +47,7 @@ export function timeoutFor(method, url) {
   if (SYNC_URL.test(u)) return SYNC_TIMEOUT_MS;
   if (FILE_URL.test(u)) return FILE_TIMEOUT_MS;
   if (VERIFY_URL.test(u)) return VERIFY_TIMEOUT_MS;
+  if (isRead(method) && FULL_ROWS_URL.test(u)) return FULL_ROWS_TIMEOUT_MS;
   return isRead(method) ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS;
 }
 
