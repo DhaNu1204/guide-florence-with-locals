@@ -6,6 +6,9 @@ import { it } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import { usePageTitle } from '../contexts/PageTitleContext';
 import { useAuth } from '../contexts/AuthContext';
+import LoadProblem from '../components/UI/LoadProblem';
+import { writeFailureMessage } from '../services/netPolicy';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 import { 
   FiPlus, 
   FiMapPin, 
@@ -91,6 +94,11 @@ const Tickets = () => {
   const [tickets, setTickets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Step 4.8: a failed load is said out loud. loadError = why; shownAt = when the list still on
+  // screen arrived (null = nothing trustworthy to show); loadedAt = when the current list arrived.
+  const [loadError, setLoadError] = useState(null);
+  const [shownAt, setShownAt] = useState(null);
+  const [loadedAt, setLoadedAt] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState(null);
@@ -132,6 +140,7 @@ const Tickets = () => {
   }, [setPageTitle]);
 
   const fetchTickets = async () => {
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
       setIsLoading(true);
       setError(null);
@@ -139,15 +148,30 @@ const Tickets = () => {
 
       if (Array.isArray(data)) {
         setTickets(data);
+        setLoadError(null);
+        setShownAt(null);
+        setLoadedAt(Date.now());
       } else {
         console.error('Ticket data is not an array:', data);
         setTickets([]);
         setError('Ticket data format is incorrect. Please contact support.');
       }
+      markListEnd(true);
     } catch (err) {
+      markListEnd(false);
       console.error('Error fetching tickets:', err);
-      setError('Failed to load tickets. Please try again later.');
-      setTickets([]);
+      // Step 4.8: never an empty list when the truth is "we don't know". Keep the list already
+      // on screen, else the last copy that arrived, each with its time; else show nothing.
+      setLoadError(err);
+      if (loadedAt) {
+        setShownAt(loadedAt);
+      } else if (err && err.lastGood) {
+        setTickets(err.lastGood.data);
+        setShownAt(err.lastGood.savedAt);
+      } else {
+        setTickets([]);
+        setShownAt(null);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -215,7 +239,7 @@ const Tickets = () => {
       setError(null);
     } catch (err) {
       console.error('Error adding ticket:', err);
-      setError('Failed to add ticket. Please try again.');
+      setError(writeFailureMessage(err, 'Failed to add ticket. Please try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -253,7 +277,7 @@ const Tickets = () => {
       setError(null);
     } catch (err) {
       console.error('Error updating ticket:', err);
-      setError('Failed to update ticket. Please try again.');
+      setError(writeFailureMessage(err, 'Failed to update ticket. Please try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -302,7 +326,7 @@ const Tickets = () => {
       setError(null);
     } catch (error) {
       console.error('Error deleting ticket:', error);
-      setError('Failed to delete ticket. Please try again.');
+      setError(writeFailureMessage(error, 'Failed to delete ticket. Please try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -521,6 +545,8 @@ const Tickets = () => {
           </div>
         </div>
       </Card>
+
+      <LoadProblem error={loadError} what="the tickets" shownAt={shownAt} onRetry={fetchTickets} retrying={isLoading} />
 
       {error && (
         <Card className="border-red-200 bg-red-50">
@@ -883,7 +909,7 @@ const Tickets = () => {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           </div>
-        ) : filteredTickets.length === 0 ? (
+        ) : loadError && !shownAt ? null : filteredTickets.length === 0 ? (
           <div className="text-center py-8 bg-white rounded-lg border border-gray-200">
             <div className="flex justify-center items-center">
               <div className="w-12 h-12 text-purple-600">

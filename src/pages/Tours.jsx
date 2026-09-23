@@ -21,6 +21,8 @@ import { getMaxPax, countActivePax, tourCategory, getPaxBreakdown, formatBreakdo
 import { isGuidePaid } from '../utils/paymentBadges';
 import { buildUnassignedReportText } from '../utils/unassignedReport';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.7: measurement only
+import LoadProblem from '../components/UI/LoadProblem';
+import { writeFailureMessage } from '../services/netPolicy';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -265,6 +267,12 @@ const Tours = () => {
   const [needGuideCount, setNeedGuideCount] = useState(null);
   // Step 5.2: set when the list could not be loaded completely - shown instead of a misleading list.
   const [loadError, setLoadError] = useState(null);
+  // Step 4.8: when the list on screen arrived and for which filters. A refresh that fails for the
+  // SAME filters keeps that list under a "Could not refresh — showing data from 09:12" banner;
+  // for other filters there is nothing trustworthy to show and the list stays empty.
+  const [loadedAt, setLoadedAt] = useState(null);
+  const [loadedFor, setLoadedFor] = useState(null);
+  const [shownAt, setShownAt] = useState(null);
   const [guides, setGuides] = useState([]);
   const [selectedGuideId, setSelectedGuideId] = useState('all');
   // Step 6.1: filter by the language the tour is given in. 'Unknown' = the rows that have none.
@@ -353,6 +361,9 @@ const Tours = () => {
         filters.guide_id ? Promise.resolve(null) : mysqlDB.getUnassignedCount(countFilters).catch(() => null)
       ]);
       setLoadError(null);
+      setShownAt(null);
+      setLoadedAt(Date.now());
+      setLoadedFor(JSON.stringify(filters));
       setNeedGuideCount(unassignedTotal);
 
       // Handle paginated response
@@ -374,12 +385,18 @@ const Tours = () => {
     } catch (err) {
       markListEnd(false); // step 4.7
       console.error('Load error:', err);
-      setError(err.message);
-      // Step 5.2: never show a half-loaded list (e.g. tours without their groups)
-      setTours([]);
-      setTourGroups([]);
-      setNeedGuideCount(null);
-      setLoadError(err.message || 'Could not load the tours');
+      setLoadError(err);
+      if (loadedAt && loadedFor === JSON.stringify(filters)) {
+        // Step 4.8: the complete list already on screen is for these very filters - keep it,
+        // and say when it is from.
+        setShownAt(loadedAt);
+      } else {
+        // Step 5.2: never show a half-loaded list (e.g. tours without their groups)
+        setShownAt(null);
+        setTours([]);
+        setTourGroups([]);
+        setNeedGuideCount(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -695,7 +712,7 @@ const Tours = () => {
     } catch (error) {
       console.error('Error saving notes:', error);
       setSuccess(null);
-      setError('Failed to save notes');
+      setError(writeFailureMessage(error, 'Failed to save notes'));
     } finally {
       setSavingChanges(prev => {
         const newState = { ...prev };
@@ -755,7 +772,7 @@ const Tours = () => {
       } else {
         console.error('Error saving guide assignment:', error);
         setSuccess(null);
-        setError('Failed to save guide assignment');
+        setError(writeFailureMessage(error, 'Failed to save guide assignment'));
       }
     } finally {
       setSavingChanges(prev => {
@@ -1237,24 +1254,21 @@ const Tours = () => {
         </Card>
 
 
-        {/* Step 5.2: the list could not be loaded completely - say so instead of showing a wrong list */}
+        {/* Step 5.2 / 4.8: the list could not be loaded completely - say so instead of showing a wrong list */}
         {loadError && (
-          <Card className="border-terracotta-200 bg-terracotta-50" role="alert" data-testid="tours-load-error">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <p className="font-medium text-terracotta-800">The tours list could not be loaded.</p>
-                <p className="text-sm text-terracotta-700">{loadError}</p>
-              </div>
-              <Button onClick={() => loadData(true, currentPage, getCurrentFilters())} className="min-h-[44px]">
-                Try again
-              </Button>
-            </div>
-          </Card>
+          <div data-testid="tours-load-error">
+            <LoadProblem
+              error={loadError}
+              what="the tours list"
+              shownAt={shownAt}
+              onRetry={() => loadData(true, currentPage, getCurrentFilters())}
+            />
+          </div>
         )}
 
         {/* Tours by Date */}
         <div className="space-y-6">
-          {groupedTours.length === 0 ? (
+          {loadError && !shownAt ? null : groupedTours.length === 0 ? (
             <Card>
               <div className="text-center py-8">
                 <p className="text-stone-500">No tours found for the selected criteria.</p>

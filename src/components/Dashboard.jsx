@@ -18,6 +18,8 @@ import {
 import Card from './UI/Card';
 import Button from './UI/Button';
 import { getTours, getAllGuides, getRecentGuideResponses } from '../services/mysqlDB';
+import LoadProblem from './UI/LoadProblem';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 import { authFetch } from '../services/authFetch';
 import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
 import { isGuidePaid, guidePaymentState } from '../utils/paymentBadges';
@@ -88,6 +90,11 @@ const Dashboard = () => {
       </button>
     ) : null;
   const [loading, setLoading] = useState(true);
+  // Step 4.8: "/" is the page the owner opens most. A failed load used to leave zero counters and
+  // empty lists on screen (plus a toast that disappears); now it says so and offers Retry.
+  const [loadError, setLoadError] = useState(null);
+  const [loadedAt, setLoadedAt] = useState(null);
+  const [shownAt, setShownAt] = useState(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -104,6 +111,7 @@ const Dashboard = () => {
 
   const loadDashboardData = async (forceRefresh = false) => {
     setLoading(true);
+    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
       // Fetch upcoming tours for display lists
       // Step 4.2: light rows (view=list) — the Dashboard reads no bokun_data
@@ -207,9 +215,15 @@ const Dashboard = () => {
         setUpcomingTours(upcoming);
         setNeedsGuideSoon(needsSoon);
       }
+      setLoadError(null);
+      setShownAt(null);
+      setLoadedAt(Date.now());
+      markListEnd(true);
     } catch (error) {
+      markListEnd(false);
       console.error('Error loading dashboard data:', error);
-      toast.error('Failed to load dashboard data. Please try again.');
+      setLoadError(error);
+      setShownAt(loadedAt); // keep what is on screen with its time - or show nothing
     } finally {
       setLoading(false);
     }
@@ -258,8 +272,20 @@ const Dashboard = () => {
     );
   }
 
+  // Step 4.8: nothing trustworthy to show - no zero counters, no empty lists; say so, with Retry.
+  if (loadError && !shownAt) {
+    return (
+      <div className="space-y-4 md:space-y-6">
+        <h1 className="text-xl md:text-3xl font-bold text-stone-900">Dashboard</h1>
+        <LoadProblem error={loadError} what="the dashboard" onRetry={() => loadDashboardData(true)} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 md:space-y-6">
+      <LoadProblem error={loadError} what="the dashboard" shownAt={shownAt} onRetry={() => loadDashboardData(true)} />
+
       {/* Header with Tuscan styling */}
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">

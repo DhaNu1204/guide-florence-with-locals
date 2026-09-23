@@ -1,6 +1,9 @@
 import axios from 'axios';
-import { markRateLimited } from '../utils/perfBeacon'; // step 4.7: measurement only
+import { markRateLimited, markTimeout, markAutoRetry } from '../utils/perfBeacon'; // step 4.7/4.8: measurement only
 import { notifySessionExpired, notifyForbidden } from './sessionExpiry';
+import {
+  timeoutFor, mayAutoRetry, isTransient, isOutcomeUnknown, notifyWriteUnknown, classifyError,
+} from './netPolicy';
 
 // Use environment variable for API base URL
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
@@ -18,6 +21,11 @@ axios.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Step 4.8: nothing waits forever. A caller's own timeout wins; otherwise the policy decides
+    // (15 s read, 30 s write, 90 s server PDF, 180 s sync - see netPolicy.js).
+    if (!config.timeout) {
+      config.timeout = timeoutFor(config.method, config.url);
+    }
     return config;
   },
   (error) => {
@@ -32,6 +40,24 @@ axios.interceptors.request.use(
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
+    const config = error?.config;
+    if (classifyError(error).kind === 'timeout') {
+      try { markTimeout(); } catch (e) { /* never matters */ }
+    }
+    // Step 4.8: a read that timed out, lost the connection or met a 502/503/504 is tried once
+    // more. A write never is - a timed-out POST may already have been done by the server.
+    if (config && !config.fwlRetried && mayAutoRetry(config.method, config.url) && isTransient(error)) {
+      config.fwlRetried = true;
+      return axios(config).then(
+        (response) => { markAutoRetry(true); return response; },
+        (retryError) => { markAutoRetry(false); return Promise.reject(retryError); }
+      );
+    }
+    if (config && !mayAutoRetry(config.method, config.url) && String(config.method).toLowerCase() !== 'get'
+        && isOutcomeUnknown(error)) {
+      error.outcomeUnknown = true;
+      if (!config.quietUnknown) notifyWriteUnknown();
+    }
     // Step 4.7: count 429s for the field beacon. Observation only - nothing is retried,
     // nothing is swallowed, and the rejection below is unchanged.
     if (error?.response?.status === 429) {
@@ -357,22 +383,11 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
 
     return serverResponse;
   } catch (error) {
+    // Step 4.8: no silent fallback. The old code answered a failed request with whatever copy
+    // sat in localStorage - for another date, from another hour - or with [], and the page
+    // showed it as if it were fresh. The caller now learns that the load failed and says so.
     console.error('Error fetching tours from server:', error);
-    
-    // Fallback to cached data if available
-    if (cachedData) {
-      console.log('Using stale cached data as fallback');
-      return cachedData;
-    }
-    
-    // Last resort: try legacy cache key
-    try {
-      const legacyTours = JSON.parse(localStorage.getItem('tours') || '[]');
-      return legacyTours;
-    } catch (localError) {
-      console.error('All cache fallbacks failed:', localError);
-      return [];
-    }
+    throw error;
   }
 };
 
@@ -578,18 +593,11 @@ export const updateTour = async (tourId, tourData) => {
       throw conflictError;
     }
 
+    // Step 4.8: a failed save is a failed save. The old code wrote the change into the local
+    // cache and returned it as if the server had accepted it - a guide "assigned" on a dead
+    // link was never assigned. (A timed-out save is marked `outcomeUnknown` by the interceptor.)
     console.error('Error updating tour:', error);
-
-    // If API call fails, update localStorage as fallback
-    try {
-      updateLocalTourCache(tourId, tourData);
-
-      // Return the updated tour data
-      return { ...tourData, id: tourId };
-    } catch (localError) {
-      console.error('Error updating local cache:', localError);
-      throw error;
-    }
+    throw error;
   }
 };
 

@@ -19,7 +19,10 @@
 
 // Same base as every other call, so a dev build posts to its own API instead of a 404.
 const ENDPOINT = `${import.meta.env.VITE_API_URL || '/api'}/client_perf.php`;
-const HARD_DEADLINE_MS = 30000; // a load that has not finished by now is the case we are hunting
+// Step 4.8: 45 s, not 30. Every request now has a timeout (15 s for a read, one automatic
+// retry), so a stalled load resolves itself by ~30 s; the extra margin lets the row record how
+// it resolved (timeout fired, retry ok or not) instead of an early "pending".
+const HARD_DEADLINE_MS = 45000;
 const SETTLE_GRACE_MS = 1500;   // let a late request register before we call the load complete
 const RELEASE_KEY = 'fwl:last-build';
 
@@ -40,16 +43,24 @@ function buildId(release) {
   return String(release || 'dev');
 }
 
-// 'none' = never started on this load (e.g. a route that shows no list).
+// 'none' = never started on this load. Since step 4.8 every page with a data fetch marks it,
+// so a 'none' in `list` means "this page has no data fetch", never "we were not looking".
 const state = {
   sent: false,
   release: null,
   route: null,
   entryAt: null,
+  entryToken: null,        // step 4.8: captured at start, so a token wiped mid-load cannot silence the row
   verify: { start: null, end: null, status: 'none' },
+  verifyRetry: { start: null, end: null, status: 'none' }, // step 4.8: the automatic re-check
+  verifyError: null,       // step 4.8: 'network' | 'timeout' | 'http:503' ...
   chunk: { start: null, end: null, status: 'none' },
   list: { start: null, end: null, status: 'none' },
   rateLimited: 0,
+  timeouts: 0,             // step 4.8: how many request timers fired
+  autoRetries: 0,          // step 4.8: automatic retries of reads, and how many of them worked
+  autoRetryOk: 0,
+  userRetries: 0,          // step 4.8: presses of a Retry button
   firstAfterRelease: null,
   deadlineTimer: null,
   settleTimer: null,
@@ -111,8 +122,25 @@ function freeze(phase) {
   };
 }
 
+/**
+ * Step 4.8: did the service worker start this page from its cached copy of index.html because
+ * the network did not answer in time? sw.js marks that copy with a <meta name="fwl-shell">.
+ */
+function shellFallback() {
+  try {
+    return document.querySelector('meta[name="fwl-shell"]') ? 1 : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function currentToken() {
+  try { return localStorage.getItem('token'); } catch (e) { return null; }
+}
+
 function buildPayload(reason) {
   const v = freeze(state.verify);
+  const vr = freeze(state.verifyRetry);
   const c = freeze(state.chunk);
   const l = freeze(state.list);
   return {
@@ -125,12 +153,22 @@ function buildPayload(reason) {
     chunk_start: c.start, chunk_end: c.end, chunk_status: c.status,
     list_start: l.start, list_end: l.end, list_status: l.status,
     rate_limited: state.rateLimited,
+    verify_error: state.verifyError,
+    verify_retry: vr.status,
+    timeouts: state.timeouts,
+    auto_retries: state.autoRetries,
+    auto_retry_ok: state.autoRetryOk,
+    user_retries: state.userRetries,
+    shell_fallback: shellFallback(),
     online: navigator.onLine === false ? 0 : 1,
     sw_controlled: (navigator.serviceWorker && navigator.serviceWorker.controller) ? 1 : 0,
     first_after_release: state.firstAfterRelease ? 1 : 0,
     device: deviceLabel(),
     ...connectionFacts(),
-    token: localStorage.getItem('token') || null,
+    // Step 4.8: the token as it is now, or as it was when the page started. The bad morning of
+    // 2026-09-23 wiped the token on a network error and so deleted its own row; the session
+    // itself was still valid, so the start-of-load token still identifies the user.
+    token: currentToken() || state.entryToken || null,
   };
 }
 
@@ -163,7 +201,7 @@ function send(reason) {
 
 /** All started phases finished? (A phase that never started does not hold the load open.) */
 function allSettled() {
-  return [state.verify, state.chunk, state.list].every((p) => p.status !== 'started');
+  return [state.verify, state.verifyRetry, state.chunk, state.list].every((p) => p.status !== 'started');
 }
 
 function scheduleSettleCheck() {
@@ -189,13 +227,17 @@ export const markEntry = safe((release) => {
   state.release = String(release || '').slice(0, 32);
   state.route = routeName(location.pathname);
   state.entryAt = now();
+  state.entryToken = currentToken();
 
   // "Is this the first load since we deployed?" - the slowest load of all, per Part 1.
+  // Step 4.8: only a load that can report itself (a token is present) marks the build as
+  // seen. On 2026-09-22 a logged-out login-page load used the flag up and the phone's first
+  // reported load after the deploy came through as "not after a deploy".
   try {
     const id = buildId(state.release);
     const last = localStorage.getItem(RELEASE_KEY);
     state.firstAfterRelease = last !== null && last !== id;
-    localStorage.setItem(RELEASE_KEY, id);
+    if (state.entryToken) localStorage.setItem(RELEASE_KEY, id);
   } catch (e) {
     state.firstAfterRelease = false; // storage blocked: simply unknown, never a failure
   }
@@ -216,6 +258,20 @@ export const markListStart = safe(() => startPhase(state.list));
 export const markListEnd = safe((ok) => endPhase(state.list, ok));
 export const markRateLimited = safe(() => { state.rateLimited += 1; });
 
+// Step 4.8 ------------------------------------------------------------------------------------
+/** Why the auth check failed: 'network', 'timeout' or 'http:<status>'. The first reason wins. */
+export const markVerifyError = safe((reason) => {
+  if (!state.verifyError) state.verifyError = String(reason || '').slice(0, 16) || null;
+});
+export const markVerifyRetryStart = safe(() => startPhase(state.verifyRetry));
+export const markVerifyRetryEnd = safe((ok) => endPhase(state.verifyRetry, ok));
+export const markTimeout = safe(() => { state.timeouts += 1; });
+export const markAutoRetry = safe((ok) => {
+  state.autoRetries += 1;
+  if (ok) state.autoRetryOk += 1;
+});
+export const markUserRetry = safe(() => { state.userRetries += 1; });
+
 // Testing seams only - not used by the app.
 export const __state = state;
-export const __internals = { routeName, deviceLabel, freeze, buildPayload, allSettled, buildId };
+export const __internals = { routeName, deviceLabel, freeze, buildPayload, allSettled, buildId, shellFallback };

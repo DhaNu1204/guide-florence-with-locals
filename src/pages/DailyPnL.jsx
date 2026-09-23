@@ -7,6 +7,7 @@ import {
   getPnlDay, getPnlRange, getPnlSettings, savePnlSettings, savePnlCosts,
   mergePnlUnits, unmergePnlUnits // step 6.2
 } from '../services/mysqlDB';
+import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 const eur = (v) =>
   '€' + Number(v || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -485,11 +486,14 @@ export default function DailyPnL() {
   const loadDay = useCallback(async (d) => {
     setLoading(true);
     setError(null);
+    markListStart(); // step 4.8: the page's own data fetch (first load only), for the field recorder
     try {
       const res = await getPnlDay(d);
       setDayData(res.data);
       if (res.data?.settings) setSettings(res.data.settings);
+      markListEnd(true);
     } catch (e) {
+      markListEnd(false);
       setError(e?.response?.status === 403
         ? 'Admin access required for the P&L page.'
         : 'Failed to load P&L data.');
@@ -501,11 +505,14 @@ export default function DailyPnL() {
   const loadRange = useCallback(async (start, end) => {
     setLoading(true);
     setError(null);
+    markListStart(); // step 4.8: the page's own data fetch (first load only), for the field recorder
     try {
       const res = await getPnlRange(start, end);
       setMonthData(res.data);
       if (res.data?.settings) setSettings(res.data.settings);
+      markListEnd(true);
     } catch (e) {
+      markListEnd(false);
       setError(e?.response?.status === 403
         ? 'Admin access required for the P&L page.'
         : 'Failed to load P&L data.');

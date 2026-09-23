@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './components/Toast/ToastProvider';
 import { SESSION_EXPIRED_EVENT, FORBIDDEN_EVENT, resetSessionExpiryGuard } from './services/sessionExpiry';
+import { WRITE_UNKNOWN_EVENT, WRITE_UNKNOWN_MESSAGE } from './services/netPolicy';
 import ModernLayout from './components/Layout/ModernLayout';
 import AdminRoute from './components/AdminRoute';
 import OwnerRoute from './components/OwnerRoute'; // step 6.10: /daily-pnl is the owner's alone
@@ -69,6 +70,27 @@ function ForbiddenListener() {
     const handler = () => toast.error("You don't have permission for that");
     window.addEventListener(FORBIDDEN_EVENT, handler);
     return () => window.removeEventListener(FORBIDDEN_EVENT, handler);
+  }, [toast]);
+
+  return null;
+}
+
+// Step 4.8: a write whose answer was lost (timeout, dropped link, 502/503/504). It may already be
+// saved on the server, so the user is told exactly that - once, even if several writes failed
+// together - and never "please try again", which could do it twice.
+function WriteUnknownListener() {
+  const toast = useToast();
+
+  useEffect(() => {
+    let last = 0;
+    const handler = () => {
+      const now = Date.now();
+      if (now - last < 3000) return;
+      last = now;
+      toast.error(WRITE_UNKNOWN_MESSAGE);
+    };
+    window.addEventListener(WRITE_UNKNOWN_EVENT, handler);
+    return () => window.removeEventListener(WRITE_UNKNOWN_EVENT, handler);
   }, [toast]);
 
   return null;
@@ -271,6 +293,7 @@ function App() {
         <ToastProvider>
           <SessionExpiryListener />
           <ForbiddenListener />
+          <WriteUnknownListener />
           <AuthProvider>
             <PageTitleProvider>
               <BokunAutoSyncProvider>

@@ -120,16 +120,26 @@ export const getTickets = async (forceRefresh = false) => {
     
     return serverTickets;
   } catch (error) {
+    // Step 4.8: never answer "we don't know" with an empty list. The failure goes to the page,
+    // carrying the last copy that DID arrive and when it arrived, so the page can show it under
+    // a "Could not refresh — showing data from 09:12" banner (useful at a meeting point) or
+    // say plainly that nothing could be loaded.
     console.error('Error fetching tickets from server:', error);
-    
-    // Fallback to cached data if available
-    if (cachedData) {
-      console.log('Using stale cached data as fallback');
-      return cachedData;
-    }
-    
-    // Last resort: return empty array
-    return [];
+    error.lastGood = readLastGoodTickets();
+    throw error;
+  }
+};
+
+/** The last ticket list that arrived from the server, whatever its age: { data, savedAt } or null. */
+export const readLastGoodTickets = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!parsed || !Array.isArray(parsed.data) || !parsed.timestamp) return null;
+    return { data: parsed.data, savedAt: parsed.timestamp };
+  } catch (e) {
+    return null;
   }
 };
 
@@ -173,23 +183,10 @@ export const addTicket = async (ticketData) => {
     // Return the newly created ticket from the API response
     return savedTicket || newTicket;
   } catch (error) {
+    // Step 4.8: the old code stored the ticket in localStorage and reported success, so a
+    // ticket "added" on a dead link existed only on this phone. The page now hears the failure.
     console.error('Error adding ticket:', error);
-    
-    // Fallback to localStorage if API request fails
-    try {
-      // Add to fallback data
-      const currentFallback = getFallbackData();
-      const updatedFallback = [...currentFallback, newTicket];
-      setFallbackData(updatedFallback);
-      
-      // Clear cache to ensure consistency
-      clearCache();
-      
-      return newTicket;
-    } catch (localError) {
-      console.error('Error saving to localStorage:', localError);
-      throw error; // Rethrow the original error
-    }
+    throw error;
   }
 };
 
@@ -221,18 +218,9 @@ export const deleteTicket = async (ticketId) => {
       throw new Error('Failed to delete ticket on server');
     }
   } catch (error) {
+    // Step 4.8: a failed delete is reported, not faked in localStorage.
     console.error('Error deleting ticket from API:', error);
-    console.log('Deleting from localStorage fallback');
-    
-    // Delete from fallback data
-    const currentFallback = getFallbackData();
-    const updatedFallback = currentFallback.filter(ticket => ticket.id !== ticketId);
-    setFallbackData(updatedFallback);
-    
-    // Clear cache to ensure consistency
-    clearCache();
-    
-    return true;
+    throw error;
   }
 };
 
@@ -283,26 +271,8 @@ export const updateTicket = async (ticketId, ticketData) => {
       throw new Error('Failed to update ticket on server');
     }
   } catch (error) {
+    // Step 4.8: a failed update is reported, not faked in localStorage.
     console.error('Error updating ticket in API:', error);
-    console.log('Updating in localStorage fallback');
-    
-    // Create updated ticket object
-    const updatedTicket = {
-      ...ticketData,
-      id: ticketId,
-      updated_at: new Date().toISOString()
-    };
-    
-    // Update fallback data
-    const currentFallback = getFallbackData();
-    const updatedFallback = currentFallback.map(ticket => 
-      ticket.id === ticketId ? updatedTicket : ticket
-    );
-    setFallbackData(updatedFallback);
-    
-    // Clear cache to ensure consistency
-    clearCache();
-    
-    return updatedTicket;
+    throw error;
   }
 }; 

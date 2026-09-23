@@ -57,6 +57,31 @@ function clientPerfEnsureTable($conn) {
     ");
 }
 
+/**
+ * Step 4.8: the columns that say how a bad load resolved (see
+ * database/migrations/20260923_client_perf_step48.sql). Added in place on the first write after
+ * the deploy; one cheap information_schema lookup per beacon (~100 a day) after that.
+ */
+function clientPerfEnsureColumns($conn) {
+    $stmt = $conn->prepare(
+        "SELECT COUNT(*) n FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'client_perf' AND COLUMN_NAME = 'shell_fallback'");
+    $stmt->execute();
+    $has = (int) ($stmt->get_result()->fetch_assoc()['n'] ?? 0) > 0;
+    $stmt->close();
+    if ($has) { return; }
+    $conn->query("
+        ALTER TABLE `client_perf`
+          ADD COLUMN `verify_error`   VARCHAR(16) NULL DEFAULT NULL AFTER `verify_status`,
+          ADD COLUMN `verify_retry`   VARCHAR(8)  NOT NULL DEFAULT 'none' AFTER `verify_error`,
+          ADD COLUMN `timeouts`       SMALLINT(6) NOT NULL DEFAULT 0 AFTER `rate_limited`,
+          ADD COLUMN `auto_retries`   SMALLINT(6) NOT NULL DEFAULT 0 AFTER `timeouts`,
+          ADD COLUMN `auto_retry_ok`  SMALLINT(6) NOT NULL DEFAULT 0 AFTER `auto_retries`,
+          ADD COLUMN `user_retries`   SMALLINT(6) NOT NULL DEFAULT 0 AFTER `auto_retry_ok`,
+          ADD COLUMN `shell_fallback` TINYINT(1)  NOT NULL DEFAULT 0 AFTER `sw_controlled`
+    ");
+}
+
 /** Retention: 60 days, applied on roughly one insert in fifty so it costs nothing per request. */
 function clientPerfPrune($conn) {
     if (random_int(1, 50) !== 1) { return; }
@@ -106,6 +131,7 @@ if ($method === 'POST') {
     }
 
     clientPerfEnsureTable($conn);
+    clientPerfEnsureColumns($conn);
 
     $userId  = (int) $user['id'];
     $release = perfStr($in['release'] ?? null, 32);
@@ -128,6 +154,14 @@ if ($method === 'POST') {
     $dl  = (isset($in['conn_downlink']) && is_numeric($in['conn_downlink']))
         ? round((float) $in['conn_downlink'], 2) : null;
     $dev = perfStr($in['device'] ?? null, 40);
+    // Step 4.8: how the load resolved. Short fixed codes and counters only.
+    $verr = perfStr($in['verify_error'] ?? null, 16);
+    $vrt  = perfStatus($in['verify_retry'] ?? 'none');
+    $tmo  = max(0, min(999, (int) ($in['timeouts'] ?? 0)));
+    $arr  = max(0, min(999, (int) ($in['auto_retries'] ?? 0)));
+    $aok  = max(0, min($arr, (int) ($in['auto_retry_ok'] ?? 0)));
+    $urt  = max(0, min(999, (int) ($in['user_retries'] ?? 0)));
+    $shell = !empty($in['shell_fallback']) ? 1 : 0;
 
     $stmt = $conn->prepare(
         "INSERT INTO client_perf
@@ -136,16 +170,18 @@ if ($method === 'POST') {
              chunk_start, chunk_end, chunk_status,
              list_start, list_end, list_status,
              rate_limited, online, sw_controlled, first_after_release,
-             effective_type, conn_rtt, conn_downlink, device)
-         VALUES (?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?)");
+             effective_type, conn_rtt, conn_downlink, device,
+             verify_error, verify_retry, timeouts, auto_retries, auto_retry_ok, user_retries, shell_fallback)
+         VALUES (?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?)");
     $stmt->bind_param(
-        'isssiiisiisiisiiiisids',
+        'isssiiisiisiisiiiisidsssiiiii',
         $userId, $release, $route, $reason, $entryAt,
         $vs, $ve, $vst,
         $cs, $ce, $cst,
         $ls, $le, $lst,
         $rl, $online, $sw, $far,
-        $eff, $rtt, $dl, $dev
+        $eff, $rtt, $dl, $dev,
+        $verr, $vrt, $tmo, $arr, $aok, $urt, $shell
     );
     $stmt->execute();
     $stmt->close();
@@ -161,6 +197,7 @@ if ($method === 'POST') {
 // ---------------------------------------------------------------------------------------
 Middleware::requireRole($conn, 'admin');
 clientPerfEnsureTable($conn);
+clientPerfEnsureColumns($conn);
 
 $action = $_GET['action'] ?? 'list';
 if ($action !== 'list') {
@@ -203,7 +240,8 @@ $rows = [];
 while ($r = $res->fetch_assoc()) {
     foreach (['id', 'user_id', 'entry_at', 'verify_start', 'verify_end', 'chunk_start',
               'chunk_end', 'list_start', 'list_end', 'rate_limited', 'online',
-              'sw_controlled', 'first_after_release', 'conn_rtt'] as $k) {
+              'sw_controlled', 'first_after_release', 'conn_rtt',
+              'timeouts', 'auto_retries', 'auto_retry_ok', 'user_retries', 'shell_fallback'] as $k) {
         $r[$k] = $r[$k] === null ? null : (int) $r[$k];
     }
     $r['conn_downlink'] = $r['conn_downlink'] === null ? null : (float) $r['conn_downlink'];

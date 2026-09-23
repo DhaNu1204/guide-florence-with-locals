@@ -93,7 +93,7 @@ describe('Tours page banner + group loading (step 5.2)', () => {
   it('a failed group request is an error state - no ungrouped rows are rendered', async () => {
     tourGroupsAPI.listAll.mockRejectedValue(new Error('Tour groups incomplete: received 100 of 163'));
     renderPage();
-    expect(await screen.findByTestId('tours-load-error')).toHaveTextContent('The tours list could not be loaded.');
+    expect(await screen.findByTestId('tours-load-error')).toHaveTextContent('Could not load the tours list.');
     expect(screen.getByTestId('tours-load-error')).toHaveTextContent('received 100 of 163');
     expect(screen.queryByText('Uffizi Gallery Guided Tour')).not.toBeInTheDocument();
     expect(screen.queryByTestId('need-guide-banner')).not.toBeInTheDocument();
