@@ -474,7 +474,7 @@ const PriorityTickets = () => {
                 role="tab"
                 aria-selected={museumTab === tab.key}
                 onClick={() => setMuseumTab(tab.key)}
-                className={`flex-1 sm:flex-none px-4 min-h-[44px] text-sm font-medium rounded-tuscan transition-colors touch-manipulation ${
+                className={`flex-1 sm:flex-none px-2 sm:px-4 min-h-[44px] text-sm font-medium whitespace-nowrap rounded-tuscan transition-colors touch-manipulation ${
                   museumTab === tab.key
                     ? 'bg-white text-terracotta-700 shadow-sm'
                     : 'text-stone-600 hover:text-stone-900'
