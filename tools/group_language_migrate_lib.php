@@ -42,7 +42,7 @@ function groupLanguageMigrate($conn, $apply, $onlyDate = null) {
     }
     $stmt->close();
 
-    $stats = ['groups' => count($groups), 'rewritten' => 0, 'already' => 0, 'no_language' => 0, 'split' => 0, 'held' => 0,
+    $stats = ['groups' => count($groups), 'rewritten' => 0, 'already' => 0, 'no_language' => 0, 'split' => 0, 'dissolved' => 0, 'held' => 0,
               'new_groups' => 0, 'tours_moved' => 0, 'tours_detached' => 0, 'guides_cleared' => 0, 'pnl_rows' => 0];
     $report = [];
 
@@ -138,7 +138,44 @@ function groupLanguageMigrate($conn, $apply, $onlyDate = null) {
             // The larger PAX keeps the id - unless it is a single booking (not a group); then the
             // next language that still forms a group keeps it.
             foreach ($order as $l) { if (count($byLang[$l]) >= 2) { $keeper = $l; break; } }
-            if ($keeper === null) { $hold = 'no language has 2 bookings (would dissolve the group)'; }
+            if ($keeper === null) {
+                // No language forms a group (e.g. 1 Spanish + 1 English): under the rule these are
+                // separate bookings. No guide and no payment hang off the group, so it is dissolved -
+                // unless a P&L override or costing link still points at it.
+                $refs = 0;
+                foreach (['pnl_tour_costs', 'pnl_unit_links'] as $table) {
+                    $chk = $conn->query("SHOW TABLES LIKE '$table'");
+                    if (!$chk || $chk->num_rows === 0) { continue; }
+                    $unit = 'g' . $gid;
+                    $q = $conn->prepare("SELECT COUNT(*) n FROM $table WHERE tour_unit = ?");
+                    $q->bind_param('s', $unit);
+                    $q->execute();
+                    $refs += (int) $q->get_result()->fetch_assoc()['n'];
+                    $q->close();
+                }
+                if ($refs > 0) {
+                    $hold = "no language has 2 bookings and $refs P&L row(s) point at the group";
+                } else {
+                    if ($apply) {
+                        $conn->begin_transaction();
+                        $d = $conn->prepare("UPDATE tours SET group_id = NULL WHERE group_id = ?");
+                        $d->bind_param('i', $gid);
+                        $d->execute();
+                        $stats['tours_detached'] += max(0, $d->affected_rows);
+                        $d->close();
+                        $x = $conn->prepare("DELETE FROM tour_groups WHERE id = ?");
+                        $x->bind_param('i', $gid);
+                        $x->execute();
+                        $x->close();
+                        $conn->commit();
+                    } else {
+                        $stats['tours_detached'] += count($g['members']);
+                    }
+                    $stats['dissolved']++;
+                    $report[] = "DISSOLVED: no language has 2 bookings, every booking now on its own\t$label";
+                    continue;
+                }
+            }
         }
         if ($hold === null && count($byLang[$keeper]) < 2) {
             $hold = "the guide's language ($keeper) is a single booking - splitting would dissolve the group";

@@ -312,6 +312,17 @@ check('6.12 a new English booking joins the English group and inherits its guide
 check('... a member carrying a different guide is not overwritten', $guideOf($p2) === $otherGuide);
 check('... the Italian group did not pick up the English guide', $guideOf($p3) === null && $gItNew && groupRow($conn, $gItNew)['guide_id'] === null);
 
+// --- 19. 1 Spanish + 1 English, no guide, no payment: no language forms a group -> dissolved --
+$q1 = addTour($conn, 'q1', 4, '16:15:00', $D3, 'Uffizi Gallery Test Tour', 'Spanish');
+$q2 = addTour($conn, 'q2', 2, '16:15:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$gQ = $legacyAutoGroup('16:15:00', [$q1, $q2]);
+$m19 = $migrate3();
+check('6.12 a 1+1 mixed group without guide or payment is dissolved', !groupExists($conn, $gQ) && groupOf($conn, $q1) === null && groupOf($conn, $q2) === null
+    && $m19[0]['dissolved'] === 1, implode(' | ', $m19[1]));
+$r19 = $regroup3();
+check('... and the sync leaves both bookings on their own', groupOf($conn, $q1) === null && groupOf($conn, $q2) === null && (int) $r19['rows_written'] === 0,
+    'rows_written=' . $r19['rows_written']);
+
 } catch (Throwable $e) {
     $failures++;
     echo "FAIL  exception: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";
