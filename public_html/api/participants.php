@@ -84,7 +84,7 @@ if ($unit === null) {
 // ---------------------------------------------------------------------------------------
 if ($unit['type'] === 'g') {
     $sql = "SELECT t.*, g.name AS guide_name, g.phone AS guide_phone,
-                   tg.display_name AS group_display_name, tg.group_time
+                   tg.display_name AS group_display_name, tg.group_time, tg.notes AS group_notes
               FROM tours t
               LEFT JOIN guides g ON g.id = COALESCE((SELECT tg2.guide_id FROM tour_groups tg2 WHERE tg2.id = t.group_id), t.guide_id)
               LEFT JOIN tour_groups tg ON tg.id = t.group_id
@@ -92,7 +92,7 @@ if ($unit['type'] === 'g') {
              ORDER BY t.id";
 } else {
     $sql = "SELECT t.*, g.name AS guide_name, g.phone AS guide_phone,
-                   NULL AS group_display_name, NULL AS group_time
+                   NULL AS group_display_name, NULL AS group_time, NULL AS group_notes
               FROM tours t
               LEFT JOIN guides g ON g.id = t.guide_id
              WHERE t.id = ?";
@@ -157,6 +157,8 @@ $data = [
     'date' => $departureDate, 'time' => $departureTime,
     'product' => $product, 'museum' => $museum, 'language' => $language,
     'guide_name' => $guideName, 'guide_phone' => $guidePhone,
+    // Step 6.13: the group's own note (internal; printed only here). '' = no Note block.
+    'group_note' => trim(str_replace(["\r\n", "\r"], "\n", (string) ($first['group_notes'] ?? ''))),
     'title_line' => participantsTitleLine($product, $totalPax, $departureTime, $language, $departureDate),
     'bookings' => $rows,
     'total_pax' => $totalPax, 'total_adults' => $totalAd,

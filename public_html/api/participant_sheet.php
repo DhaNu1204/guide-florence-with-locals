@@ -60,6 +60,15 @@ class ParticipantSheet extends FPDF
         $this->Cell(34, 5, 'Total participants:', 0, 0);
         $this->SetFont('Helvetica', '', 9);
         $this->Cell(0, 5, (string) $d['total_pax'], 0, 1);
+        // Step 6.13: the group note, first page only, above the booking table. Wraps, never
+        // truncates; no note = no block at all.
+        if ($this->PageNo() === 1 && isset($d['group_note']) && $d['group_note'] !== '') {
+            $this->Ln(1);
+            $this->SetFont('Helvetica', 'B', 9);
+            $this->Cell(16, 5, 'Note:', 0, 0);
+            $this->SetFont('Helvetica', '', 9);
+            $this->MultiCell(0, 5, participantsText($d['group_note'], '(note written in another script - see the app)'), 0, 'L');
+        }
         $this->Ln(2);
         $this->tableHead();
     }

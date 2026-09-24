@@ -4,6 +4,7 @@ import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
+import GroupNote from './GroupNote';
 
 // Small per-booking category badge; Combo gets the gold treatment so a
 // higher-pay booking hiding inside a group is easy to spot.
@@ -244,6 +245,11 @@ const TourGroupCardMobile = ({
             )}
           </div>
         </div>
+
+        {/* Step 6.13: the group note, full width under the PAX/guide line */}
+        {!selectionMode && (
+          <GroupNote groupId={group.id} note={group.notes} variant="card" />
+        )}
 
         {/* Row 4: Expand indicator */}
         {!selectionMode && (

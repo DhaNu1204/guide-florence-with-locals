@@ -158,6 +158,8 @@ function groupLanguageMigrate($conn, $apply, $onlyDate = null) {
                 } else {
                     if ($apply) {
                         $conn->begin_transaction();
+                        // step 6.13: the group note goes onto each booking's own note
+                        copyGroupNoteToTours($conn, groupNoteOf($conn, $gid), array_map(function ($m) { return (int) $m['tour_id']; }, $g['members']));
                         $d = $conn->prepare("UPDATE tours SET group_id = NULL WHERE group_id = ?");
                         $d->bind_param('i', $gid);
                         $d->execute();
@@ -206,9 +208,10 @@ function groupLanguageMigrate($conn, $apply, $onlyDate = null) {
                         $title = groupLanguageTitleOf($ms);
                         $pax = $paxOf($ms);
                         $maxPax = (int) $row['max_pax'];
-                        $ins = $conn->prepare("INSERT INTO tour_groups (group_date, group_time, display_name, total_pax, is_manual_merge, max_pax, bucket_key)
-                                               VALUES (?, ?, ?, ?, 0, ?, ?)");
-                        $ins->bind_param('sssiis', $row['group_date'], $row['group_time'], $title, $pax, $maxPax, $key);
+                        $note = groupNoteOf($conn, $gid); // step 6.13: the new group gets a copy of the note
+                        $ins = $conn->prepare("INSERT INTO tour_groups (group_date, group_time, display_name, total_pax, is_manual_merge, max_pax, bucket_key, notes)
+                                               VALUES (?, ?, ?, ?, 0, ?, ?, ?)");
+                        $ins->bind_param('sssiiss', $row['group_date'], $row['group_time'], $title, $pax, $maxPax, $key, $note);
                         $ins->execute();
                         $newId = (int) $conn->insert_id;
                         $ins->close();
@@ -234,7 +237,8 @@ function groupLanguageMigrate($conn, $apply, $onlyDate = null) {
             if ($loose) {
                 if ($apply) {
                     $ph = implode(',', array_fill(0, count($loose), '?'));
-                    $d = $conn->prepare("UPDATE tours SET group_id = NULL WHERE id IN ($ph)");
+                    copyGroupNoteToTours($conn, groupNoteOf($conn, $gid), $loose); // step 6.13
+                $d = $conn->prepare("UPDATE tours SET group_id = NULL WHERE id IN ($ph)");
                     $d->bind_param(str_repeat('i', count($loose)), ...$loose);
                     $d->execute();
                     $d->close();

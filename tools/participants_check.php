@@ -233,5 +233,37 @@ if (getenv('FWL_WRITE_SAMPLES')) {
     file_put_contents(getenv('FWL_WRITE_SAMPLES') . '/day-many.pdf', $pm);
 }
 
+// --- step 6.13: the group note on the per-departure sheet -----------------------------------
+// FPDF compresses page streams; read the text back out of them.
+$pdfText = function ($pdf) {
+    $out = '';
+    if (preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $m)) {
+        foreach ($m[1] as $raw) { $u = @gzuncompress($raw); $out .= ($u !== false ? $u : $raw) . "\n"; }
+    }
+    return $out;
+};
+$plain = $pdfText(participantsRenderPdf(sheetFixture()));
+check('6.13 the text reader works (the product line is found)', strpos($plain, 'Participants List') !== false);
+check('6.13 no group note -> no Note block', strpos($plain, '(Note:)') === false);
+$plainEmpty = $pdfText(participantsRenderPdf(sheetFixture(['group_note' => ''])));
+check('6.13 an empty group note -> no Note block', strpos($plainEmpty, '(Note:)') === false);
+$noted = $pdfText(participantsRenderPdf(sheetFixture(['group_note' => "Meet at Loggia dei Lanzi 9:15\nOne guest uses a wheelchair - Café Rivoire après"])));
+check('6.13 the Note block prints when the group has a note', strpos($noted, '(Note:)') !== false);
+check('6.13 ... both lines of the note are there',
+    strpos($noted, 'Meet at Loggia dei Lanzi 9:15') !== false && strpos($noted, 'One guest uses a wheelchair') !== false);
+check('6.13 ... accents render as CP1252 (Café, après), not lost', strpos($noted, "Caf\xe9 Rivoire apr\xe8s") !== false);
+$firstHead = strpos($noted, '(Booking ref.)');
+check('6.13 ... above the booking table', $firstHead !== false && strpos($noted, '(Note:)') < $firstHead);
+$longNote = trim(str_repeat('Please collect the audio headsets from the desk before entering the museum. ', 12));
+$longPlain = $pdfText(participantsRenderPdf(sheetFixture(['group_note' => $longNote])));
+check('6.13 a long note wraps and is never truncated',
+    substr_count($longPlain, 'Please collect') === 12 && strpos($longPlain, 'before entering the museum.') !== false,
+    substr_count($longPlain, 'Please collect') . ' of 12 sentences found');
+$twoPages = sheetFixture(['group_note' => 'Only on page one']);
+for ($k = 0; $k < 40; $k++) { $twoPages['bookings'][] = $twoPages['bookings'][0]; }
+$tp = $pdfText(participantsRenderPdf($twoPages));
+check('6.13 on a two-page sheet the note prints once (page 1)', substr_count($tp, '(Only on page one)') === 1,
+    substr_count($tp, '(Only on page one)') . 'x');
+
 echo $failures === 0 ? "\nall checks passed\n" : "\n$failures check(s) FAILED\n";
 exit($failures === 0 ? 0 : 1);

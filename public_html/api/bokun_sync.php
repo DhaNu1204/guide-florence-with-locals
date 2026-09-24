@@ -1098,6 +1098,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
 
     // Step 3.7: the natural key of a departure, so a group can be found without its id.
     $hasBucketKey = ensureGroupBucketKeyColumn($conn);
+    ensureGroupNotesColumn($conn); // step 6.13: read (never written) when a group is deleted
 
     // Acquire advisory lock to prevent concurrent auto-grouping
     $lockResult = $conn->query("SELECT GET_LOCK('auto_group', 10) as locked");
@@ -1327,7 +1328,9 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
         $det->close();
     }
 
-    // (I) A group row dies only when its departure has no members left.
+    // (I) A group row dies only when its departure has no members left. Step 6.13: a group note
+    //     is handed to the bookings that were in it first (appended, marked, never twice).
+    preserveNotesOfGroupsAboutToBeDeleted($conn, $currentMembership);
     $conn->query("DELETE FROM tour_groups WHERE id NOT IN (SELECT DISTINCT group_id FROM tours WHERE group_id IS NOT NULL)");
     $groupsDeleted = $conn->affected_rows > 0 ? $conn->affected_rows : 0;
     $rowsWritten += $groupsDeleted;

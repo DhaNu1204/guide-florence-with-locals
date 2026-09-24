@@ -139,6 +139,8 @@ function ensureTourGroupsTable($conn) {
         $conn->query("ALTER TABLE tours ADD COLUMN `group_id` int(11) DEFAULT NULL AFTER `notes`");
         $conn->query("ALTER TABLE tours ADD KEY `idx_tours_group_id` (`group_id`)");
     }
+
+    ensureGroupNotesColumn($conn); // step 6.13
 }
 
 /**
@@ -523,7 +525,10 @@ function autoGroupTours($conn, $data) {
         }
     }
 
-    // Clean up orphaned groups (no tours reference them)
+    // Clean up orphaned groups (no tours reference them) - step 6.13: after their notes moved on
+    $formerMembership = [];
+    foreach ($tours as $t) { if ($t['group_id']) { $formerMembership[(int) $t['id']] = (int) $t['group_id']; } }
+    preserveNotesOfGroupsAboutToBeDeleted($conn, $formerMembership);
     $conn->query("DELETE FROM tour_groups WHERE id NOT IN (SELECT DISTINCT group_id FROM tours WHERE group_id IS NOT NULL)");
 
     $conn->commit();
@@ -602,12 +607,20 @@ function manualMergeTours($conn, $data) {
         return;
     }
 
+    // Step 6.13: merging groups that carry notes keeps every note, each on its own line.
+    $sourceNotes = [];
+    foreach ($tours as $tour) {
+        if ($tour['group_id']) { $sourceNotes[(int) $tour['group_id']] = groupNoteOf($conn, $tour['group_id']); }
+    }
+    $notes = joinGroupNotes(array_merge(array_values($sourceNotes), [$notes]));
+    $mergingIds = array_map('intval', array_column($tours, 'id'));
+
     $conn->begin_transaction();
     try {
         // Remove tours from any existing groups first
         foreach ($tours as $tour) {
             if ($tour['group_id']) {
-                removeTourFromGroup($conn, intval($tour['id']), intval($tour['group_id']));
+                removeTourFromGroup($conn, intval($tour['id']), intval($tour['group_id']), false, $mergingIds);
             }
         }
 
@@ -696,7 +709,7 @@ function unmergeTour($conn, $data) {
 
     $conn->begin_transaction();
     try {
-        removeTourFromGroup($conn, $tourId, $groupId);
+        removeTourFromGroup($conn, $tourId, $groupId, true); // step 6.13: it takes a copy of the group note
         $conn->commit();
     } catch (Exception $e) {
         $conn->rollback();
@@ -741,10 +754,17 @@ function updateGroup($conn, $groupId, $data) {
         $bindValues[] = $data['display_name'];
     }
 
-    if (isset($data['notes'])) {
+    // Step 6.13: the group's own note. array_key_exists: present-but-empty (or null) removes it.
+    if (is_array($data) && array_key_exists('notes', $data)) {
+        $note = groupNoteClean($data['notes']);
+        if ($note !== null && mb_strlen($note) > GROUP_NOTE_MAX_LENGTH) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Note is too long (max ' . GROUP_NOTE_MAX_LENGTH . ' characters)']);
+            return;
+        }
         $setFields[] = 'notes = ?';
         $bindTypes .= 's';
-        $bindValues[] = $data['notes'];
+        $bindValues[] = $note;
     }
 
     // array_key_exists (not isset) so an explicit null unassigns the group's guide:
@@ -845,7 +865,21 @@ function dissolveGroup($conn, $groupId) {
     $checkStmt->close();
 
     $conn->begin_transaction();
+    $notesCopied = 0;
     try {
+        // Step 6.13: the group's note is not lost - each booking gets it appended to its own note.
+        $note = groupNoteOf($conn, $groupId);
+        if ($note !== null) {
+            $ids = [];
+            $m = $conn->prepare("SELECT id FROM tours WHERE group_id = ?");
+            $m->bind_param('i', $groupId);
+            $m->execute();
+            $mr = $m->get_result();
+            while ($r = $mr->fetch_assoc()) { $ids[] = (int) $r['id']; }
+            $m->close();
+            $notesCopied = copyGroupNoteToTours($conn, $note, $ids);
+        }
+
         // Remove group_id from all tours in this group
         $stmt = $conn->prepare("UPDATE tours SET group_id = NULL WHERE group_id = ?");
         $stmt->bind_param('i', $groupId);
@@ -872,7 +906,8 @@ function dissolveGroup($conn, $groupId) {
         'success' => true,
         'message' => 'Group dissolved',
         'group_id' => $groupId,
-        'tours_ungrouped' => $toursAffected
+        'tours_ungrouped' => $toursAffected,
+        'notes_copied' => $notesCopied // step 6.13
     ]);
 }
 
@@ -945,7 +980,16 @@ function assignToursToGroup($conn, $tourIds, $groupId) {
 /**
  * Remove a tour from its group, update PAX, and clean up empty groups
  */
-function removeTourFromGroup($conn, $tourId, $groupId) {
+function removeTourFromGroup($conn, $tourId, $groupId, $copyNoteToRemoved = false, array $keepOutOfNoteCopy = []) {
+    // Step 6.13: read the group note before anything changes. The removed booking gets a copy
+    // when it is unmerged on its own; if the group then falls apart, the booking left behind
+    // gets one too - except bookings that are moving into a new group together
+    // ($keepOutOfNoteCopy, manual merge), which carries the note itself.
+    $groupNote = groupNoteOf($conn, $groupId);
+    if ($copyNoteToRemoved && $groupNote !== null) {
+        copyGroupNoteToTours($conn, $groupNote, [(int) $tourId]);
+    }
+
     // Get tour's participant count
     $stmt = $conn->prepare("SELECT participants FROM tours WHERE id = ?");
     $stmt->bind_param('i', $tourId);
@@ -975,6 +1019,18 @@ function removeTourFromGroup($conn, $tourId, $groupId) {
     $stmt->close();
 
     if ($remaining <= 1) {
+        if ($groupNote !== null) {
+            $left = [];
+            $m = $conn->prepare("SELECT id FROM tours WHERE group_id = ?");
+            $m->bind_param('i', $groupId);
+            $m->execute();
+            $mr = $m->get_result();
+            while ($r = $mr->fetch_assoc()) {
+                if (!in_array((int) $r['id'], array_map('intval', $keepOutOfNoteCopy), true)) { $left[] = (int) $r['id']; }
+            }
+            $m->close();
+            copyGroupNoteToTours($conn, $groupNote, $left);
+        }
         // If only 1 tour left, ungroup it too and delete the group
         $stmt = $conn->prepare("UPDATE tours SET group_id = NULL WHERE group_id = ?");
         $stmt->bind_param('i', $groupId);
