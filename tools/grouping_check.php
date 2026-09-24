@@ -94,5 +94,44 @@ check('an empty database means every departure is new',
     matchDesiredToExistingGroups([[1, 2], [3, 4]], []) === [null, null]);
 check('no desired departures -> no matches', matchDesiredToExistingGroups([], [1 => 2]) === []);
 
+// ---- step 6.12: one departure = one language --------------------------------------------
+function ltour($id, $lang, $pax = 2, $date = '2030-02-11') {
+    return ['id' => $id, 'product_id' => 961801, 'date' => $date, 'time' => '14:30:00', 'participants' => $pax,
+            'title' => 'T', 'language' => $lang];
+}
+$sizes = function ($tours) { return array_map('count', buildGroupBuckets($tours)); };
+
+check('6.12 key carries the language', groupBucketKey(961801, '2030-02-11', '14:30:00', 'English') === '961801|2030-02-11|14:30|English');
+check('6.12 key without a language is the old key', groupBucketKey(961801, '2030-02-11', '14:30:00') === '961801|2030-02-11|14:30');
+$b = buildGroupBuckets([ltour(1, 'English'), ltour(2, 'Italian'), ltour(3, 'English'), ltour(4, 'Italian')]);
+check('6.12 English + Italian at one departure -> two buckets',
+    array_keys($b) === ['961801|2030-02-11|14:30|English', '961801|2030-02-11|14:30|Italian']
+    && array_column($b['961801|2030-02-11|14:30|English'], 'id') === [1, 3], json_encode(array_keys($b)));
+check('6.12 three English bookings -> one bucket of three',
+    $sizes([ltour(1, 'English'), ltour(2, 'English'), ltour(3, 'English')]) === ['961801|2030-02-11|14:30|English' => 3]);
+check('6.12 no-language booking joins the only language present',
+    $sizes([ltour(1, 'English'), ltour(2, 'English'), ltour(3, null)]) === ['961801|2030-02-11|14:30|English' => 3]);
+check('6.12 ... "Unknown" and blanks count as no language',
+    $sizes([ltour(1, 'English'), ltour(2, ' '), ltour(3, 'Unknown')]) === ['961801|2030-02-11|14:30|English' => 3]);
+$s2 = $sizes([ltour(1, 'English'), ltour(2, 'English'), ltour(3, 'Italian'), ltour(4, 'Italian'), ltour(5, '')]);
+check('6.12 no-language booking stays alone when two languages are present',
+    $s2 === ['961801|2030-02-11|14:30|English' => 2, '961801|2030-02-11|14:30|Italian' => 2, '961801|2030-02-11|14:30|#5' => 1], json_encode($s2));
+$s3 = $sizes([ltour(1, null), ltour(2, '')]);
+check('6.12 a departure with no language at all forms no group', max($s3) === 1 && count($s3) === 2, json_encode($s3));
+check('6.12 before GROUP_LANGUAGE_KEY_FROM nothing changes (one bucket, old key)',
+    $sizes([ltour(1, 'English', 2, '2026-09-23'), ltour(2, 'Spanish', 2, '2026-09-23')]) === ['961801|2026-09-23|14:30' => 2]);
+check('6.12 the cut-over day itself uses languages', groupLanguageKeyApplies('2026-09-24') && !groupLanguageKeyApplies('2026-09-23'));
+check('6.12 member languages ignore cancelled and blank',
+    groupMemberLanguages([['language' => 'Italian'], ['language' => 'English'], ['language' => 'Spanish', 'cancelled' => 1], ['language' => '']]) === ['English', 'Italian']);
+$mixed = mixedLanguageAutoGroupIds([
+    ['group_id' => 7, 'date' => '2030-02-11', 'language' => 'English', 'cancelled' => 0],
+    ['group_id' => 7, 'date' => '2030-02-11', 'language' => 'Italian', 'cancelled' => 0],
+    ['group_id' => 8, 'date' => '2030-02-11', 'language' => 'English', 'cancelled' => 0],
+    ['group_id' => 8, 'date' => '2030-02-11', 'language' => null, 'cancelled' => 0],
+    ['group_id' => 9, 'date' => '2026-09-20', 'language' => 'English', 'cancelled' => 0],
+    ['group_id' => 9, 'date' => '2026-09-20', 'language' => 'Spanish', 'cancelled' => 0],
+]);
+check('6.12 only an upcoming mixed auto group is frozen for the sync', $mixed === [7 => true], json_encode($mixed));
+
 echo $failures === 0 ? "\nall checks passed\n" : "\n$failures check(s) FAILED\n";
 exit($failures === 0 ? 0 : 1);

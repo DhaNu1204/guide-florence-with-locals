@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import ParticipantsButton from './ParticipantsButton';
+import { groupMemberLanguages } from '../utils/groupLanguages';
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 
@@ -57,6 +58,8 @@ const TourGroup = ({
   isDragOver,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const memberLanguages = groupMemberLanguages(group); // step 6.12
+  const mixedLanguages = memberLanguages.length > 1;
   const [editingGuide, setEditingGuide] = useState(false);
   const [selectedGuideId, setSelectedGuideId] = useState(group.guide_id || '');
   const [savingGuide, setSavingGuide] = useState(false);
@@ -271,6 +274,14 @@ const TourGroup = ({
         {group.is_manual_merge && (
           <span className="text-xs bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded-full flex-shrink-0">
             Manual
+          </span>
+        )}
+
+        {/* Step 6.12: one guide speaks one language - never let a mixed group pass silently */}
+        {mixedLanguages && (
+          <span data-testid="mixed-languages-chip" title={`Languages in this group: ${memberLanguages.join(', ')}`}
+            className="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">
+            Mixed languages
           </span>
         )}
       </div>

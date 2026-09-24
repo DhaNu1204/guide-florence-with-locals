@@ -3,6 +3,7 @@ import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 import ParticipantsButton from './ParticipantsButton';
+import { groupMemberLanguages } from '../utils/groupLanguages';
 
 // Small per-booking category badge; Combo gets the gold treatment so a
 // higher-pay booking hiding inside a group is easy to spot.
@@ -38,6 +39,8 @@ const TourGroupCardMobile = ({
   onToggleSelect,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const memberLanguages = groupMemberLanguages(group); // step 6.12
+  const mixedLanguages = memberLanguages.length > 1;
   const [editingGuide, setEditingGuide] = useState(false);
   const [selectedGuideId, setSelectedGuideId] = useState(group.guide_id || '');
   const [savingGuide, setSavingGuide] = useState(false);
@@ -247,8 +250,14 @@ const TourGroupCardMobile = ({
           <div className="flex items-center gap-1 mt-1.5 text-xs text-stone-400">
             {expanded ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
             <span>{expanded ? 'Tap to collapse' : 'Tap to expand'}</span>
+            {mixedLanguages && (
+              <span data-testid="mixed-languages-chip" title={`Languages in this group: ${memberLanguages.join(', ')}`}
+                className={`${group.is_manual_merge ? '' : 'ml-auto '}text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full whitespace-nowrap`}>
+                Mixed languages
+              </span>
+            )}
             {group.is_manual_merge && (
-              <span className="ml-auto text-xs bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded-full">
+              <span className={`${mixedLanguages ? 'ml-1' : 'ml-auto'} text-xs bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded-full`}>
                 Manual
               </span>
             )}
