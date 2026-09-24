@@ -1125,7 +1125,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
     //     departure. Members of a manual merge are excluded and never touched; a tour whose
     //     group row has vanished (dangling id) counts as ungrouped.
     $stmt = $conn->prepare("
-        SELECT t.id, t.title, t.date, t.time, t.participants, t.product_id, t.guide_id, t.group_id
+        SELECT t.id, t.title, t.date, t.time, t.participants, t.product_id, t.guide_id, t.group_id, t.language
         FROM tours t
         LEFT JOIN tour_groups tg ON tg.id = t.group_id
         WHERE t.date >= ? AND t.date <= ?
@@ -1148,7 +1148,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
     // (B) Current AUTO membership in range: tourId => groupId. Cancelled and now-private tours
     //     are included here on purpose - they must be detached from their group below.
     $memStmt = $conn->prepare("
-        SELECT t.id, t.group_id
+        SELECT t.id, t.group_id, t.date, t.language, t.cancelled, (tg.id IS NOT NULL) AS group_exists
         FROM tours t
         LEFT JOIN tour_groups tg ON tg.id = t.group_id
         WHERE t.date >= ? AND t.date <= ?
@@ -1159,10 +1159,25 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
     $memStmt->execute();
     $memRes = $memStmt->get_result();
     $currentMembership = [];
+    $memberRows = [];
     while ($row = $memRes->fetch_assoc()) {
         $currentMembership[(int) $row['id']] = (int) $row['group_id'];
+        if ($row['group_exists']) { $memberRows[] = $row; }
     }
     $memStmt->close();
+
+    // Step 6.12: an auto group that already mixes languages is left exactly as it is - its
+    // members are neither regrouped nor detached. Only the one-off migration splits such a group
+    // (it knows which half keeps the guide); whatever it refused is the owner's to decide.
+    $frozenGroups = mixedLanguageAutoGroupIds($memberRows);
+    if ($frozenGroups) {
+        $tours = array_values(array_filter($tours, function ($t) use ($frozenGroups) {
+            return !($t['group_id'] && isset($frozenGroups[(int) $t['group_id']]));
+        }));
+        foreach ($currentMembership as $tid => $gid) {
+            if (isset($frozenGroups[$gid])) { unset($currentMembership[$tid]); }
+        }
+    }
 
     // (C) The auto group rows themselves, so we can tell whether anything really changed.
     $grpStmt = $conn->prepare("
@@ -1373,6 +1388,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
         'tours_grouped'   => $toursGrouped,
         'tours_moved'     => $toursMoved,
         'tours_detached'  => $toursDetached,
+        'groups_frozen_mixed_language' => count($frozenGroups), // step 6.12: left for the owner
         'rows_written'    => $rowsWritten,
         'date_range'      => ['start' => $startDate, 'end' => $endDate]
     ];

@@ -447,7 +447,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                    t.cancelled, t.booking_channel, t.viator_account, t.total_amount_paid, t.bokun_data,
                    t.source, t.manual_revenue, t.manual_currency,
                    t.is_private, t.guide_id, g.name AS guide_name,
-                   tg.display_name AS group_display_name, tg.group_time,
+                   tg.display_name AS group_display_name, tg.group_time, tg.bucket_key AS group_bucket_key,
                    (CASE WHEN pr.product_type = 'ticket' THEN 1 ELSE 0 END) AS is_ticket_product
             FROM tours t
             LEFT JOIN guides g  ON g.id = t.guide_id
@@ -467,8 +467,12 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             $units[$key] = [
                 'unit'            => $key,
                 // Step 3.7: what this departure IS, independent of the group's surrogate id.
-                'bucket_key'      => $row['product_id'] ? groupBucketKey($row['product_id'], $row['date'],
-                                        ($row['group_id'] && $row['group_time']) ? $row['group_time'] : $row['time']) : null,
+                // Step 6.12: from GROUP_LANGUAGE_KEY_FROM on a group's key carries its language, so it
+                // is read from the group row; earlier dates compute it exactly as before.
+                'bucket_key'      => ($row['group_id'] && !empty($row['group_bucket_key']) && groupLanguageKeyApplies($row['date']))
+                                        ? $row['group_bucket_key']
+                                        : ($row['product_id'] ? groupBucketKey($row['product_id'], $row['date'],
+                                        ($row['group_id'] && $row['group_time']) ? $row['group_time'] : $row['time']) : null),
                 'date'            => $row['date'],
                 'time'            => $row['group_id'] && $row['group_time'] ? $row['group_time'] : $row['time'],
                 'title'           => $row['group_id'] && $row['group_display_name'] ? $row['group_display_name'] : $row['title'],

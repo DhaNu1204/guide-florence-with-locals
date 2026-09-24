@@ -15,9 +15,12 @@ $apiDir = getenv('FWL_API_DIR') ?: __DIR__ . '/../public_html/api';
 define('BOKUN_SYNC_LIB', true);
 require_once $apiDir . '/config.php';
 require_once $apiDir . '/bokun_sync.php';
+require_once $apiDir . '/tour_classification.php';
+require_once __DIR__ . '/group_language_migrate_lib.php'; // step 6.12
 
 const TEST_DATE    = '2030-02-11';
 const TEST_DATE2   = '2030-02-12';
+const TEST_DATE3   = '2030-02-13'; // step 6.12 language scenarios
 const TEST_PRODUCT = 999000001;
 const TEST_PREFIX  = 'FWL-T37-';
 
@@ -31,20 +34,24 @@ function check($label, $ok, $detail = '') {
 }
 
 function cleanup($conn) {
-    $conn->query("DELETE FROM pnl_tour_costs WHERE date IN ('" . TEST_DATE . "','" . TEST_DATE2 . "')");
+    $dates = "('" . TEST_DATE . "','" . TEST_DATE2 . "','" . TEST_DATE3 . "')";
+    $conn->query("DELETE FROM pnl_tour_costs WHERE date IN $dates");
+    $conn->query("DELETE FROM payments WHERE tour_id IN (SELECT id FROM tours WHERE external_id LIKE '" . TEST_PREFIX . "%')");
     $conn->query("UPDATE tours SET group_id = NULL WHERE external_id LIKE '" . TEST_PREFIX . "%'");
-    $conn->query("DELETE FROM tour_groups WHERE group_date IN ('" . TEST_DATE . "','" . TEST_DATE2 . "')");
+    $conn->query("DELETE FROM tour_groups WHERE group_date IN $dates");
     $conn->query("DELETE FROM tours WHERE external_id LIKE '" . TEST_PREFIX . "%'");
+    $conn->query("DELETE FROM guides WHERE email LIKE 'fwl-t612-%@example.invalid'");
 }
 
-function addTour($conn, $n, $pax, $time = '09:00:00', $date = TEST_DATE, $title = 'Uffizi Gallery Test Tour') {
+// Step 6.12: bookings carry a language (a departure is one language); English unless a test says otherwise.
+function addTour($conn, $n, $pax, $time = '09:00:00', $date = TEST_DATE, $title = 'Uffizi Gallery Test Tour', $language = 'English') {
     $ext = TEST_PREFIX . $n;
     $stmt = $conn->prepare("INSERT INTO tours (external_id, bokun_booking_id, title, date, time, participants,
-                                               product_id, is_private, cancelled, paid, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, NOW(), NOW())");
+                                               product_id, is_private, cancelled, paid, language, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, NOW(), NOW())");
     $bid = 'T37' . $n;
     $prod = TEST_PRODUCT;
-    $stmt->bind_param('sssssii', $ext, $bid, $title, $date, $time, $pax, $prod);
+    $stmt->bind_param('sssssiis', $ext, $bid, $title, $date, $time, $pax, $prod, $language);
     $stmt->execute();
     $id = $conn->insert_id;
     $stmt->close();
@@ -80,12 +87,12 @@ $g1 = groupOf($conn, $a);
 check('two bookings of one departure -> one group', $g1 !== null && $g1 === groupOf($conn, $b),
     'created=' . $r1['groups_created'] . ' gid=' . var_export($g1, true));
 check('... the group carries the natural key',
-    (groupRow($conn, $g1)['bucket_key'] ?? null) === TEST_PRODUCT . '|' . TEST_DATE . '|09:00',
+    (groupRow($conn, $g1)['bucket_key'] ?? null) === TEST_PRODUCT . '|' . TEST_DATE . '|09:00|English',
     var_export(groupRow($conn, $g1)['bucket_key'] ?? null, true));
 
 // a P&L override on that departure, as the owner would set it
 $conn->query("INSERT INTO pnl_tour_costs (tour_unit, date, bucket_key, ticket_cost)
-              VALUES ('g$g1', '" . TEST_DATE . "', '" . TEST_PRODUCT . '|' . TEST_DATE . "|09:00', 42.00)");
+              VALUES ('g$g1', '" . TEST_DATE . "', '" . TEST_PRODUCT . '|' . TEST_DATE . "|09:00|English', 42.00)");
 
 // --- 2. the same member set again: same id, nothing written -------------------------------
 $r2 = regroup($conn);
@@ -166,7 +173,7 @@ $g2 = groupOf($conn, $e);
 check('a new departure gets a new group', $g2 !== null && $g2 === groupOf($conn, $f) && $g2 !== $g1,
     'created=' . $r9['groups_created']);
 check('... on a second date, with its own natural key',
-    (groupRow($conn, $g2)['bucket_key'] ?? null) === TEST_PRODUCT . '|' . TEST_DATE2 . '|15:45');
+    (groupRow($conn, $g2)['bucket_key'] ?? null) === TEST_PRODUCT . '|' . TEST_DATE2 . '|15:45|English');
 $r9b = regroup($conn);
 check('... and it too is stable on the next run',
     groupOf($conn, $e) === $g2 && (int) $r9b['rows_written'] === 0, 'rows_written=' . $r9b['rows_written']);
@@ -190,6 +197,120 @@ check('... the other half is a new group',
     groupOf($conn, $h) !== null && groupOf($conn, $h) === groupOf($conn, $i) && groupOf($conn, $h) !== $g2);
 $r10b = regroup($conn);
 check('... and the split is stable too', (int) $r10b['rows_written'] === 0, 'rows_written=' . $r10b['rows_written']);
+
+// ================= step 6.12: a departure is one language =================================
+$D3 = TEST_DATE3;
+$regroup3 = function () use ($conn) { return autoGroupAfterSync($conn, TEST_DATE3, TEST_DATE3); };
+$migrate3 = function ($apply = true) use ($conn) { return groupLanguageMigrate($conn, $apply, TEST_DATE3); };
+$guideOf = function ($tid) use ($conn) {
+    $v = $conn->query("SELECT guide_id FROM tours WHERE id = " . (int) $tid)->fetch_assoc()['guide_id'];
+    return $v === null ? null : (int) $v;
+};
+$conn->query("INSERT INTO guides (name, email, languages) VALUES ('FWL-T612 English guide', 'fwl-t612-en@example.invalid', 'English')");
+$enGuide = (int) $conn->insert_id;
+$conn->query("INSERT INTO guides (name, email, languages) VALUES ('FWL-T612 other guide', 'fwl-t612-xx@example.invalid', 'German')");
+$otherGuide = (int) $conn->insert_id;
+// an auto group as the pre-6.12 code built it: one departure, old key, any languages
+$legacyAutoGroup = function ($time, array $tourIds, $guideId = null) use ($conn) {
+    $key = TEST_PRODUCT . '|' . TEST_DATE3 . '|' . substr($time, 0, 5);
+    $g = $guideId ? (int) $guideId : 'NULL';
+    $conn->query("INSERT INTO tour_groups (group_date, group_time, display_name, total_pax, is_manual_merge, bucket_key, guide_id)
+                  VALUES ('" . TEST_DATE3 . "', '$time', 'Uffizi Gallery Test Tour', 0, 0, '$key', $g)");
+    $id = (int) $conn->insert_id;
+    $conn->query("UPDATE tours SET group_id = $id" . ($guideId ? ", guide_id = $g" : '') . " WHERE id IN (" . implode(',', $tourIds) . ")");
+    return $id;
+};
+
+// --- 11. same product, same time, English + Italian -> two groups ---------------------------
+$en1 = addTour($conn, 'l1', 2, '10:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$en2 = addTour($conn, 'l2', 2, '10:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$it1 = addTour($conn, 'l3', 2, '10:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$it2 = addTour($conn, 'l4', 2, '10:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$regroup3();
+$gEn = groupOf($conn, $en1); $gIt = groupOf($conn, $it1);
+check('6.12 English + Italian at the same product and time -> two groups',
+    $gEn !== null && $gIt !== null && $gEn !== $gIt && groupOf($conn, $en2) === $gEn && groupOf($conn, $it2) === $gIt,
+    "en=$gEn it=$gIt");
+check('... each group carries its language in the key',
+    groupRow($conn, $gEn)['bucket_key'] === TEST_PRODUCT . "|$D3|10:00|English" && groupRow($conn, $gIt)['bucket_key'] === TEST_PRODUCT . "|$D3|10:00|Italian");
+
+// --- 12. three English bookings -> one group ------------------------------------------------
+$t1 = addTour($conn, 'm1', 2, '11:00:00', $D3); $t2 = addTour($conn, 'm2', 2, '11:00:00', $D3); $t3 = addTour($conn, 'm3', 3, '11:00:00', $D3);
+$regroup3();
+$g11 = groupOf($conn, $t1);
+check('6.12 three English bookings -> one group', $g11 !== null && groupOf($conn, $t2) === $g11 && groupOf($conn, $t3) === $g11 && memberCount($conn, $g11) === 3);
+
+// --- 13. a booking with no language ---------------------------------------------------------
+$u1 = addTour($conn, 'n1', 2, '12:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$u2 = addTour($conn, 'n2', 2, '12:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$un = addTour($conn, 'n3', 1, '12:00:00', $D3, 'Uffizi Gallery Test Tour', null);
+$regroup3();
+$g12 = groupOf($conn, $u1);
+check('6.12 a no-language booking joins when exactly one language group exists', $g12 !== null && groupOf($conn, $un) === $g12, 'unknown in ' . var_export(groupOf($conn, $un), true));
+addTour($conn, 'n4', 2, '12:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+addTour($conn, 'n5', 2, '12:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$regroup3();
+check('... and stays on its own once there are two', groupOf($conn, $un) === null && groupOf($conn, $u1) === $g12 && groupOf($conn, $u2) === $g12,
+    'unknown in ' . var_export(groupOf($conn, $un), true));
+
+// --- 14. a manual mixed merge is left alone ------------------------------------------------
+$mx1 = addTour($conn, 'o1', 2, '13:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$mx2 = addTour($conn, 'o2', 2, '13:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$conn->query("INSERT INTO tour_groups (group_date, group_time, display_name, total_pax, is_manual_merge) VALUES ('$D3', '13:00:00', 'Manual mixed', 4, 1)");
+$man = (int) $conn->insert_id;
+$conn->query("UPDATE tours SET group_id = $man WHERE id IN ($mx1, $mx2)");
+$beforeRow = groupRow($conn, $man);
+$regroup3();
+$migrate3();
+check('6.12 a manual mixed merge is left alone by the sync and the migration',
+    groupRow($conn, $man) == $beforeRow && groupOf($conn, $mx1) === $man && groupOf($conn, $mx2) === $man);
+
+// --- 15. a single-language group keeps its id through the key rewrite ----------------------
+$conn->query("UPDATE tour_groups SET bucket_key = '" . TEST_PRODUCT . "|$D3|11:00' WHERE id = $g11"); // as before 6.12
+$m15 = $migrate3();
+check('6.12 a single-language group keeps its id through the key rewrite',
+    groupOf($conn, $t1) === $g11 && groupRow($conn, $g11)['bucket_key'] === TEST_PRODUCT . "|$D3|11:00|English" && $m15[0]['rewritten'] === 1,
+    'rewritten=' . $m15[0]['rewritten']);
+$r15 = $regroup3();
+check('... and the sync after it writes nothing', (int) $r15['rows_written'] === 0, 'rows_written=' . $r15['rows_written']);
+
+// --- 16. a mixed auto group with a payment is not split ------------------------------------
+$p1 = addTour($conn, 'p1', 2, '14:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$p2 = addTour($conn, 'p2', 2, '14:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$p3 = addTour($conn, 'p3', 2, '14:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$p4 = addTour($conn, 'p4', 2, '14:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$gPay = $legacyAutoGroup('14:00:00', [$p1, $p2, $p3, $p4], $enGuide);
+$conn->query("INSERT INTO payments (tour_id, guide_id, amount, payment_method, payment_date) VALUES ($p1, $enGuide, 50.00, 'cash', '$D3')");
+$r16 = $regroup3();
+check('6.12 the sync leaves a mixed auto group exactly as it is', memberCount($conn, $gPay) === 4 && (int) $r16['groups_frozen_mixed_language'] === 1,
+    'members=' . memberCount($conn, $gPay) . ' frozen=' . $r16['groups_frozen_mixed_language']);
+$m16 = $migrate3();
+check('6.12 a mixed group with a payment is not split (listed instead)',
+    memberCount($conn, $gPay) === 4 && $m16[0]['held'] === 1 && (bool) preg_grep('/HELD: payment recorded.*g' . $gPay . ' /', $m16[1]),
+    implode(' | ', $m16[1]));
+
+// --- 17. a mixed auto group with an English guide is split; the guide stays with English -----
+$conn->query("DELETE FROM payments WHERE tour_id = $p1");
+$m17 = $migrate3();
+$gItNew = groupOf($conn, $p3);
+check('6.12 split: the guide\'s language keeps the id, the other language is a new group',
+    groupOf($conn, $p1) === $gPay && groupOf($conn, $p2) === $gPay && $gItNew !== null && $gItNew !== $gPay && groupOf($conn, $p4) === $gItNew,
+    'en=' . var_export(groupOf($conn, $p1), true) . ' it=' . var_export($gItNew, true) . ' split=' . $m17[0]['split']);
+check('... the Italian bookings no longer carry the English guide', $guideOf($p3) === null && $guideOf($p4) === null
+    && (int) groupRow($conn, $gPay)['guide_id'] === $enGuide && $guideOf($p1) === $enGuide);
+check('... keys and PAX follow', groupRow($conn, $gPay)['bucket_key'] === TEST_PRODUCT . "|$D3|14:00|English"
+    && $gItNew && groupRow($conn, $gItNew)['bucket_key'] === TEST_PRODUCT . "|$D3|14:00|Italian" && (int) groupRow($conn, $gPay)['total_pax'] === 4);
+$r17 = $regroup3();
+check('... and a sync right after creates no churn', (int) $r17['rows_written'] === 0 && groupOf($conn, $p1) === $gPay && groupOf($conn, $p3) === $gItNew,
+    'rows_written=' . $r17['rows_written']);
+
+// --- 18. guide propagation is still fill-only, and only within the language ----------------
+$conn->query("UPDATE tours SET guide_id = $otherGuide WHERE id = $p2"); // a member with a different guide
+$p5 = addTour($conn, 'p5', 1, '14:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$regroup3();
+check('6.12 a new English booking joins the English group and inherits its guide', groupOf($conn, $p5) === $gPay && $guideOf($p5) === $enGuide);
+check('... a member carrying a different guide is not overwritten', $guideOf($p2) === $otherGuide);
+check('... the Italian group did not pick up the English guide', $guideOf($p3) === null && $gItNew && groupRow($conn, $gItNew)['guide_id'] === null);
 
 } catch (Throwable $e) {
     $failures++;

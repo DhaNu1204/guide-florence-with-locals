@@ -24,8 +24,53 @@ if (!function_exists('groupBucketKey')) {
      * for the product splits it (measured on production: two 14:30 groups of product 961801 on
      * 2026-08-12). It is a lookup key, not a constraint.
      */
-    function groupBucketKey($productId, $date, $time) {
-        return intval($productId) . '|' . substr((string) $date, 0, 10) . '|' . normalizeGroupTime($time);
+    function groupBucketKey($productId, $date, $time, $language = null) {
+        $key = intval($productId) . '|' . substr((string) $date, 0, 10) . '|' . normalizeGroupTime($time);
+        // Step 6.12: a guide speaks one language, so from GROUP_LANGUAGE_KEY_FROM on the language
+        // is part of what a departure is: "961801|2026-09-25|14:30|English".
+        return $language !== null ? $key . '|' . $language : $key;
+    }
+}
+
+if (!defined('GROUP_LANGUAGE_KEY_FROM')) {
+    /**
+     * Step 6.12: auto-groups on this date and later are one language each. Earlier dates keep
+     * the old product|date|time key and behave exactly as before - those tours already ran, and
+     * re-splitting them would change guide costs, payments and closed P&L months after the fact.
+     * A fixed date, not "today": a split made today must not merge back once its day is past.
+     */
+    define('GROUP_LANGUAGE_KEY_FROM', '2026-09-24');
+}
+
+if (!function_exists('groupLanguageKeyApplies')) {
+    function groupLanguageKeyApplies($date) {
+        return substr((string) $date, 0, 10) >= GROUP_LANGUAGE_KEY_FROM;
+    }
+}
+
+if (!function_exists('tourLanguageKey')) {
+    /** Step 6.12: the language a booking is grouped by, or null when it has none ("Unknown"). */
+    function tourLanguageKey($language) {
+        $l = trim((string) $language);
+        return ($l === '' || strcasecmp($l, 'Unknown') === 0) ? null : $l;
+    }
+}
+
+if (!function_exists('groupMemberLanguages')) {
+    /**
+     * Step 6.12: the distinct known languages of a group's ACTIVE members, sorted. Two or more
+     * = a mixed-language group. Members without a language do not count as a language.
+     */
+    function groupMemberLanguages(array $members) {
+        $langs = [];
+        foreach ($members as $m) {
+            if (!empty($m['cancelled'])) { continue; }
+            $l = tourLanguageKey($m['language'] ?? null);
+            if ($l !== null) { $langs[$l] = true; }
+        }
+        $langs = array_keys($langs);
+        sort($langs);
+        return $langs;
     }
 }
 
@@ -33,14 +78,77 @@ if (!function_exists('buildGroupBuckets')) {
     /**
      * Step 3.7: tours -> [bucketKey => [tours]], insertion order preserved (the caller sorts by
      * product_id, date, time, id, and that order decides how a bucket is split below).
+     *
+     * Step 6.12: from GROUP_LANGUAGE_KEY_FROM on, one departure (product, date, time) gives one
+     * bucket PER LANGUAGE - English and Italian at 14:30 are two groups, each with its own guide.
+     * A booking with no language joins only when exactly one language is present at that
+     * departure; otherwise (none, or two or more) it stays on its own, so the owner places it by
+     * hand. Nothing guesses a language.
      */
     function buildGroupBuckets(array $tours) {
-        $buckets = [];
+        $departures = [];
         foreach ($tours as $tour) {
-            $key = groupBucketKey($tour['product_id'], $tour['date'], $tour['time']);
-            $buckets[$key][] = $tour;
+            $departures[groupBucketKey($tour['product_id'], $tour['date'], $tour['time'])][] = $tour;
+        }
+
+        $buckets = [];
+        foreach ($departures as $key => $depTours) {
+            $buckets += splitDepartureByLanguage($key, $depTours);
         }
         return $buckets;
+    }
+}
+
+if (!function_exists('splitDepartureByLanguage')) {
+    /**
+     * Step 6.12: one departure's bookings -> [key|language => tours]. Before
+     * GROUP_LANGUAGE_KEY_FROM the departure stays one bucket, as it always was. Shared by the
+     * sync and the Tours page "Auto-Group" button so the two can never disagree.
+     */
+    function splitDepartureByLanguage($key, array $depTours) {
+        if (!$depTours || !groupLanguageKeyApplies($depTours[0]['date'])) {
+            return [$key => $depTours];
+        }
+        $known = [];
+        foreach ($depTours as $tour) {
+            $l = tourLanguageKey($tour['language'] ?? null);
+            if ($l !== null) { $known[$l] = true; }
+        }
+        $only = count($known) === 1 ? array_key_first($known) : null;
+        $buckets = [];
+        foreach ($depTours as $tour) {
+            $l = tourLanguageKey($tour['language'] ?? null) ?? $only;
+            if ($l === null) {
+                $buckets[$key . '|#' . intval($tour['id'])][] = $tour; // alone: never forms a group
+                continue;
+            }
+            $buckets[$key . '|' . $l][] = $tour;
+        }
+        return $buckets;
+    }
+}
+
+if (!function_exists('mixedLanguageAutoGroupIds')) {
+    /**
+     * Step 6.12: auto groups on/after GROUP_LANGUAGE_KEY_FROM whose active members speak two or
+     * more languages. The sync leaves these exactly as they are (like a manual merge): only the
+     * one-off migration splits them, because only it knows which half keeps the guide and it
+     * refuses when a payment is recorded. Anything it left is the owner's to decide.
+     *
+     * @param array $rows  [group_id, date, language, cancelled] per member of an auto group
+     * @return array       groupId => true
+     */
+    function mixedLanguageAutoGroupIds(array $rows) {
+        $byGroup = [];
+        foreach ($rows as $r) {
+            if (!groupLanguageKeyApplies($r['date'])) { continue; }
+            $byGroup[(int) $r['group_id']][] = $r;
+        }
+        $mixed = [];
+        foreach ($byGroup as $gid => $members) {
+            if (count(groupMemberLanguages($members)) > 1) { $mixed[$gid] = true; }
+        }
+        return $mixed;
     }
 }
 

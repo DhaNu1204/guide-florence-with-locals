@@ -392,7 +392,7 @@ function autoGroupTours($conn, $data) {
 
     // Find ungrouped tours (or all non-manual tours if force=true)
     // NEVER touch tours in manually merged groups
-    $sql = "SELECT t.id, t.title, t.date, t.time, t.participants, t.cancelled, t.group_id
+    $sql = "SELECT t.id, t.title, t.date, t.time, t.participants, t.cancelled, t.group_id, t.language
             FROM tours t
             LEFT JOIN tour_groups tg ON t.group_id = tg.id
             WHERE t.date >= ? AND t.date <= ?
@@ -427,13 +427,18 @@ function autoGroupTours($conn, $data) {
     }
 
     // Group tours by normalized title + date + time
-    $buckets = [];
+    $departures = [];
     foreach ($tours as $tour) {
         $key = normalizeTitle($tour['title']) . '|' . $tour['date'] . '|' . normalizeTime($tour['time']);
-        if (!isset($buckets[$key])) {
-            $buckets[$key] = [];
+        if (!isset($departures[$key])) {
+            $departures[$key] = [];
         }
-        $buckets[$key][] = $tour;
+        $departures[$key][] = $tour;
+    }
+    // Step 6.12: one group per language, same rule as the sync (group_helpers.php).
+    $buckets = [];
+    foreach ($departures as $key => $depTours) {
+        $buckets += splitDepartureByLanguage($key, $depTours);
     }
 
     $groupsCreated = 0;
