@@ -43,7 +43,7 @@ Hard rules:
 
 ## 5. Business rules you must not break
 Full detail with the reasoning in **`docs/DOMAIN_RULES.md`** — read the section for the area you touch. The short list:
-- Auto-groups = same `product_id | date | HH:MM`; cancelled, private and `product_id IS NULL` tours are never auto-grouped; manual merges (`is_manual_merge=1`) are never touched by auto-grouping; a guide set on a group propagates to every member tour.
+- Auto-groups = same `product_id | date | HH:MM | language` (language since 2026-09-24, step 6.12; a guide speaks one language); cancelled, private and `product_id IS NULL` tours are never auto-grouped; manual merges (`is_manual_merge=1`) are never touched by auto-grouping; a guide set on a group propagates to every member tour.
 - Cancelled bookings are excluded from every count, PAX total, badge, payment and P&L figure.
 - 1 group = 1 payment; duplicate payment → HTTP 409 unless `force_group_payment` / `force_payment`.
 - "Field omitted = don't touch; field present but null = SET NULL" — use `array_key_exists`, not `isset`, in dynamic UPDATE builders (guide unassign depends on it).

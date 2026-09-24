@@ -138,6 +138,7 @@ Edit the constants in `tour_classification.php` (add the product id to `FULLY_PR
 
 `autoGroupAfterSync($conn, $startDate, $endDate)` in `bokun_sync.php` (runs at the end of every `syncBookings`):
 
+- **Step 6.12: from 2026-09-24 (`GROUP_LANGUAGE_KEY_FROM`) the key is `product_id | date | HH:MM | language`**: one departure = one language = one guide. A booking with no language joins only when exactly one language is present at that departure; otherwise it stays on its own. An auto group that already mixes languages is left alone by the sync (the owner decides); manual merges may mix languages and show a "Mixed languages" chip. Earlier dates keep the key below.
 - **Group key = `product_id | date | HH:MM`** (was normalized title) — same product at the same departure groups together even when sold under different channel titles (e.g. 962885's "Uffizi & Accademia Walking Tour…" + "Uffizi, David Tour & Gelato…").
 - **Excluded from auto-grouping** (left standalone, `group_id` NULL): `cancelled = 1`, `is_private = 1`, or `product_id IS NULL`. **Private tours are never auto-grouped.**
 - **Rebuild model**: detaches all auto-group tours in range (manual merges, `is_manual_merge = 1`, are **untouched**), drops orphaned auto groups, then regroups from the candidates. Cancelled/private tours get `group_id` cleared.
