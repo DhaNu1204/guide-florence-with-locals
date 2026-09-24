@@ -41,6 +41,7 @@ function cleanup($conn) {
     $conn->query("DELETE FROM tour_groups WHERE group_date IN $dates");
     $conn->query("DELETE FROM tours WHERE external_id LIKE '" . TEST_PREFIX . "%'");
     $conn->query("DELETE FROM guides WHERE email LIKE 'fwl-t612-%@example.invalid'");
+    $conn->query("DELETE FROM products WHERE bokun_product_id = " . TEST_PRODUCT); // step 6.13 digest check (fake product)
 }
 
 // Step 6.12: bookings carry a language (a departure is one language); English unless a test says otherwise.
@@ -322,6 +323,66 @@ check('6.12 a 1+1 mixed group without guide or payment is dissolved', !groupExis
 $r19 = $regroup3();
 check('... and the sync leaves both bookings on their own', groupOf($conn, $q1) === null && groupOf($conn, $q2) === null && (int) $r19['rows_written'] === 0,
     'rows_written=' . $r19['rows_written']);
+
+// ================= step 6.13: a note on a group ===========================================
+$noteOf = function ($table, $id) use ($conn) {
+    $r = $conn->query("SELECT notes FROM $table WHERE id = " . (int) $id)->fetch_assoc();
+    return $r ? $r['notes'] : false;
+};
+$setNote = function ($table, $id, $text) use ($conn) {
+    $s = $conn->prepare("UPDATE $table SET notes = ? WHERE id = ?");
+    $s->bind_param('si', $text, $id);
+    $s->execute();
+    $s->close();
+};
+
+// --- 20. a sync never writes or clears a group note (byte-identical) ----------------------
+$NOTE = "Meet at Loggia dei Lanzi 9:15 \xE2\x80\x94 caf\xC3\xA9 apr\xC3\xA8s\none guest uses a wheelchair";
+$setNote('tour_groups', $gEn, $NOTE);
+$setNote('tours', $en2, 'Vegetarian');
+$r20a = $regroup3();
+$r20b = $regroup3();
+check('6.13 two syncs leave a group note byte-identical', $noteOf('tour_groups', $gEn) === $NOTE,
+    bin2hex(substr((string) $noteOf('tour_groups', $gEn), 0, 12)));
+check('... and write nothing', (int) $r20b['rows_written'] === 0, 'rows_written=' . $r20b['rows_written']);
+
+// --- 21. the guide's evening digest does not change when a group has a note --------------
+require_once $apiDir . '/guide_digest.php';
+$conn->query("INSERT IGNORE INTO products (bokun_product_id, title, product_type) VALUES (" . TEST_PRODUCT . ", 'FWL test product', 'tour')");
+$setNote('tour_groups', $gPay, null);
+$dBefore = collectDigestDepartures($conn, TEST_DATE3);
+$vBefore = isset($dBefore[$enGuide]) ? buildDigestVariables($dBefore[$enGuide]['guide_name'], TEST_DATE3, $dBefore[$enGuide]['departures']) : null;
+$setNote('tour_groups', $gPay, 'INTERNAL: never to a guide');
+$dAfter = collectDigestDepartures($conn, TEST_DATE3);
+$vAfter = isset($dAfter[$enGuide]) ? buildDigestVariables($dAfter[$enGuide]['guide_name'], TEST_DATE3, $dAfter[$enGuide]['departures']) : null;
+check('6.13 the digest has the noted departure to compare (guide assigned)', $vBefore !== null && count($dBefore[$enGuide]['departures']) >= 1);
+check('6.13 the guide digest is byte-identical with and without the group note',
+    json_encode($dBefore) === json_encode($dAfter) && json_encode($vBefore) === json_encode($vAfter)
+    && strpos(json_encode($vAfter), 'INTERNAL') === false);
+
+// --- 22. the sync dissolves a noted group (a cancellation leaves one booking) --------------
+$conn->query("UPDATE tours SET cancelled = 1 WHERE id = $en1");
+$regroup3();
+check('6.13 sync dissolve: the group is gone', !groupExists($conn, $gEn) && groupOf($conn, $en2) === null);
+check('... the remaining booking keeps its own note and gets the group note appended',
+    $noteOf('tours', $en2) === "Vegetarian\n[Group note] " . $NOTE, var_export($noteOf('tours', $en2), true));
+check('... the cancelled booking does not need it (a live one got it)', $noteOf('tours', $en1) === null);
+$regroup3();
+check('... and a later sync does not add it twice', substr_count((string) $noteOf('tours', $en2), '[Group note]') === 1);
+
+// --- 23. a 6.12 language split keeps the note on both groups -------------------------------
+$s1 = addTour($conn, 's1', 2, '17:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$s2 = addTour($conn, 's2', 2, '17:00:00', $D3, 'Uffizi Gallery Test Tour', 'English');
+$s3 = addTour($conn, 's3', 1, '17:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$s4 = addTour($conn, 's4', 1, '17:00:00', $D3, 'Uffizi Gallery Test Tour', 'Italian');
+$gS = $legacyAutoGroup('17:00:00', [$s1, $s2, $s3, $s4]);
+$setNote('tour_groups', $gS, 'Meet at the Loggia');
+$migrate3();
+$gS2 = groupOf($conn, $s3);
+check('6.13 language split: the group keeping the id keeps the note', groupOf($conn, $s1) === $gS && $noteOf('tour_groups', $gS) === 'Meet at the Loggia');
+check('... the new group gets a copy', $gS2 !== null && $gS2 !== $gS && $noteOf('tour_groups', $gS2) === 'Meet at the Loggia');
+check('... and the bookings that moved do not get a second copy on their own note', $noteOf('tours', $s3) === null);
+$conn->query("DELETE FROM products WHERE bokun_product_id = " . TEST_PRODUCT);
 
 } catch (Throwable $e) {
     $failures++;

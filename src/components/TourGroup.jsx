@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
+import GroupNote from './GroupNote';
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 
@@ -265,9 +266,9 @@ const TourGroup = ({
           )}
         </div>
 
-        {/* Notes indicator */}
-        <div className="flex-shrink-0 w-16 text-xs text-stone-500 truncate">
-          {group.notes || ''}
+        {/* Step 6.13: the group's own note, in the Notes column (inline editor, never a modal) */}
+        <div className="flex-shrink-0 w-56">
+          <GroupNote groupId={group.id} note={group.notes} />
         </div>
 
         {/* Manual merge badge */}

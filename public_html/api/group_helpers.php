@@ -275,3 +275,141 @@ if (!function_exists('fillMissingGroupGuide')) {
         return $filled > 0 ? $filled : 0;
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Step 6.13: a note on a group (tour_groups.notes) - one note per departure, internal only (it is
+// never sent to a guide). The sync never writes it. When a group goes away or loses a booking the
+// note is never silently lost: it is appended to the member bookings' own notes, marked
+// "[Group note] ...", and never twice.
+// ---------------------------------------------------------------------------------------------
+
+if (!defined('GROUP_NOTE_MARK')) {
+    define('GROUP_NOTE_MARK', '[Group note]');
+}
+if (!defined('GROUP_NOTE_MAX_LENGTH')) {
+    define('GROUP_NOTE_MAX_LENGTH', 2000);
+}
+
+if (!function_exists('groupNoteClean')) {
+    /** A note as stored: trimmed, "\n" line ends; null when there is nothing left. */
+    function groupNoteClean($note) {
+        if ($note === null || !is_scalar($note)) { return null; }
+        $n = trim(str_replace(["\r\n", "\r"], "\n", (string) $note));
+        return $n === '' ? null : $n;
+    }
+}
+
+if (!function_exists('appendGroupNoteText')) {
+    /**
+     * A booking's own note with the group note appended ("[Group note] ..." on a new line).
+     * Never overwrites; returns the existing text unchanged when that exact marked note is
+     * already in it, or when there is no group note.
+     */
+    function appendGroupNoteText($existing, $groupNote) {
+        $clean = groupNoteClean($groupNote);
+        if ($clean === null) { return $existing; }
+        $marked = GROUP_NOTE_MARK . ' ' . $clean;
+        $ex = (string) $existing;
+        if (strpos($ex, $marked) !== false) { return $existing; }
+        return trim($ex) === '' ? $marked : rtrim($ex) . "\n" . $marked;
+    }
+}
+
+if (!function_exists('joinGroupNotes')) {
+    /** Several notes (merging two noted groups) -> one, each on its own line, none dropped, no repeats. */
+    function joinGroupNotes(array $notes) {
+        $out = [];
+        foreach ($notes as $n) {
+            $c = groupNoteClean($n);
+            if ($c !== null && !in_array($c, $out, true)) { $out[] = $c; }
+        }
+        return $out ? implode("\n", $out) : null;
+    }
+}
+
+if (!function_exists('ensureGroupNotesColumn')) {
+    /** Self-provision (also database/migrations/20260924_tour_groups_notes.sql). */
+    function ensureGroupNotesColumn($conn) {
+        $c = $conn->query("SHOW COLUMNS FROM tour_groups LIKE 'notes'");
+        if ($c && $c->num_rows === 0) {
+            $conn->query("ALTER TABLE tour_groups ADD COLUMN `notes` TEXT NULL DEFAULT NULL AFTER `guide_name`");
+        }
+        return true;
+    }
+}
+
+if (!function_exists('groupNoteOf')) {
+    function groupNoteOf($conn, $groupId) {
+        $stmt = $conn->prepare("SELECT notes FROM tour_groups WHERE id = ?");
+        $gid = (int) $groupId;
+        $stmt->bind_param('i', $gid);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row ? groupNoteClean($row['notes']) : null;
+    }
+}
+
+if (!function_exists('copyGroupNoteToTours')) {
+    /**
+     * Append a group note to each booking's own note. The "remaining" bookings are the live ones;
+     * only when every one of them is cancelled does the note go onto the cancelled ones, so it is
+     * still somewhere. Returns the number of bookings whose note changed.
+     */
+    function copyGroupNoteToTours($conn, $groupNote, array $tourIds) {
+        if (groupNoteClean($groupNote) === null) { return 0; }
+        $tourIds = array_values(array_unique(array_map('intval', $tourIds)));
+        if (!$tourIds) { return 0; }
+        $ph = implode(',', array_fill(0, count($tourIds), '?'));
+        $stmt = $conn->prepare("SELECT id, notes, cancelled FROM tours WHERE id IN ($ph)");
+        $stmt->bind_param(str_repeat('i', count($tourIds)), ...$tourIds);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $rows = [];
+        while ($r = $res->fetch_assoc()) { $rows[] = $r; }
+        $stmt->close();
+        $live = array_values(array_filter($rows, function ($r) { return (int) $r['cancelled'] === 0; }));
+        $changed = 0;
+        foreach (($live ?: $rows) as $r) {
+            $new = appendGroupNoteText($r['notes'], $groupNote);
+            if ($new === $r['notes']) { continue; }
+            $u = $conn->prepare("UPDATE tours SET notes = ? WHERE id = ?");
+            $tid = (int) $r['id'];
+            $u->bind_param('si', $new, $tid);
+            $u->execute();
+            $u->close();
+            $changed++;
+        }
+        return $changed;
+    }
+}
+
+if (!function_exists('preserveNotesOfGroupsAboutToBeDeleted')) {
+    /**
+     * Auto-grouping deletes every group row that has no members left. Before it does, a group
+     * that carries a note hands the note to the bookings that were in it this run.
+     *
+     * @param array $formerMembership tourId => groupId as it was before this run
+     * @return int bookings whose note changed
+     */
+    function preserveNotesOfGroupsAboutToBeDeleted($conn, array $formerMembership) {
+        $res = $conn->query("SELECT id, notes FROM tour_groups
+                              WHERE notes IS NOT NULL AND TRIM(notes) <> ''
+                                AND id NOT IN (SELECT DISTINCT group_id FROM tours WHERE group_id IS NOT NULL)");
+        if (!$res) { return 0; }
+        $changed = 0;
+        while ($g = $res->fetch_assoc()) {
+            $gid = (int) $g['id'];
+            $members = [];
+            foreach ($formerMembership as $tid => $old) {
+                if ((int) $old === $gid) { $members[] = (int) $tid; }
+            }
+            if (!$members) {
+                error_log("Group note: group $gid is deleted with a note and no known former bookings");
+                continue;
+            }
+            $changed += copyGroupNoteToTours($conn, $g['notes'], $members);
+        }
+        return $changed;
+    }
+}

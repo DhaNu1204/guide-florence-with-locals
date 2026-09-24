@@ -133,5 +133,19 @@ $mixed = mixedLanguageAutoGroupIds([
 ]);
 check('6.12 only an upcoming mixed auto group is frozen for the sync', $mixed === [7 => true], json_encode($mixed));
 
+// ---- step 6.13: group notes are appended, marked, never twice, never dropped -------------
+check('6.13 clean: trims, CRLF -> LF, blank -> null',
+    groupNoteClean("  Meet 9:15\r\nLoggia  ") === "Meet 9:15\nLoggia" && groupNoteClean('   ') === null && groupNoteClean(null) === null);
+check('6.13 append onto an empty booking note', appendGroupNoteText(null, 'Meet at Loggia 9:15') === '[Group note] Meet at Loggia 9:15');
+check('6.13 append keeps the booking\'s own note (never overwrites)',
+    appendGroupNoteText('Vegetarian', 'Meet at Loggia 9:15') === "Vegetarian\n[Group note] Meet at Loggia 9:15");
+$once = appendGroupNoteText('Vegetarian', 'Meet at Loggia 9:15');
+check('6.13 the same group note is never added twice', appendGroupNoteText($once, 'Meet at Loggia 9:15') === $once);
+check('6.13 a different group note is still added', substr_count(appendGroupNoteText($once, 'Wheelchair'), '[Group note]') === 2);
+check('6.13 no group note -> booking note unchanged (byte for byte)', appendGroupNoteText("A\r\nB", '  ') === "A\r\nB");
+check('6.13 merging two noted groups keeps both, one per line',
+    joinGroupNotes(['Meet at Loggia 9:15', 'One guest uses a wheelchair']) === "Meet at Loggia 9:15\nOne guest uses a wheelchair");
+check('6.13 ... no repeats, blanks ignored', joinGroupNotes(['A', null, ' ', 'A', 'B']) === "A\nB" && joinGroupNotes([null, '']) === null);
+
 echo $failures === 0 ? "\nall checks passed\n" : "\n$failures check(s) FAILED\n";
 exit($failures === 0 ? 0 : 1);
