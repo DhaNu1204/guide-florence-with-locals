@@ -56,7 +56,8 @@ while ($row = $res->fetch_assoc()) {
 
     if ($hasCol) {
         $stored = $row['rate_title'];
-        if ($stored === $rate) { $colMatch++; }
+        $want = $rate === null ? null : mb_substr(trim($rate), 0, 255);   // the sync stores it trimmed
+        if ($stored === $want) { $colMatch++; }
         else { $colDiff++; if ($stored === null && $rate !== null) { $colNullPayloadHas++; } if (count($diffIds) < 20) { $diffIds[] = $row['id']; } }
     }
     foreach ($codes as $c) {
