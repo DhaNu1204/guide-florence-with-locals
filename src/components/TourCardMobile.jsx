@@ -3,6 +3,7 @@ import { FiSave, FiX, FiUsers, FiChevronDown } from 'react-icons/fi';
 import { getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 import ParticipantsButton from './ParticipantsButton';
 import ViatorLegacyChip from './ViatorLegacyChip';
+import VasariChip from './VasariChip';
 import { isGuidePaid } from '../utils/paymentBadges';
 
 const getChannelColor = (channel) => {
@@ -114,6 +115,8 @@ const TourCardMobile = ({
         </span>
         {/* Step 6.9: booked through the Viator account he is retiring. */}
         <ViatorLegacyChip account={tour.viator_account} />
+        {/* Step 6.14: Uffizi + Vasari Corridor rate. */}
+        <VasariChip tour={tour} />
         {/* Step 6.4: typed in by hand - the sync never touches this row. */}
         {tour.is_manual && (
           <span

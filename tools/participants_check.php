@@ -265,5 +265,30 @@ $tp = $pdfText(participantsRenderPdf($twoPages));
 check('6.13 on a two-page sheet the note prints once (page 1)', substr_count($tp, '(Only on page one)') === 1,
     substr_count($tp, '(Only on page one)') . 'x');
 
+// --- step 6.14: Vasari bookings on the per-departure sheet ---------------------------------------
+$vf = sheetFixture(['total_pax' => 9, 'total_adults' => 9]);
+$vf['bookings'][0]['vasari'] = false;
+$vf['bookings'][1] = array_merge($vf['bookings'][1], ['names' => ['Anna Rossi', 'Marco Rossi', 'Luca Rossi', 'Sara Rossi'], 'pax' => 4, 'adults' => 4, 'vasari' => true]);
+$vf['vasari_pax'] = 4;
+$vt = $pdfText(participantsRenderPdf($vf));
+check('6.14 header line "Vasari: 4 of 9 PAX" when there are Vasari bookings',
+    strpos($vt, '(Vasari:)') !== false && strpos($vt, '(4 of 9 PAX)') !== false);
+check('6.14 the VASARI tag follows the lead name', strpos($vt, 'Anna Rossi VASARI, Marco Rossi') !== false);
+check('6.14 ... and only on the Vasari booking', substr_count($vt, 'VASARI') === 1, substr_count($vt, 'VASARI') . 'x');
+check('6.14 ... the line sits above the booking table', strpos($vt, '(Vasari:)') < strpos($vt, '(Booking ref.)'));
+$none = $pdfText(participantsRenderPdf(sheetFixture(['vasari_pax' => 0])));
+check('6.14 no Vasari bookings -> no header line and no tag',
+    strpos($none, '(Vasari:)') === false && strpos($none, 'VASARI') === false);
+$old = $pdfText(participantsRenderPdf(sheetFixture()));
+check('6.14 data without the new keys -> no line, no tag',
+    strpos($old, '(Vasari:)') === false && strpos($old, 'VASARI') === false);
+$greek = sheetFixture(['vasari_pax' => 1]);
+$greek['bookings'][0] = array_merge($greek['bookings'][0], ['names' => ["\u{0395}\u{039B}\u{0395}\u{039D}\u{0397} \u{039D}\u{0397}\u{03A3}\u{0399}\u{03A9}\u{03A4}\u{0397}"], 'vasari' => true]);
+$gt = $pdfText(participantsRenderPdf($greek));
+check('6.14 a name in another script keeps its tag (the cell wraps, so check both parts)', substr_count($gt, 'VASARI') === 1 && strpos($gt, 'another script') !== false);
+if (getenv('FWL_WRITE_SAMPLES')) {
+    file_put_contents(getenv('FWL_WRITE_SAMPLES') . '/vasari-sheet.pdf', participantsRenderPdf($vf));
+}
+
 echo $failures === 0 ? "\nall checks passed\n" : "\n$failures check(s) FAILED\n";
 exit($failures === 0 ? 0 : 1);

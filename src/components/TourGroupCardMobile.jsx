@@ -5,6 +5,7 @@ import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggreg
 import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
 import GroupNote from './GroupNote';
+import VasariChip, { VasariGroupChip } from './VasariChip';
 
 // Small per-booking category badge; Combo gets the gold treatment so a
 // higher-pay booking hiding inside a group is easy to spot.
@@ -135,7 +136,7 @@ const TourGroupCardMobile = ({
         }}
       >
         {/* Row 1: Time, Language, Booking count, Selection */}
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           <span className="text-sm font-bold text-stone-900">{groupTime}</span>
           <span className="text-stone-300">·</span>
           {languages.map(lang => (
@@ -146,6 +147,8 @@ const TourGroupCardMobile = ({
               {lang}
             </span>
           ))}
+          {/* Step 6.14: people in this departure doing the Vasari Corridor */}
+          <VasariGroupChip tours={group.tours} />
           <span className="ml-auto text-xs text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">
             {bookingCount} {bookingCount === 1 ? 'booking' : 'bookings'}
           </span>
@@ -296,6 +299,7 @@ const TourGroupCardMobile = ({
                     )}
                   </span>
                   <CategoryBadge title={tour.title} className="mt-0.5" />
+                  <VasariChip tour={tour} className="mt-0.5 ml-1" />
                 </div>
 
                 {/* PAX */}
