@@ -18,6 +18,7 @@
 require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
+require_once __DIR__ . '/rate_helpers.php';  // step 6.14: tours.rate_title + the Vasari rule
 require_once __DIR__ . '/group_helpers.php'; // step 3.5: propagateGuideToTours() lives there (shared with bokun_sync.php)
 
 // Require authentication for all tour group operations
@@ -141,6 +142,7 @@ function ensureTourGroupsTable($conn) {
     }
 
     ensureGroupNotesColumn($conn); // step 6.13
+    ensureRateTitleColumn($conn);  // step 6.14
 }
 
 /**
@@ -332,7 +334,7 @@ function getGroupTours($conn, $groupId) {
     $stmt = $conn->prepare("
         SELECT t.id, t.title, t.date, t.time, t.customer_name, t.customer_email,
                t.participants, t.booking_channel, t.bokun_confirmation_code, t.language,
-               t.cancelled, t.payment_status, t.guide_id, t.bokun_data, g.name as guide_name
+               t.cancelled, t.payment_status, t.guide_id, t.bokun_data, t.rate_title, g.name as guide_name
         FROM tours t
         LEFT JOIN guides g ON t.guide_id = g.id
         WHERE t.group_id = ?
@@ -355,6 +357,7 @@ function getGroupTours($conn, $groupId) {
         $row['pax_adults'] = $pax['adults'];
         $row['pax_children'] = $pax['children'];
         $row['pax_infants'] = $pax['infants'];
+        $row['vasari'] = rateIsVasari($row['rate_title']); // step 6.14
         unset($row['bokun_data']);
 
         $tours[] = $row;

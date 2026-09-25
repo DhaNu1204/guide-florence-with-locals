@@ -21,6 +21,7 @@ require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php';   // computePaxBreakdown()
 require_once __DIR__ . '/radio_helpers.php';         // radioMuseumForTitle() - same mapping as 6.3
 require_once __DIR__ . '/participant_helpers.php';
+require_once __DIR__ . '/rate_helpers.php';          // step 6.14: rateIsVasari()
 
 Middleware::requireAuth($conn);
 autoRateLimit('participants');
@@ -129,6 +130,7 @@ $guidePhone = $first['guide_phone'] ?: '';
 $rows = [];
 $totalPax = 0; $totalAd = 0; $totalCh = 0; $totalInf = 0;
 $cancelledCount = 0;
+$vasariPax = 0;   // step 6.14: live bookings only, like every other total on the sheet
 $languages = [];
 foreach ($all as $r) {
     if ((int) $r['cancelled'] === 1) { $cancelledCount++; continue; }
@@ -138,6 +140,8 @@ foreach ($all as $r) {
     $n = $pax['adults'] + $pax['children'] + $pax['infants'];
     $totalPax += $n; $totalAd += $pax['adults']; $totalCh += $pax['children']; $totalInf += $pax['infants'];
     if (!empty($r['language'])) { $languages[$r['language']] = true; }
+    $vasari = rateIsVasari($r['rate_title'] ?? null);
+    if ($vasari) { $vasariPax += $n; }
     $rows[] = [
         'reference' => participantsReference($r, $bokun),
         'names'     => participantsNames($r),
@@ -148,6 +152,7 @@ foreach ($all as $r) {
         'channel'   => (string) ($r['booking_channel'] ?: 'Direct'),
         'agency'    => participantsAgency($bokun),
         'manual'    => (isset($r['source']) && $r['source'] === 'manual'),
+        'vasari'    => $vasari,
     ];
 }
 $language = implode(', ', array_keys($languages));
@@ -163,6 +168,7 @@ $data = [
     'bookings' => $rows,
     'total_pax' => $totalPax, 'total_adults' => $totalAd,
     'total_children' => $totalCh, 'total_infants' => $totalInf,
+    'vasari_pax' => $vasariPax,   // step 6.14: 0 = no Vasari line on the sheet
     'cancelled_bookings' => $cancelledCount,
     'filename' => participantsFilename($museum ?: $product, $departureDate, $departureTime),
 ];

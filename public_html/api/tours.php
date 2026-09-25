@@ -6,6 +6,7 @@ require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBre
 require_once __DIR__ . '/payment_helpers.php';     // pure helper: paymentAmountError() (step 3.8)
 require_once __DIR__ . '/manual_helpers.php';      // pure helpers: hand-entered departures (step 6.4)
 require_once __DIR__ . '/viator_helpers.php';      // pure helpers: the old-Viator-account label (step 6.9)
+require_once __DIR__ . '/rate_helpers.php';        // step 6.14: tours.rate_title + the Vasari rule
 
 // Require authentication for all tour operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -151,6 +152,7 @@ if ($checkIsPrivateCol && $checkIsPrivateCol->num_rows === 0) {
 // Step 6.4: source / manual_revenue / manual_currency for hand-entered departures.
 ensureManualColumns($conn);
 ensureViatorAccountColumn($conn);   // step 6.9: the old-Viator-account label
+ensureRateTitleColumn($conn);       // step 6.14: the Bokun rate the booking was sold on
 
 // Always ensure known ticket products are classified correctly.
 // Runs after the products table is guaranteed to exist, and after
@@ -526,6 +528,8 @@ switch ($method) {
                 $row['pax_adults'] = $pax['adults'];
                 $row['pax_children'] = $pax['children'];
                 $row['pax_infants'] = $pax['infants'];
+                // Step 6.14: the rule lives in rateIsVasari() only; the page just reads the flag.
+                $row['vasari'] = rateIsVasari($row['rate_title'] ?? null);
 
                 if ($listView) {
                     // Step 4.2: only what the list renders; everything the browser used to
@@ -545,7 +549,7 @@ switch ($method) {
                               'is_private', 'date', 'time', 'start_time_str', 'guide_id', 'guide_name',
                               'group_id', 'group_info', 'participants', 'total_participants',
                               'pax_adults', 'pax_children', 'pax_infants', 'participant_names',
-                              'customer_name', 'language', 'booking_channel', 'viator_account', 'external_source',
+                              'customer_name', 'language', 'booking_channel', 'viator_account', 'rate_title', 'vasari', 'external_source',
                               'source', 'manual_revenue', 'manual_currency',
                               'cancelled', 'paid', 'payment_status', 'guide_paid', 'bokun_total_price', 'bokun_currency',
                               'rescheduled', 'original_date',

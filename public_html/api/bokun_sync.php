@@ -5,6 +5,7 @@ require_once __DIR__ . '/tour_classification.php';
 require_once __DIR__ . '/group_helpers.php';
 require_once __DIR__ . '/manual_helpers.php';   // step 6.4: manual rows are invisible to the sync // step 3.5: fillMissingGroupGuide()
 require_once __DIR__ . '/viator_helpers.php';   // step 6.9: the old/new Viator account label
+require_once __DIR__ . '/rate_helpers.php';     // step 6.14: tours.rate_title
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -470,6 +471,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
 
     // Step 6.9: tours.viator_account - the INSERT below writes it, the UPDATE must not.
     ensureViatorAccountColumn($conn);
+    // Step 6.14: tours.rate_title - written after every insert/update, next to is_private.
+    ensureRateTitleColumn($conn);
     // Read once per run, not once per booking. Null until he connects the new Viator account,
     // which is what keeps a booking arriving on the OLD account today labelled 'legacy'.
     $viatorCutoverAt = viatorCutoverAt($conn);
@@ -655,12 +658,15 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                     // Capture before any further statement resets them.
                     $upsertAffected = $conn->affected_rows;
                     // Classify private (single source of truth) and persist on every write.
+                    // Step 6.14: the rate title rides in the same statement (insert and update
+                    // alike); it is the only column this step adds to the sync's writes.
                     $rowId = $isUpdate ? (int) $existing['id'] : (int) $conn->insert_id;
                     if ($rowId > 0) {
                         list($rateId, $rateTitle) = bokunRateInfo($booking);
                         $isPriv = isPrivateBooking($tourData['product_id'], $rateId, $rateTitle) ? 1 : 0;
-                        $ipStmt = $conn->prepare("UPDATE tours SET is_private = ? WHERE id = ?");
-                        $ipStmt->bind_param("ii", $isPriv, $rowId);
+                        $storedRateTitle = rateTitleFromBokun($booking);
+                        $ipStmt = $conn->prepare("UPDATE tours SET is_private = ?, rate_title = ? WHERE id = ?");
+                        $ipStmt->bind_param("isi", $isPriv, $storedRateTitle, $rowId);
                         $ipStmt->execute();
                         $ipStmt->close();
                     }

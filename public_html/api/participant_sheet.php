@@ -60,6 +60,13 @@ class ParticipantSheet extends FPDF
         $this->Cell(34, 5, 'Total participants:', 0, 0);
         $this->SetFont('Helvetica', '', 9);
         $this->Cell(0, 5, (string) $d['total_pax'], 0, 1);
+        // Step 6.14: how many of them go through the Vasari Corridor - only when anyone does.
+        if (!empty($d['vasari_pax'])) {
+            $this->SetFont('Helvetica', 'B', 9);
+            $this->Cell(16, 5, 'Vasari:', 0, 0);
+            $this->SetFont('Helvetica', '', 9);
+            $this->Cell(0, 5, (int) $d['vasari_pax'] . ' of ' . (int) $d['total_pax'] . ' PAX', 0, 1);
+        }
         // Step 6.13: the group note, first page only, above the booking table. Wraps, never
         // truncates; no note = no block at all.
         if ($this->PageNo() === 1 && isset($d['group_note']) && $d['group_note'] !== '') {
@@ -102,6 +109,13 @@ class ParticipantSheet extends FPDF
         // A booking with several travellers needs several lines; the row grows to fit.
         $names = count($b['names']) > 0 ? implode(', ', $b['names']) : '(no name given)';
         $namesTxt = participantsText($names);
+        // Step 6.14: the tag goes right after the lead name. Each part is transliterated on its
+        // own so a name in another script can never swallow the tag.
+        if (!empty($b['vasari'])) {
+            $lead = participantsText(count($b['names']) > 0 ? $b['names'][0] : '(no name given)');
+            $rest = count($b['names']) > 1 ? participantsText(implode(', ', array_slice($b['names'], 1))) : '';
+            $namesTxt = $lead . ' VASARI' . ($rest !== '' ? ', ' . $rest : '');
+        }
         $lines = max(1, count($this->splitLines($namesTxt, $this->colw[2] - 2)));
         $h = 5 * $lines;
 

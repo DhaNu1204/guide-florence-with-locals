@@ -3,6 +3,7 @@ import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors
 import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
 import GroupNote from './GroupNote';
+import VasariChip, { VasariGroupChip } from './VasariChip';
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 
@@ -185,6 +186,8 @@ const TourGroup = ({
 
         {/* Language badges */}
         <div className="flex gap-1 flex-shrink-0">
+          {/* Step 6.14: people in this departure doing the Vasari Corridor */}
+          <VasariGroupChip tours={group.tours} />
           {languages.map(lang => (
             <span
               key={lang}
@@ -322,6 +325,7 @@ const TourGroup = ({
                           Private
                         </span>
                       )}
+                      <VasariChip tour={tour} />
                     </div>
                     <GroupTourNames tour={tour} />
                   </td>
