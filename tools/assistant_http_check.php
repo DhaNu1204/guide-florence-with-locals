@@ -219,7 +219,7 @@ try {
     $codes = [];
     $t0 = microtime(true);
     for ($i = 1; $i <= 31; $i++) {
-        list($codes[]) = http('POST', "$host/api/assistant.php", 'admin2', '{}', 20, 1100000);
+        list($codes[]) = http('POST', "$host/api/assistant.php", 'admin2', '{}', 20, 1300000); // 31 x 1.3 s = 40 s, inside the 60 s window; faster bursts get dropped by the host
     }
     $secs = round(microtime(true) - $t0, 1);
     $first30 = array_count_values(array_slice($codes, 0, 30));

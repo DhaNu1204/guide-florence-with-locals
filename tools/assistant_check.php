@@ -149,7 +149,7 @@ $fake = new FakeClaude([
     ['stop_reason' => 'end_turn', 'usage' => [], 'content' => [['type' => 'text', 'text' => 'Want the split by product?']]],
 ]);
 $r = assistantRunLoop($fake, null, $user, assistantToolRegistry(), [], 'how many tomorrow', $now);
-check('text: answer written with show_blocks + final line kept, "let me check" dropped', $r['text'], "Tomorrow: 10 departures, 41 guests.\nWant the split by product?");
+check('text: the show_blocks text is the answer ("let me check" + trailing follow-up dropped)', $r['text'], 'Tomorrow: 10 departures, 41 guests.');
 
 
 // ---- step 7.2: block validator edge cases ------------------------------------------------------

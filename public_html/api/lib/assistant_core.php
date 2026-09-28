@@ -309,7 +309,7 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
             'cache_read_tokens' => 0, 'cache_write_tokens' => 0, 'error' => null, 'stop' => null];
     $blocks = new ArrayObject(); // filled by show_blocks, validated there
     $lastText = '';
-    $answerParts = []; // step 7.2: text written together with show_blocks + the final text
+    $answerParts = []; // step 7.2: the text written together with show_blocks, if any
     for ($round = 1; ; $round++) {
         $left = $timeBudget - (microtime(true) - $startedAt);
         if ($left < ASSISTANT_MIN_CALL_SECONDS) {
@@ -347,12 +347,13 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
         $stop = isset($resp['stop_reason']) ? $resp['stop_reason'] : null;
         $out['stop'] = $stop;
         $final = ($stop !== 'tool_use' || count($uses) === 0);
-        // Step 7.2: the model often writes the real answer in the same turn as its show_blocks call
-        // and only a follow-up line after the tool result; keep both. Text next to data-tool calls
-        // ("let me check") is not part of the answer.
+        // Step 7.2: the model writes the real answer in the same turn as its show_blocks call; what it
+        // adds after the tool result is a repeat or a follow-up offer (and on staging drifted into the
+        // other language), so the show_blocks text wins. Without it, the final text is the answer.
+        // Text next to data-tool calls ("let me check") is never part of the answer.
         $withBlocks = count(array_filter($uses, function ($u) { return isset($u['name']) && $u['name'] === 'show_blocks'; })) > 0;
-        if (($final || $withBlocks) && count($texts) > 0 && $lastText !== '') {
-            $answerParts[] = $lastText;
+        if ($withBlocks && count($texts) > 0 && $lastText !== '') {
+            $answerParts = [$lastText];
         }
         if ($final) {
             break;
