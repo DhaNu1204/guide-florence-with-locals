@@ -63,6 +63,8 @@ function ensureAssistantTables($conn) {
             rounds TINYINT UNSIGNED NOT NULL DEFAULT 0,
             input_tokens INT UNSIGNED NOT NULL DEFAULT 0,
             output_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+            cache_read_tokens INT UNSIGNED NULL,
+            cache_write_tokens INT UNSIGNED NULL,
             ms INT UNSIGNED NOT NULL DEFAULT 0,
             error VARCHAR(500) NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -70,6 +72,13 @@ function ensureAssistantTables($conn) {
             KEY idx_assistant_logs_user (user_id, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+    // step 7.2: prompt-caching token counts (existing 7.1 tables get the columns here)
+    foreach (['cache_read_tokens', 'cache_write_tokens'] as $col) {
+        $has = $conn->query("SHOW COLUMNS FROM assistant_logs LIKE '$col'");
+        if ($has && $has->num_rows === 0) {
+            $conn->query("ALTER TABLE assistant_logs ADD COLUMN `$col` INT UNSIGNED NULL AFTER output_tokens");
+        }
+    }
 }
 
 /** Now, Europe/Rome. The DB session runs in UTC (step 2.1); PHP runs in Europe/Rome. */
@@ -77,12 +86,17 @@ function assistantNow() {
     return new DateTime('now', new DateTimeZone('Europe/Rome'));
 }
 
-/** Tokens spent since midnight Europe/Rome (created_at is compared in UTC, the DB session zone). */
+/**
+ * Tokens spent since midnight Europe/Rome (created_at is compared in UTC, the DB session zone).
+ * Step 7.2: cache writes count in full, cache reads at one tenth - the same ratio as their price
+ * (a cache read costs 0.1x an input token). Counting reads in full would spend the cap about ten
+ * times faster than the money it stands for (~10k cached tokens are re-read on every question).
+ */
 function assistantTokensToday($conn, DateTime $now) {
     $midnight = new DateTime($now->format('Y-m-d') . ' 00:00:00', new DateTimeZone('Europe/Rome'));
     $midnight->setTimezone(new DateTimeZone('UTC'));
     $since = $midnight->format('Y-m-d H:i:s');
-    $stmt = $conn->prepare("SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS used FROM assistant_logs WHERE created_at >= ?");
+    $stmt = $conn->prepare("SELECT COALESCE(SUM(input_tokens + output_tokens + COALESCE(cache_write_tokens, 0) + CEIL(COALESCE(cache_read_tokens, 0) / 10)), 0) AS used FROM assistant_logs WHERE created_at >= ?");
     $stmt->bind_param('s', $since);
     $stmt->execute();
     $used = (int) $stmt->get_result()->fetch_assoc()['used'];
@@ -115,23 +129,81 @@ function assistantParseBody($body) {
     return [$message, $conv];
 }
 
-function assistantSystemPrompt(array $user, DateTime $now) {
-    $name = isset($user['username']) && $user['username'] !== '' ? $user['username'] : 'the user';
-    $tomorrow = (clone $now)->modify('+1 day');
+/**
+ * Step 7.2: the fixed half of the system prompt. It never changes between requests, so it sits
+ * right after the tool definitions and carries the cache breakpoint (tools + rules are cached).
+ */
+function assistantSystemRules() {
     return "You are the assistant inside the Florence with Locals tour management app (walking tours in Florence, Italy). "
-        . "You are talking to {$name}, an admin of the company.\n"
-        . "Today is " . $now->format('l j F Y') . " (" . $now->format('Y-m-d') . "), the time is " . $now->format('H:i')
-        . " in Florence (Europe/Rome). Tomorrow is " . $tomorrow->format('l Y-m-d') . ".\n"
+        . "You talk to the company's admins.\n"
         . "Rules:\n"
         . "- Reply in the language of the user's latest message: a question in English gets an English answer, "
-        . "a question in Italian an Italian answer. The company being in Italy does not change this. "
-        . "Spelling mistakes are normal.\n"
+        . "a question in Italian an Italian answer - every sentence, including any follow-up question. The company "
+        . "being in Italy does not change this. Spelling mistakes are normal.\n"
         . "- Answer briefly.\n"
         . "- Use the tools for every fact about tours, guests, guides or money. Never guess or estimate a number; "
         . "if no tool can answer, say so plainly.\n"
         . "- A departure is one tour run by one guide; a merged group counts as one departure. Guests = PAX.\n"
-        . "- Write dates like \"Mon 28 Sep\" and times as 24-hour HH:MM.\n"
-        . "- Plain text only: no markdown tables, no headings.";
+        . "- Dates: use the ranges given under \"Dates\" below, never work them out yourself. \"this week\" = today to "
+        . "Sunday; \"this month\" = today to the last day of the month; \"tomorrow\" and \"weekend\" as listed. "
+        . "Always state the range you used, e.g. \"from Mon 28 Sep to Wed 30 Sep\".\n"
+        . "- Write dates like \"Mon 28 Sep\" (in an Italian answer with Italian names: \"lun 28 set\") and times as 24-hour HH:MM.\n"
+        . "- Guides: resolve a name with find_guide. If it is not confident, do not pick one: ask which guide, "
+        . "with a choices block listing the matches.\n"
+        . "- When a time matches several departures, list them all (or ask with a choices block); never pick one silently.\n"
+        . "- When a tool returns a list (departures, guides), call show_blocks once with it (departure_list for "
+        . "departures, table for guides, stat for a single key number) and keep the text to one or two sentences: "
+        . "the total and the range, written in the same turn as the show_blocks call. The text must still contain "
+        . "the key numbers (it is also read without the blocks). If a list was truncated, say how many there are in total.\n"
+        . "- free_guides assumes every tour lasts 2 hours; mention that in the answer.\n"
+        . "- Plain text only in the answer: no markdown tables, no headings, no bullet lists of data that is already in a block.";
+}
+
+/** Step 7.2: the per-request half - who is asking and today's date ranges (Europe/Rome). */
+function assistantDateRanges(DateTime $now) {
+    $d = function ($dt) { return $dt->format('D j M') . ' (' . $dt->format('Y-m-d') . ')'; };
+    $today = clone $now; $today->setTime(0, 0);
+    $tomorrow = (clone $today)->modify('+1 day');
+    $dow = (int) $today->format('N'); // 1 = Mon ... 7 = Sun
+    $sunday = (clone $today)->modify('+' . (7 - $dow) . ' days');
+    if ($dow >= 6) {
+        $weekendStart = clone $today;
+        $weekendEnd = $sunday;
+    } else {
+        $weekendStart = (clone $today)->modify('+' . (6 - $dow) . ' days');
+        $weekendEnd = $sunday;
+    }
+    $nextMon = (clone $sunday)->modify('+1 day');
+    $nextSun = (clone $nextMon)->modify('+6 days');
+    $monthEnd = (clone $today)->modify('last day of this month');
+    $nextMonthStart = (clone $today)->modify('first day of next month');
+    $nextMonthEnd = (clone $today)->modify('last day of next month');
+    return [
+        'today' => $d($today),
+        'tomorrow' => $d($tomorrow),
+        'this week' => $d($today) . ' to ' . $d($sunday),
+        'weekend' => $d($weekendStart) . ' to ' . $d($weekendEnd),
+        'next week' => $d($nextMon) . ' to ' . $d($nextSun),
+        'this month' => $d($today) . ' to ' . $d($monthEnd),
+        'next month' => $d($nextMonthStart) . ' to ' . $d($nextMonthEnd),
+    ];
+}
+
+function assistantSystemContext(array $user, DateTime $now) {
+    $name = isset($user['username']) && $user['username'] !== '' ? $user['username'] : 'the user';
+    $lines = "You are talking to {$name}. Now it is " . $now->format('l j F Y, H:i') . " in Florence (Europe/Rome).\nDates:\n";
+    foreach (assistantDateRanges($now) as $k => $v) {
+        $lines .= "- {$k}: {$v}\n";
+    }
+    return rtrim($lines);
+}
+
+/** The system prompt as two blocks: fixed rules (cache breakpoint) + today's context. */
+function assistantSystemPrompt(array $user, DateTime $now) {
+    return [
+        ['type' => 'text', 'text' => assistantSystemRules(), 'cache_control' => ['type' => 'ephemeral']],
+        ['type' => 'text', 'text' => assistantSystemContext($user, $now)],
+    ];
 }
 
 /** The earlier question/answer rows of this conversation, oldest first, as API messages. */
@@ -206,7 +278,8 @@ function assistantPrune($conn) {
  *
  * @param object $client  anything with createMessage(array $payload, int $timeout): array
  * @param array  $history earlier API messages (user/assistant text)
- * @return array {text, tools_called[], rounds, input_tokens, output_tokens, error|null, stop}
+ * @return array {text, blocks[], tools_called[], rounds, input_tokens, output_tokens, cache_read_tokens,
+ *                cache_write_tokens, error|null, stop}
  */
 function assistantRunLoop($client, $conn, array $user, array $tools, array $history, $message, DateTime $now, $startedAt = null, $timeBudget = ASSISTANT_TIME_BUDGET) {
     $startedAt = $startedAt !== null ? $startedAt : microtime(true);
@@ -219,6 +292,9 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
     $payloadBase = [
         'max_tokens' => 2048,
         'system' => assistantSystemPrompt($user, $now),
+        // step 7.2: automatic breakpoint on the growing tail (tool rounds re-read it); the fixed
+        // tools + rules prefix has its own explicit breakpoint in the system prompt.
+        'cache_control' => ['type' => 'ephemeral'],
     ];
     $model = method_exists($client, 'model') ? (string) $client->model() : '';
     if ($model === '' || strpos($model, 'claude-haiku') !== 0) {
@@ -229,8 +305,11 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
         $payloadBase['tools'] = assistantToolDefinitions($tools);
     }
 
-    $out = ['text' => '', 'tools_called' => [], 'rounds' => 0, 'input_tokens' => 0, 'output_tokens' => 0, 'error' => null, 'stop' => null];
+    $out = ['text' => '', 'blocks' => [], 'tools_called' => [], 'rounds' => 0, 'input_tokens' => 0, 'output_tokens' => 0,
+            'cache_read_tokens' => 0, 'cache_write_tokens' => 0, 'error' => null, 'stop' => null];
+    $blocks = new ArrayObject(); // filled by show_blocks, validated there
     $lastText = '';
+    $answerParts = []; // step 7.2: the text written together with show_blocks, if any
     for ($round = 1; ; $round++) {
         $left = $timeBudget - (microtime(true) - $startedAt);
         if ($left < ASSISTANT_MIN_CALL_SECONDS) {
@@ -245,9 +324,10 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
         $resp = $client->createMessage($payload, (int) min(ClaudeClient::DEFAULT_TIMEOUT, floor($left)));
         $out['rounds'] = $round;
         $u = isset($resp['usage']) && is_array($resp['usage']) ? $resp['usage'] : [];
-        $out['input_tokens'] += (int) (isset($u['input_tokens']) ? $u['input_tokens'] : 0)
-            + (int) (isset($u['cache_creation_input_tokens']) ? $u['cache_creation_input_tokens'] : 0)
-            + (int) (isset($u['cache_read_input_tokens']) ? $u['cache_read_input_tokens'] : 0);
+        // step 7.2: input_tokens = uncached input only; cache writes and reads are counted apart
+        $out['input_tokens'] += (int) (isset($u['input_tokens']) ? $u['input_tokens'] : 0);
+        $out['cache_write_tokens'] += (int) (isset($u['cache_creation_input_tokens']) ? $u['cache_creation_input_tokens'] : 0);
+        $out['cache_read_tokens'] += (int) (isset($u['cache_read_input_tokens']) ? $u['cache_read_input_tokens'] : 0);
         $out['output_tokens'] += (int) (isset($u['output_tokens']) ? $u['output_tokens'] : 0);
 
         $content = isset($resp['content']) && is_array($resp['content']) ? $resp['content'] : [];
@@ -266,7 +346,16 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
         }
         $stop = isset($resp['stop_reason']) ? $resp['stop_reason'] : null;
         $out['stop'] = $stop;
-        if ($stop !== 'tool_use' || count($uses) === 0) {
+        $final = ($stop !== 'tool_use' || count($uses) === 0);
+        // Step 7.2: the model writes the real answer in the same turn as its show_blocks call; what it
+        // adds after the tool result is a repeat or a follow-up offer (and on staging drifted into the
+        // other language), so the show_blocks text wins. Without it, the final text is the answer.
+        // Text next to data-tool calls ("let me check") is never part of the answer.
+        $withBlocks = count(array_filter($uses, function ($u) { return isset($u['name']) && $u['name'] === 'show_blocks'; })) > 0;
+        if ($withBlocks && count($texts) > 0 && $lastText !== '') {
+            $answerParts = [$lastText];
+        }
+        if ($final) {
             break;
         }
 
@@ -282,7 +371,7 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
                 if (!isset($byName[$name])) {
                     throw new AssistantToolError('unknown tool: ' . $name);
                 }
-                $data = call_user_func($byName[$name]['handler'], $conn, $input, ['user' => $user, 'now' => $now]);
+                $data = call_user_func($byName[$name]['handler'], $conn, $input, ['user' => $user, 'now' => $now, 'blocks' => $blocks]);
                 $resultText = json_encode($data, JSON_UNESCAPED_UNICODE);
             } catch (AssistantToolError $e) {
                 $ok = false;
@@ -292,7 +381,8 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
                 error_log('assistant tool ' . $name . ' failed: ' . $e->getMessage());
                 $resultText = 'the tool failed with an internal error';
             }
-            $out['tools_called'][] = ['name' => $name, 'input' => $input, 'ok' => $ok, 'ms' => (int) round((microtime(true) - $t0) * 1000)];
+            $logged = ($name === 'show_blocks') ? ['blocks' => isset($input['blocks']) && is_array($input['blocks']) ? count($input['blocks']) : 0] : $input;
+            $out['tools_called'][] = ['name' => $name, 'input' => $logged, 'ok' => $ok, 'ms' => (int) round((microtime(true) - $t0) * 1000)];
             $r = ['type' => 'tool_result', 'tool_use_id' => $use['id'], 'content' => $resultText];
             if (!$ok) {
                 $r['is_error'] = true;
@@ -302,7 +392,8 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
         $messages[] = ['role' => 'user', 'content' => $results];
     }
 
-    $out['text'] = $lastText;
+    $out['text'] = count($answerParts) > 0 ? implode("\n", $answerParts) : $lastText;
+    $out['blocks'] = $blocks->getArrayCopy();
     if ($out['text'] === '') {
         $out['text'] = ($out['stop'] === 'time_budget')
             ? 'Sorry, that took too long to work out. Please ask again, or ask something narrower.'
@@ -320,11 +411,15 @@ function assistantWriteLog($conn, array $row) {
     $rounds = (int) (isset($row['rounds']) ? $row['rounds'] : 0);
     $in = (int) (isset($row['input_tokens']) ? $row['input_tokens'] : 0);
     $outT = (int) (isset($row['output_tokens']) ? $row['output_tokens'] : 0);
+    $cRead = isset($row['cache_read_tokens']) ? (int) $row['cache_read_tokens'] : null;
+    $cWrite = isset($row['cache_write_tokens']) ? (int) $row['cache_write_tokens'] : null;
     $ms = (int) (isset($row['ms']) ? $row['ms'] : 0);
     $stmt = $conn->prepare("INSERT INTO assistant_logs
-        (user_id, conversation_id, question, model, tools_offered, tools_called, rounds, input_tokens, output_tokens, ms, error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param('iissssiiiis', $row['user_id'], $conv, $row['question'], $model, $offered, $called, $rounds, $in, $outT, $ms, $error);
+        (user_id, conversation_id, question, model, tools_offered, tools_called, rounds, input_tokens, output_tokens,
+         cache_read_tokens, cache_write_tokens, ms, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param('iissssiiiiiis', $row['user_id'], $conv, $row['question'], $model, $offered, $called, $rounds, $in, $outT,
+        $cRead, $cWrite, $ms, $error);
     $stmt->execute();
     $id = (int) $conn->insert_id;
     $stmt->close();
@@ -375,11 +470,13 @@ function assistantHandle($conn, $client, array $user, $message, $conversationId)
         return ['status' => 502, 'body' => ['success' => false, 'error' => $busy ? 'assistant_busy' : 'assistant_upstream_error', 'conversation_id' => $conversationId]];
     }
 
-    assistantStoreMessage($conn, $conversationId, 'assistant', ['text' => $result['text'], 'blocks' => []]);
+    assistantStoreMessage($conn, $conversationId, 'assistant', ['text' => $result['text'], 'blocks' => $result['blocks']]);
     $log['tools_called'] = $result['tools_called'];
     $log['rounds'] = $result['rounds'];
     $log['input_tokens'] = $result['input_tokens'];
     $log['output_tokens'] = $result['output_tokens'];
+    $log['cache_read_tokens'] = $result['cache_read_tokens'];
+    $log['cache_write_tokens'] = $result['cache_write_tokens'];
     $log['error'] = ($result['stop'] === 'time_budget') ? 'time_budget' : null;
     $log['ms'] = (int) round((microtime(true) - $started) * 1000);
     $logId = assistantWriteLog($conn, $log);
@@ -389,13 +486,15 @@ function assistantHandle($conn, $client, array $user, $message, $conversationId)
         'success' => true,
         'conversation_id' => $conversationId,
         'text' => $result['text'],
-        'blocks' => [],
+        'blocks' => $result['blocks'],
         // for the CLI and the logs; the UI (7.4) ignores these
         'meta' => [
             'log_id' => $logId,
             'tools_called' => array_map(function ($c) { return $c['name']; }, $result['tools_called']),
             'input_tokens' => $result['input_tokens'],
             'output_tokens' => $result['output_tokens'],
+            'cache_read_tokens' => $result['cache_read_tokens'],
+            'cache_write_tokens' => $result['cache_write_tokens'],
             'ms' => $log['ms'],
         ],
     ]];

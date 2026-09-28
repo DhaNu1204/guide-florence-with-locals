@@ -16,6 +16,7 @@ $_SERVER['REQUEST_METHOD'] = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $_SERVER['REQUEST_URI'] = $_SERVER['REQUEST_URI'] ?? '/cli';
 require $apiDir . '/config.php';
 require_once $apiDir . '/Middleware.php';
+require_once $apiDir . '/lib/assistant_core.php'; // step 7.2: the unassigned tool vs the report
 
 $host = null; $sha = null; $skipSmoke = false;
 foreach (array_slice($argv, 1) as $a) {
@@ -182,6 +183,25 @@ try {
         echo "\n";
     }
 
+    // ---- step 7.2: unassigned_departures tool == the Tours page's Unassigned Report --------------
+    echo "== unassigned_departures tool vs tours.php?action=unassigned-report ==\n";
+    $today = (new DateTime('now', $rome))->format('Y-m-d');
+    foreach ([[$today, (new DateTime('last day of this month', $rome))->format('Y-m-d')],
+              [$today, (new DateTime('now', $rome))->modify('+92 days')->format('Y-m-d')]] as $range) {
+        list($s, $e) = $range;
+        $tool = assistantToolUnassignedDepartures($conn, ['start' => $s, 'end' => $e], []);
+        list($c, $rep) = http('GET', "$host/api/tours.php?action=unassigned-report&start_date=$s&end_date=$e", 'owner', null, 60);
+        $fromReport = array_map(function ($r) {
+            return ['departure_id' => $r['tour_unit'], 'date' => $r['date'], 'time' => $r['time'], 'title' => $r['title'],
+                    'language' => $r['language'], 'guests' => $r['pax'], 'bookings' => $r['bookings']];
+        }, array_slice($rep['data']['departures'] ?? [], 0, 50));
+        $same = $c === 200 && $tool['total'] === ($rep['data']['total'] ?? -1) && $tool['departures'] === $fromReport
+            && $tool['truncated'] === (($rep['data']['total'] ?? 0) > 50);
+        check("$s..$e: same total and the same rows, field by field", $same,
+            "tool {$tool['total']} (listed " . count($tool['departures']) . ($tool['truncated'] ? ', truncated' : '') . "), report " . ($rep['data']['total'] ?? '?'));
+    }
+    echo "\n";
+
     // ---- (e) log rows ----------------------------------------------------------------------------
     echo "== (e) assistant_logs ==\n";
     $rows = $conn->query("SELECT id, user_id, LEFT(question, 40) AS q, tools_offered, rounds, input_tokens, output_tokens, ms, error FROM assistant_logs ORDER BY id DESC LIMIT " . (int) $asked);
@@ -199,7 +219,7 @@ try {
     $codes = [];
     $t0 = microtime(true);
     for ($i = 1; $i <= 31; $i++) {
-        list($codes[]) = http('POST', "$host/api/assistant.php", 'admin2', '{}', 20, 1100000);
+        list($codes[]) = http('POST', "$host/api/assistant.php", 'admin2', '{}', 20, 1300000); // 31 x 1.3 s = 40 s, inside the 60 s window; faster bursts get dropped by the host
     }
     $secs = round(microtime(true) - $t0, 1);
     $first30 = array_count_values(array_slice($codes, 0, 30));
