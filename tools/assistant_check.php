@@ -143,6 +143,14 @@ check('blocks: unknown fields stripped, values normalised', [$r['blocks'][0], $r
     [['type' => 'stat', 'label' => 'Departures', 'value' => 11],
      ['departure_id' => 'g12', 'date' => '2026-09-29', 'time' => '09:30', 'title' => 'Uffizi', 'guests' => 8, 'guide' => null]]);
 check('blocks: show_blocks logged without its payload', $r['tools_called'][0]['input'], ['blocks' => 3]);
+$fake = new FakeClaude([
+    ['stop_reason' => 'tool_use', 'usage' => [], 'content' => [['type' => 'text', 'text' => 'Let me check.'], ['type' => 'tool_use', 'id' => 'd1', 'name' => 'day_summary', 'input' => ['date' => 'bad']]]],
+    ['stop_reason' => 'tool_use', 'usage' => [], 'content' => [['type' => 'text', 'text' => 'Tomorrow: 10 departures, 41 guests.'], ['type' => 'tool_use', 'id' => 'b2', 'name' => 'show_blocks', 'input' => ['blocks' => [['type' => 'stat', 'label' => 'Departures', 'value' => 10]]]]]],
+    ['stop_reason' => 'end_turn', 'usage' => [], 'content' => [['type' => 'text', 'text' => 'Want the split by product?']]],
+]);
+$r = assistantRunLoop($fake, null, $user, assistantToolRegistry(), [], 'how many tomorrow', $now);
+check('text: answer written with show_blocks + final line kept, "let me check" dropped', $r['text'], "Tomorrow: 10 departures, 41 guests.\nWant the split by product?");
+
 
 // ---- step 7.2: block validator edge cases ------------------------------------------------------
 $v = function ($b) { $c = assistantValidateBlock($b); return $c === null ? null : json_decode(json_encode($c), true); };

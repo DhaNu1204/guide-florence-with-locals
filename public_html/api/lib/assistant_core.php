@@ -137,22 +137,23 @@ function assistantSystemRules() {
         . "You talk to the company's admins.\n"
         . "Rules:\n"
         . "- Reply in the language of the user's latest message: a question in English gets an English answer, "
-        . "a question in Italian an Italian answer. The company being in Italy does not change this. "
-        . "Spelling mistakes are normal.\n"
+        . "a question in Italian an Italian answer - every sentence, including any follow-up question. The company "
+        . "being in Italy does not change this. Spelling mistakes are normal.\n"
         . "- Answer briefly.\n"
         . "- Use the tools for every fact about tours, guests, guides or money. Never guess or estimate a number; "
         . "if no tool can answer, say so plainly.\n"
         . "- A departure is one tour run by one guide; a merged group counts as one departure. Guests = PAX.\n"
         . "- Dates: use the ranges given under \"Dates\" below, never work them out yourself. \"this week\" = today to "
         . "Sunday; \"this month\" = today to the last day of the month; \"tomorrow\" and \"weekend\" as listed. "
-        . "Always state the range you used, e.g. \"from Mon 28 Sep to Wed 30 Sep\" (in Italian \"da lun 28 set a mer 30 set\").\n"
+        . "Always state the range you used, e.g. \"from Mon 28 Sep to Wed 30 Sep\".\n"
         . "- Write dates like \"Mon 28 Sep\" and times as 24-hour HH:MM.\n"
         . "- Guides: resolve a name with find_guide. If it is not confident, do not pick one: ask which guide, "
         . "with a choices block listing the matches.\n"
         . "- When a time matches several departures, list them all (or ask with a choices block); never pick one silently.\n"
         . "- When a tool returns a list (departures, guides), call show_blocks once with it (departure_list for "
         . "departures, table for guides, stat for a single key number) and keep the text to one or two sentences: "
-        . "the total and the range. If a list was truncated, say how many there are in total.\n"
+        . "the total and the range, written in the same turn as the show_blocks call. The text must still contain "
+        . "the key numbers (it is also read without the blocks). If a list was truncated, say how many there are in total.\n"
         . "- free_guides assumes every tour lasts 2 hours; mention that in the answer.\n"
         . "- Plain text only in the answer: no markdown tables, no headings, no bullet lists of data that is already in a block.";
 }
@@ -307,6 +308,7 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
             'cache_read_tokens' => 0, 'cache_write_tokens' => 0, 'error' => null, 'stop' => null];
     $blocks = new ArrayObject(); // filled by show_blocks, validated there
     $lastText = '';
+    $answerParts = []; // step 7.2: text written together with show_blocks + the final text
     for ($round = 1; ; $round++) {
         $left = $timeBudget - (microtime(true) - $startedAt);
         if ($left < ASSISTANT_MIN_CALL_SECONDS) {
@@ -343,7 +345,15 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
         }
         $stop = isset($resp['stop_reason']) ? $resp['stop_reason'] : null;
         $out['stop'] = $stop;
-        if ($stop !== 'tool_use' || count($uses) === 0) {
+        $final = ($stop !== 'tool_use' || count($uses) === 0);
+        // Step 7.2: the model often writes the real answer in the same turn as its show_blocks call
+        // and only a follow-up line after the tool result; keep both. Text next to data-tool calls
+        // ("let me check") is not part of the answer.
+        $withBlocks = count(array_filter($uses, function ($u) { return isset($u['name']) && $u['name'] === 'show_blocks'; })) > 0;
+        if (($final || $withBlocks) && count($texts) > 0 && $lastText !== '') {
+            $answerParts[] = $lastText;
+        }
+        if ($final) {
             break;
         }
 
@@ -380,7 +390,7 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
         $messages[] = ['role' => 'user', 'content' => $results];
     }
 
-    $out['text'] = $lastText;
+    $out['text'] = count($answerParts) > 0 ? implode("\n", $answerParts) : $lastText;
     $out['blocks'] = $blocks->getArrayCopy();
     if ($out['text'] === '') {
         $out['text'] = ($out['stop'] === 'time_budget')

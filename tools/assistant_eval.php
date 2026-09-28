@@ -179,7 +179,10 @@ foreach ($Q as $n => list($lang, $question, $kind, $expected)) {
     $b = $res['body'];
     $text = (string) ($b['text'] ?? '');
     $blocks = $b['blocks'] ?? [];
-    $blob = $text . ' ' . json_encode($blocks, JSON_UNESCAPED_UNICODE);
+    // every scalar value inside the blocks, separated, so "value":10 reads as 10
+    $vals = [];
+    array_walk_recursive($blocks, function ($v, $k) use (&$vals) { if ($k !== 'type' && $v !== null && !is_bool($v)) $vals[] = (string) $v; });
+    $blob = $text . ' | ' . implode(' | ', $vals);
     $ids = [];
     foreach ($blocks as $blk) { if ($blk['type'] === 'departure_list') foreach ($blk['rows'] as $r) $ids[] = $r['departure_id']; }
     $ids = array_values(array_unique($ids)); sort($ids);
