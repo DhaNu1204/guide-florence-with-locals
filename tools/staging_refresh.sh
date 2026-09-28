@@ -1,5 +1,6 @@
 #!/bin/bash
 # Refresh the staging DB from production (first run: step 7.2 prep, owner-approved 2026-09-29).
+# From a Windows checkout strip CRs first (sed -i 's/\r$//' on a COPY), bash on the host rejects CRLF.
 # Run ON THE SERVER, alone:  scp tools/staging_refresh.sh <server>:fwl-tools/ && ssh <server> 'bash ~/fwl-tools/staging_refresh.sh'
 # Afterwards: check APP_ENV/BOKUN_SYNC_ENABLED/TWILIO_DRY_RUN/DIGEST_LIVE in the staging env, compare the
 # staging passwords with production (fingerprints only), run the staging smoke test.
