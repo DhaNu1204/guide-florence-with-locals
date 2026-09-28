@@ -123,7 +123,10 @@ function assistantSystemPrompt(array $user, DateTime $now) {
         . "Today is " . $now->format('l j F Y') . " (" . $now->format('Y-m-d') . "), the time is " . $now->format('H:i')
         . " in Florence (Europe/Rome). Tomorrow is " . $tomorrow->format('l Y-m-d') . ".\n"
         . "Rules:\n"
-        . "- Answer briefly, in the language the user wrote in (Italian or English; spelling mistakes are normal).\n"
+        . "- Reply in the language of the user's latest message: a question in English gets an English answer, "
+        . "a question in Italian an Italian answer. The company being in Italy does not change this. "
+        . "Spelling mistakes are normal.\n"
+        . "- Answer briefly.\n"
         . "- Use the tools for every fact about tours, guests, guides or money. Never guess or estimate a number; "
         . "if no tool can answer, say so plainly.\n"
         . "- A departure is one tour run by one guide; a merged group counts as one departure. Guests = PAX.\n"
