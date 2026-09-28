@@ -244,15 +244,34 @@ Why it is slow today (measured from the build and the code): the main JS chunk i
 ### 6.5 Guide payment runs for accounting
 - Record what was actually paid to each guide per period against the departures it covers, with an export for the accountant. The owner currently pays manually against a list the guides send him; the app should match that routine rather than replace it. A payment run = one guide + one period + the amount agreed, with the departures it covers attached, so the history is accountant-ready: what was paid, when, for which tours. **Not started — to be designed with the owner** (it is mostly a question of matching the real routine, not code). Depends on nothing; 5.3 and 3.8 already made the per-payment side accurate.
 
-## Phase 7 — AI assistant (spec to be refined with you; ~1 week)
+## Phase 7 — AI Assistant (chat) — refined spec 2026-09-27
 
-Architecture that is safe on shared hosting and keeps data in your control:
-- **Backend** `api/assistant.php` (admin-only, rate-limited): receives the chat, calls the Claude API server-side (key in `.env`, never in the browser) with **tool use**. Tools are thin, read-only PHP functions over the existing queries — the same ones the UI uses, so answers always match the screens:
-  `unassigned_departures(start,end)`, `guide_availability(date|range)` (from `availability_requests` + assigned tours), `guide_schedule(guide, range)`, `revenue(range, product?, channel?)` and `pnl(range)` (from `pnl.php`), `radios_needed(date)`, `tour_lookup(booking ref | customer name)`, `bookings_by_language(range)`. Later, write tools with confirmation (assign guide, send reminder).
-- Output: text answer plus optional table/CSV/PDF (reuse `pdfGenerator`), and a "show in app" link that opens the filtered page.
-- **Frontend**: chat drawer available on every page (and on `/today`), voice input on mobile (Web Speech API), history per user.
-- Guardrails: tools only (no free SQL), per-day token budget, all calls logged (`assistant_logs`), PII minimised in prompts (names only when asked).
-- **Verify:** "unassigned tours this weekend" returns the same list as the report; "how much did we earn from Uffizi tours in August" matches P&L; "how many radios tomorrow at 9" matches the planner.
+A chat box inside the app for Dhanu and Sudesh (the admins). It answers questions about the day, the month, the guides and — for Dhanu only — the money, and it can *propose* a guide assignment that the user confirms. Design: canvas "AI Assistant Design" (desktop drawer, phone start + voice, phone confirm card, six edge cases).
+
+**Five rules (the safety design)**
+1. **The AI never touches the database directly.** It can only call a fixed list of PHP tools. No free SQL.
+2. **Read tools reuse the existing queries** the screens use, so the chat always gives the same numbers as the pages.
+3. **Changes are proposals.** `propose_assignment` returns a card; the **browser** calls the existing Tours/group assignment endpoint with the logged-in user's token when the user taps Confirm. Role checks, `propagateGuideToTours` and logging stay exactly as they are. Undo = the same endpoint with the previous guide.
+4. **Money is for the P&L owner only.** For any other user the money tools are not even sent to the model. Reuses `Middleware::isPnlOwner()` (step 6.10), no new mechanism.
+5. **Everything is logged and capped.** `assistant_logs` (user, question, tools called, tokens, ms, error); daily token cap in `.env`; rate limit per user; customer names go to the model only when a question needs them.
+
+**How it works:** browser → `POST api/assistant.php {conversation_id, message}` → admin-only, rate-limited, Europe/Rome "today" injected → Claude API (server-side key, plain cURL, `ASSISTANT_MODEL`, default `claude-sonnet-5`) with tool definitions → tool loop (max 6 rounds, whole request < 40 s; the host cuts at 60 s) → read-only PHP tools over the existing query functions → reply `{conversation_id, text, blocks[]}` (blocks: stat | table | departure_list | confirm_assign | choices | link). `.env`: `ANTHROPIC_API_KEY`, `ASSISTANT_MODEL`, `ASSISTANT_DAILY_TOKEN_CAP`, `ASSISTANT_ENABLED` (false on production until 7.6). Tables: `assistant_conversations`, `assistant_messages`, `assistant_logs` (history kept 30 days).
+
+**v1 tools:** `day_summary(date)` (all) · `find_departures(date, time?, product_text?, language?)` (all) · `unassigned_departures(start, end)` — effective guide missing, same as step 3.5's report (all) · `find_guide(name_text)` — fuzzy, scored (all) · `guide_schedule(guide_id, start, end)` (all) · `free_guides(date, from, to)` (all) · `money(start, end, product?, channel?)` — Daily P&L functions (**P&L owner only**) · `propose_assignment(departure_id, guide_id)` — confirm card + clash check, **writes nothing** (all). Later: send reminder now, radios needed, CSV export, booking lookup by customer name.
+
+- [ ] **7.1 Backend skeleton + first tool.** `api/assistant.php`, `api/lib/ClaudeClient.php`, tool loop, the three tables, logs, daily cap, per-user rate limit (30/min), admin-only, `ASSISTANT_ENABLED`. One tool: `day_summary`. CLI `tools/assistant_ask.php`.
+  **Verify:** on staging "how many tours today" / "quanti tour domani" match the Tours page counts; viewer → 403; no key → 503; 31st request in a minute → 429; one `assistant_logs` row per question with tokens and ms; production deployed with `ASSISTANT_ENABLED=false` → 503 `assistant_disabled`.
+- [ ] **7.2 Read tools.** `find_departures`, `unassigned_departures`, `find_guide`, `guide_schedule`, `free_guides`; shared query functions moved into `api/lib/` only where needed, no behaviour change to existing endpoints; `tools/assistant_eval.php` with 12 fixed questions and SQL-computed expected answers.
+  **Verify:** eval 12/12 on staging; "unassigned this month" equals the unassigned report.
+- [ ] **7.3 Money tool, P&L owner only.** `money()` over the Daily P&L functions.
+  **Verify:** Dhanu "today income" = Daily P&L today; same question as Sudesh → polite refusal, and the tool list in the log row has no `money`.
+- [ ] **7.4 Chat UI.** Drawer on desktop (468 px, pushes content), full screen on phone, floating button on every page, suggestion chips, blocks renderer, "Open in Tours" deep links with filters, history, offline message; lazy-loaded.
+  **Verify:** the three example questions render as in the design; main chunk unchanged ± 5 KB; works on the phone on mobile data.
+- [ ] **7.5 Assign with confirmation.** `propose_assignment`, confirm card, ambiguity choices, "did you mean" guides, clash warning with free alternatives, success + Undo, audit line.
+  **Verify (staging):** exact match → card → Confirm → Tours shows the guide, group members propagated; Cancel → nothing changed; two 10:00 Uffizi departures → choice; clash → warning; Undo restores; viewer cannot confirm (403 from the existing endpoint).
+- [ ] **7.6 Voice + go-live.** Web Speech API mic (IT + EN), `ASSISTANT_ENABLED=true` on production, cap set, one week of watching `assistant_logs`.
+
+**Open decisions for Dhanu:** (1) "today's income" = revenue of tours running today (as Daily P&L, assumed) or of bookings made today; (2) after the 21:30 digest, should a same-day assignment offer "Send WhatsApp to the guide now"?; (3) the Anthropic API key (monthly spend limit) lives only in the server `.env`, staging first.
 
 ---
 
