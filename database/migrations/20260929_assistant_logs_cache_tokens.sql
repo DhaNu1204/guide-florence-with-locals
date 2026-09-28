@@ -2,7 +2,7 @@
 --
 -- input_tokens now holds UNCACHED input only (7.1 rows: everything, cache included - there was no
 -- caching then). cache_write_tokens = cache_creation_input_tokens, cache_read_tokens =
--- cache_read_input_tokens as reported by the Claude API. The daily cap sums all four.
+-- cache_read_input_tokens as reported by the Claude API. The daily cap counts input + output + cache writes + one tenth of cache reads (their price ratio).
 -- api/lib/assistant_core.php adds the same columns itself (ensureAssistantTables).
 -- Fails with "Duplicate column name" when already applied.
 

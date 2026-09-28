@@ -88,14 +88,15 @@ function assistantNow() {
 
 /**
  * Tokens spent since midnight Europe/Rome (created_at is compared in UTC, the DB session zone).
- * Step 7.2: cache writes and reads count too (all tokens the model processed), so caching can
- * only make the cap last longer in cost terms, never let it be exceeded.
+ * Step 7.2: cache writes count in full, cache reads at one tenth - the same ratio as their price
+ * (a cache read costs 0.1x an input token). Counting reads in full would spend the cap about ten
+ * times faster than the money it stands for (~10k cached tokens are re-read on every question).
  */
 function assistantTokensToday($conn, DateTime $now) {
     $midnight = new DateTime($now->format('Y-m-d') . ' 00:00:00', new DateTimeZone('Europe/Rome'));
     $midnight->setTimezone(new DateTimeZone('UTC'));
     $since = $midnight->format('Y-m-d H:i:s');
-    $stmt = $conn->prepare("SELECT COALESCE(SUM(input_tokens + output_tokens + COALESCE(cache_read_tokens, 0) + COALESCE(cache_write_tokens, 0)), 0) AS used FROM assistant_logs WHERE created_at >= ?");
+    $stmt = $conn->prepare("SELECT COALESCE(SUM(input_tokens + output_tokens + COALESCE(cache_write_tokens, 0) + CEIL(COALESCE(cache_read_tokens, 0) / 10)), 0) AS used FROM assistant_logs WHERE created_at >= ?");
     $stmt->bind_param('s', $since);
     $stmt->execute();
     $used = (int) $stmt->get_result()->fetch_assoc()['used'];

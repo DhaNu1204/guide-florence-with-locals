@@ -82,7 +82,7 @@ echo "tools called:    " . (count($b['meta']['tools_called']) ? implode(', ', $b
 $m = $b['meta'];
 echo "tokens:          in " . $m['input_tokens'] . " / out " . $m['output_tokens']
     . " / cache read " . $m['cache_read_tokens'] . " / cache write " . $m['cache_write_tokens']
-    . "   (today so far: " . ($used + $m['input_tokens'] + $m['output_tokens'] + $m['cache_read_tokens'] + $m['cache_write_tokens'])
+    . "   (today so far: " . ($used + $m['input_tokens'] + $m['output_tokens'] + $m['cache_write_tokens'] + (int) ceil($m['cache_read_tokens'] / 10))
     . " of " . assistantDailyTokenCap() . ")\n";
 echo "ms:              " . $b['meta']['ms'] . "\n";
 exit(0);
