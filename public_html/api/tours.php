@@ -7,6 +7,7 @@ require_once __DIR__ . '/payment_helpers.php';     // pure helper: paymentAmount
 require_once __DIR__ . '/manual_helpers.php';      // pure helpers: hand-entered departures (step 6.4)
 require_once __DIR__ . '/viator_helpers.php';      // pure helpers: the old-Viator-account label (step 6.9)
 require_once __DIR__ . '/rate_helpers.php';        // step 6.14: tours.rate_title + the Vasari rule
+require_once __DIR__ . '/lib/departure_queries.php'; // step 7.2: the unassigned report query (shared with the assistant)
 
 // Require authentication for all tour operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -367,43 +368,9 @@ switch ($method) {
                 $cursor += $n;
             }
             $reportConditions[] = "t.cancelled = 0";
-            $reportWhere = "WHERE " . implode(" AND ", $reportConditions);
-
-            $reportSql = "SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit,
-                                 COALESCE(MAX(tg.group_date), MIN(t.date)) AS unit_date,
-                                 LEFT(COALESCE(MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
-                                 COALESCE(MAX(tg.display_name), MIN(t.title)) AS unit_title,
-                                 COUNT(*) AS bookings,
-                                 SUM(COALESCE(t.participants, 0)) AS pax,
-                                 -- step 6.1: what language the departure is in (a mixed group
-                                 -- lists both of them, comma separated)
-                                 GROUP_CONCAT(DISTINCT NULLIF(TRIM(t.language), '') ORDER BY t.language SEPARATOR ', ') AS languages
-                          FROM tours t
-                          LEFT JOIN tour_groups tg ON t.group_id = tg.id
-                          LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
-                          $reportWhere
-                          GROUP BY tour_unit
-                          HAVING MAX(tg.guide_id) IS NULL AND MAX(t.guide_id) IS NULL
-                          ORDER BY unit_date ASC, unit_time ASC, tour_unit ASC";
-            $reportStmt = $conn->prepare($reportSql);
-            if (count($reportParams) > 0) {
-                $reportStmt->bind_param($reportTypes, ...$reportParams);
-            }
-            $reportStmt->execute();
-            $reportResult = $reportStmt->get_result();
-            $departures = [];
-            while ($r = $reportResult->fetch_assoc()) {
-                $departures[] = [
-                    'tour_unit' => $r['tour_unit'],
-                    'date' => $r['unit_date'],
-                    'time' => $r['unit_time'] ?: '00:00',
-                    'title' => $r['unit_title'],
-                    'bookings' => intval($r['bookings']),
-                    'pax' => intval($r['pax']),
-                    'language' => $r['languages'] !== null && $r['languages'] !== '' ? $r['languages'] : 'Unknown',
-                ];
-            }
-            $reportStmt->close();
+            // Step 7.2: the query itself lives in lib/departure_queries.php (unchanged), shared with
+            // the assistant's unassigned_departures tool.
+            $departures = fwlUnassignedReport($conn, $reportConditions, $reportParams, $reportTypes);
             // Step 5.2: count_only=true -> just the number (the Tours page banner). Same query, same
             // rows - the banner and the report can never disagree.
             if (isset($_GET['count_only']) && $_GET['count_only'] === 'true') {

@@ -3,7 +3,8 @@
  * Step 7.1: the AI assistant endpoint (plan Phase 7).
  *
  *   POST api/assistant.php  {"message": "...", "conversation_id": optional}
- *   → 200 {success, conversation_id, text, blocks: [], meta}
+ *   → 200 {success, conversation_id, text, blocks[], meta}  (step 7.2: blocks = validated show_blocks output:
+ *     stat | departure_list | table | choices | link - see assistantValidateBlock in lib/assistant_tools.php)
  *
  * Order of checks (each one a real HTTP status, JSON body):
  *   405 not POST · 503 assistant_disabled (ASSISTANT_ENABLED not true - checked before auth, so a

@@ -12,6 +12,7 @@
  */
 
 require_once __DIR__ . '/../tour_classification.php'; // deriveListFields(): the Tours list's own PAX/time/language
+require_once __DIR__ . '/departure_queries.php';        // step 7.2: the unassigned report + per-departure rows
 
 class AssistantToolError extends Exception {}
 
@@ -32,6 +33,120 @@ function assistantToolRegistry() {
                 'additionalProperties' => false,
             ],
             'handler' => 'assistantToolDaySummary',
+            'money' => false,
+        ],
+        [
+            'name' => 'find_departures',
+            'description' => 'Departures on one date, optionally filtered. A departure is a merged/auto group or a single '
+                . 'tour (departure_id g<id> or t<id>); cancelled bookings and museum tickets are left out. Each has '
+                . 'time, product title, language(s), guests, bookings and the current guide (null = no guide). '
+                . 'time matches within 15 minutes; product_text is a case- and accent-insensitive part of the title '
+                . '(e.g. "uffizi", "david"); language e.g. "English", "Italian", "Spanish". Max 50 rows.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'date' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                    'time' => ['type' => 'string', 'description' => 'HH:MM, 24-hour (optional)'],
+                    'product_text' => ['type' => 'string', 'description' => 'part of the product title (optional)'],
+                    'language' => ['type' => 'string', 'description' => 'tour language (optional)'],
+                ],
+                'required' => ['date'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolFindDepartures',
+            'money' => false,
+        ],
+        [
+            'name' => 'unassigned_departures',
+            'description' => 'Departures with NO guide between two dates (inclusive) - exactly the Unassigned Report of '
+                . 'the Tours page (same query). Max 50 rows listed; total is the full count. Range up to 93 days.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'start' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                    'end' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                ],
+                'required' => ['start', 'end'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolUnassignedDepartures',
+            'money' => false,
+        ],
+        [
+            'name' => 'find_guide',
+            'description' => 'Look up a guide by (part of) their name. Ignores case and accents and tolerates small '
+                . 'typos ("Guilia" finds Giulia). Returns the top 3 with a score 0-1 and confident=true only when the '
+                . 'best match is clearly ahead; when not confident, ask the user which one they mean.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'name_text' => ['type' => 'string', 'description' => 'the name as the user wrote it'],
+                ],
+                'required' => ['name_text'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolFindGuide',
+            'money' => false,
+        ],
+        [
+            'name' => 'guide_schedule',
+            'description' => 'The departures a guide is assigned to between two dates (inclusive). Get guide_id from '
+                . 'find_guide first. Max 50 rows; range up to 93 days.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'guide_id' => ['type' => 'integer'],
+                    'start' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                    'end' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                ],
+                'required' => ['guide_id', 'start', 'end'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolGuideSchedule',
+            'money' => false,
+        ],
+        [
+            'name' => 'free_guides',
+            'description' => 'Guides with no departure overlapping a time window on one date, plus the busy ones and '
+                . 'any availability replies guides gave for tours that day. Tour durations are not stored, so each '
+                . 'departure is assumed to last 2 hours from its start - say so in the answer.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'date' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                    'from' => ['type' => 'string', 'description' => 'HH:MM window start'],
+                    'to' => ['type' => 'string', 'description' => 'HH:MM window end (after from)'],
+                ],
+                'required' => ['date', 'from', 'to'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolFreeGuides',
+            'money' => false,
+        ],
+        [
+            'name' => 'show_blocks',
+            'description' => 'Show structured data next to your short text answer (the app renders these as cards). '
+                . 'Call it once, after the data tools, with every block for this answer. Types: '
+                . 'stat {type, label, value}; '
+                . 'departure_list {type, rows: [{departure_id, date, time, title, language?, guests?, bookings?, guide?}]}; '
+                . 'table {type, columns: [..], rows: [[..], ..]}; '
+                . 'choices {type, prompt, options: [{label, value}]} when the user must pick one; '
+                . 'link {type, label, route, query} to open an app page (routes: /tours, /guides, /payments, /tickets, '
+                . '/priority-tickets, /radios, /guide-reports; query keys: date, start_date, end_date, guide_id, language, filter). '
+                . 'Copy values from tool results; never invent rows. Invalid blocks are dropped.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'blocks' => [
+                        'type' => 'array',
+                        'items' => ['type' => 'object'],
+                        'description' => 'up to 6 blocks, each with a "type"',
+                    ],
+                ],
+                'required' => ['blocks'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolShowBlocks',
             'money' => false,
         ],
     ];
@@ -224,4 +339,460 @@ function assistantToolDaySummary($conn, array $input, array $ctx) {
     }
     $stmt->close();
     return assistantDaySummarize($rows, $date, $ctx['now']);
+}
+
+// ---- step 7.2: shared helpers ----------------------------------------------------------------
+
+const ASSISTANT_LIST_CAP = 50;
+const ASSISTANT_MAX_RANGE_DAYS = 93;
+const ASSISTANT_ASSUMED_DURATION_MIN = 120;
+const ASSISTANT_ACTIVE_RULE = 'the guides table has no active/inactive flag, so every guide in it is considered active';
+
+/** [first 50 rows, total, truncated] */
+function assistantCap(array $rows) {
+    $total = count($rows);
+    return [array_slice($rows, 0, ASSISTANT_LIST_CAP), $total, $total > ASSISTANT_LIST_CAP];
+}
+
+/** Lower case, accents off, punctuation to spaces, single spaces. "Nicolò D'Amico" -> "nicolo d amico" */
+function assistantNorm($s) {
+    $s = mb_strtolower(trim((string) $s), 'UTF-8');
+    $s = strtr($s, [
+        'à' => 'a', 'á' => 'a', 'â' => 'a', 'ä' => 'a', 'ã' => 'a', 'å' => 'a',
+        'è' => 'e', 'é' => 'e', 'ê' => 'e', 'ë' => 'e',
+        'ì' => 'i', 'í' => 'i', 'î' => 'i', 'ï' => 'i',
+        'ò' => 'o', 'ó' => 'o', 'ô' => 'o', 'ö' => 'o', 'õ' => 'o', 'ø' => 'o',
+        'ù' => 'u', 'ú' => 'u', 'û' => 'u', 'ü' => 'u',
+        'ñ' => 'n', 'ç' => 'c', 'ß' => 'ss', 'š' => 's', 'ž' => 'z', 'č' => 'c', 'ć' => 'c', 'ł' => 'l', 'ý' => 'y',
+    ]);
+    $s = preg_replace('/[^a-z0-9]+/', ' ', $s);
+    return trim(preg_replace('/\s+/', ' ', $s));
+}
+
+/** Optimal string alignment distance: Levenshtein + adjacent transpositions ("guilia" -> "giulia" = 1). */
+function assistantOsa($a, $b) {
+    $la = strlen($a); $lb = strlen($b);
+    if ($la === 0) return $lb;
+    if ($lb === 0) return $la;
+    $d = [];
+    for ($i = 0; $i <= $la; $i++) { $d[$i] = [$i]; }
+    for ($j = 0; $j <= $lb; $j++) { $d[0][$j] = $j; }
+    for ($i = 1; $i <= $la; $i++) {
+        for ($j = 1; $j <= $lb; $j++) {
+            $cost = $a[$i - 1] === $b[$j - 1] ? 0 : 1;
+            $d[$i][$j] = min($d[$i - 1][$j] + 1, $d[$i][$j - 1] + 1, $d[$i - 1][$j - 1] + $cost);
+            if ($i > 1 && $j > 1 && $a[$i - 1] === $b[$j - 2] && $a[$i - 2] === $b[$j - 1]) {
+                $d[$i][$j] = min($d[$i][$j], $d[$i - 2][$j - 2] + 1);
+            }
+        }
+    }
+    return $d[$la][$lb];
+}
+
+function assistantTokenSim($q, $n) {
+    if ($q === $n) return 1.0;
+    if (strlen($q) === 1) return (strpos($n, $q) === 0) ? 0.9 : 0.0;          // an initial: "giulia r"
+    if (strlen($q) >= 3 && strpos($n, $q) === 0) return 0.9;                    // a prefix: "cater" -> caterina
+    $sim = 1 - assistantOsa($q, $n) / max(strlen($q), strlen($n));
+    return max(0.0, $sim);
+}
+
+/**
+ * Score 0..1 of a typed name against a guide's full name: every typed word is matched to its best
+ * word in the name (typos, initials, prefixes allowed) and the scores averaged; the whole string is
+ * compared too and the better of the two wins.
+ */
+function assistantNameScore($query, $fullName) {
+    $q = assistantNorm($query);
+    $n = assistantNorm($fullName);
+    if ($q === '' || $n === '') return 0.0;
+    $qt = explode(' ', $q);
+    $nt = explode(' ', $n);
+    $sum = 0.0;
+    foreach ($qt as $w) {
+        $best = 0.0;
+        foreach ($nt as $x) { $best = max($best, assistantTokenSim($w, $x)); }
+        $sum += $best;
+    }
+    $byWords = $sum / count($qt);
+    $whole = 1 - assistantOsa(str_replace(' ', '', $q), str_replace(' ', '', $n)) / max(strlen(str_replace(' ', '', $q)), strlen(str_replace(' ', '', $n)));
+    return round(max($byWords, $whole), 3);
+}
+
+/**
+ * Top 3 guides for a typed name. confident = the best scores >= 0.75 and is at least 0.15 ahead of
+ * the next one (two guides both called Anna are never "confident").
+ * Pure: tools/assistant_check.php runs it on a fixed list.
+ */
+function assistantRankGuides($query, array $guides) {
+    $scored = [];
+    foreach ($guides as $g) {
+        $scored[] = ['guide_id' => (int) $g['id'], 'name' => (string) $g['name'],
+                     'languages' => isset($g['languages']) ? (string) $g['languages'] : '',
+                     'score' => assistantNameScore($query, $g['name'])];
+    }
+    usort($scored, function ($a, $b) {
+        if ($a['score'] === $b['score']) return strcmp($a['name'], $b['name']);
+        return $a['score'] < $b['score'] ? 1 : -1;
+    });
+    $top = array_values(array_filter(array_slice($scored, 0, 3), function ($m) { return $m['score'] >= 0.5; }));
+    $best = isset($top[0]) ? $top[0]['score'] : 0;
+    $second = isset($top[1]) ? $top[1]['score'] : 0;
+    return ['matches' => $top, 'confident' => $best >= 0.75 && ($best - $second) >= 0.15];
+}
+
+/** "9", "9:5"? no - "9", "09", "9:30", "09.30", "930" are not all valid; accepted: H, HH, H:MM, HH:MM, HH.MM */
+function assistantParseTime($value) {
+    if (!is_string($value) && !is_int($value)) return null;
+    $v = trim((string) $value);
+    if (!preg_match('/^(\d{1,2})(?:[:.](\d{2}))?$/', $v, $m)) return null;
+    $h = (int) $m[1]; $i = isset($m[2]) ? (int) $m[2] : 0;
+    if ($h > 23 || $i > 59) return null;
+    return sprintf('%02d:%02d', $h, $i);
+}
+
+function assistantMinutes($hm) {
+    return (int) substr($hm, 0, 2) * 60 + (int) substr($hm, 3, 2);
+}
+
+/** Validates a start/end pair; returns [start, end] or throws. */
+function assistantRange(array $input, $startKey = 'start', $endKey = 'end') {
+    $s = isset($input[$startKey]) ? $input[$startKey] : null;
+    $e = isset($input[$endKey]) ? $input[$endKey] : null;
+    if (!assistantValidDate($s) || !assistantValidDate($e)) {
+        throw new AssistantToolError("$startKey and $endKey must be real dates in YYYY-MM-DD format");
+    }
+    if ($s > $e) {
+        throw new AssistantToolError("$startKey must not be after $endKey");
+    }
+    $days = (new DateTime($s))->diff(new DateTime($e))->days + 1;
+    if ($days > ASSISTANT_MAX_RANGE_DAYS) {
+        throw new AssistantToolError('the range is ' . $days . ' days; ask for at most ' . ASSISTANT_MAX_RANGE_DAYS);
+    }
+    return [$s, $e];
+}
+
+function assistantGuides($conn) {
+    $res = $conn->query("SELECT id, name, languages FROM guides ORDER BY name ASC, id ASC");
+    $out = [];
+    while ($r = $res->fetch_assoc()) { $out[] = $r; }
+    return $out;
+}
+
+/** A departure row as the model sees it (no internal numeric id / type duplication). */
+function assistantDepartureOut(array $u, $withDate = true) {
+    $o = ['departure_id' => $u['departure_id'], 'type' => $u['type']];
+    if ($withDate) { $o['date'] = $u['date']; }
+    $o['time'] = $u['time'];
+    $o['title'] = $u['title'];
+    $o['languages'] = $u['languages'];
+    $o['guests'] = $u['guests'];
+    $o['bookings'] = $u['bookings'];
+    $o['guide_id'] = $u['guide_id'];
+    $o['guide'] = $u['guide_name'];
+    return $o;
+}
+
+/**
+ * find_departures filter, pure: time within +-15 min, product text in the title (case/accent
+ * insensitive), language among the departure's languages (case-insensitive).
+ */
+function assistantFilterDepartures(array $units, $time = null, $productText = null, $language = null) {
+    $out = [];
+    $pt = $productText !== null ? assistantNorm($productText) : '';
+    $lang = $language !== null ? assistantNorm($language) : '';
+    foreach ($units as $u) {
+        if ($time !== null && abs(assistantMinutes($u['time']) - assistantMinutes($time)) > 15) continue;
+        if ($pt !== '' && strpos(assistantNorm($u['title']), $pt) === false) continue;
+        if ($lang !== '') {
+            $ok = false;
+            foreach ($u['languages'] as $l) { if (assistantNorm($l) === $lang) { $ok = true; break; } }
+            if (!$ok) continue;
+        }
+        $out[] = $u;
+    }
+    return $out;
+}
+
+/**
+ * free_guides core, pure: a guide is busy when one of their departures [start, start + 2 h)
+ * overlaps the window [from, to).
+ */
+function assistantSplitFreeBusy(array $guides, array $units, $from, $to) {
+    $f = assistantMinutes($from); $t = assistantMinutes($to);
+    $busy = []; $day = [];
+    foreach ($units as $u) {
+        if ($u['guide_id'] === null) continue;
+        $s = assistantMinutes($u['time']);
+        $day[$u['guide_id']][] = $u['time'];
+        if ($s < $t && $s + ASSISTANT_ASSUMED_DURATION_MIN > $f) {
+            $busy[$u['guide_id']][] = ['departure_id' => $u['departure_id'], 'time' => $u['time'], 'title' => $u['title']];
+        }
+    }
+    $free = []; $busyOut = [];
+    foreach ($guides as $g) {
+        $id = (int) $g['id'];
+        if (isset($busy[$id])) {
+            $busyOut[] = ['guide_id' => $id, 'name' => $g['name'], 'departures' => $busy[$id]];
+        } else {
+            $free[] = ['guide_id' => $id, 'name' => $g['name'], 'languages' => (string) $g['languages'],
+                       'other_departures_that_day' => isset($day[$id]) ? $day[$id] : []];
+        }
+    }
+    return [$free, $busyOut];
+}
+
+// ---- step 7.2: tool handlers -----------------------------------------------------------------
+
+function assistantToolFindDepartures($conn, array $input, array $ctx) {
+    $date = isset($input['date']) ? $input['date'] : null;
+    if (!assistantValidDate($date)) {
+        throw new AssistantToolError('date must be a real date in YYYY-MM-DD format');
+    }
+    $time = null;
+    if (isset($input['time']) && $input['time'] !== '') {
+        $time = assistantParseTime($input['time']);
+        if ($time === null) throw new AssistantToolError('time must be HH:MM (24-hour)');
+    }
+    $pt = isset($input['product_text']) && trim((string) $input['product_text']) !== '' ? (string) $input['product_text'] : null;
+    $lang = isset($input['language']) && trim((string) $input['language']) !== '' ? (string) $input['language'] : null;
+    $matches = assistantFilterDepartures(fwlDepartureUnits($conn, $date, $date), $time, $pt, $lang);
+    list($rows, $total, $truncated) = assistantCap($matches);
+    return [
+        'date' => $date,
+        'filters' => ['time' => $time !== null ? $time . ' (+-15 min)' : null, 'product_text' => $pt, 'language' => $lang],
+        'total' => $total,
+        'truncated' => $truncated,
+        'departures' => array_map(function ($u) { return assistantDepartureOut($u, false); }, $rows),
+    ];
+}
+
+function assistantToolUnassignedDepartures($conn, array $input, array $ctx) {
+    list($start, $end) = assistantRange($input);
+    // The Tours page's own conditions for start_date+end_date with the default product_type=tour,
+    // then the report's "t.cancelled = 0" - identical to tours.php?action=unassigned-report.
+    $rows = fwlUnassignedReport($conn,
+        ["t.date >= ?", "t.date <= ?", "(pr.product_type = 'tour' OR t.product_id IS NULL)", "t.cancelled = 0"],
+        [$start, $end], 'ss');
+    list($list, $total, $truncated) = assistantCap($rows);
+    return [
+        'start' => $start,
+        'end' => $end,
+        'total' => $total,
+        'truncated' => $truncated,
+        'departures' => array_map(function ($r) {
+            return ['departure_id' => $r['tour_unit'], 'date' => $r['date'], 'time' => $r['time'], 'title' => $r['title'],
+                    'language' => $r['language'], 'guests' => $r['pax'], 'bookings' => $r['bookings']];
+        }, $list),
+    ];
+}
+
+function assistantToolFindGuide($conn, array $input, array $ctx) {
+    $q = isset($input['name_text']) ? trim((string) $input['name_text']) : '';
+    if ($q === '' || mb_strlen($q, 'UTF-8') > 80) {
+        throw new AssistantToolError('name_text is required (up to 80 characters)');
+    }
+    $r = assistantRankGuides($q, assistantGuides($conn));
+    return ['query' => $q, 'confident' => $r['confident'], 'matches' => $r['matches'],
+            'total' => count($r['matches']), 'truncated' => false, 'active_rule' => ASSISTANT_ACTIVE_RULE];
+}
+
+function assistantToolGuideSchedule($conn, array $input, array $ctx) {
+    $gid = isset($input['guide_id']) && is_numeric($input['guide_id']) ? (int) $input['guide_id'] : 0;
+    list($start, $end) = assistantRange($input);
+    $stmt = $conn->prepare("SELECT id, name FROM guides WHERE id = ?");
+    $stmt->bind_param('i', $gid);
+    $stmt->execute();
+    $g = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$g) {
+        throw new AssistantToolError('no guide with id ' . $gid . '; use find_guide first');
+    }
+    list($rows, $total, $truncated) = assistantCap(fwlDepartureUnits($conn, $start, $end, $gid));
+    return [
+        'guide' => ['guide_id' => (int) $g['id'], 'name' => $g['name']],
+        'start' => $start, 'end' => $end,
+        'total' => $total, 'truncated' => $truncated,
+        'guests_total' => array_sum(array_map(function ($u) { return $u['guests']; }, $rows)),
+        'departures' => array_map(function ($u) { return assistantDepartureOut($u); }, $rows),
+    ];
+}
+
+function assistantToolFreeGuides($conn, array $input, array $ctx) {
+    $date = isset($input['date']) ? $input['date'] : null;
+    if (!assistantValidDate($date)) {
+        throw new AssistantToolError('date must be a real date in YYYY-MM-DD format');
+    }
+    $from = isset($input['from']) ? assistantParseTime($input['from']) : null;
+    $to = isset($input['to']) ? assistantParseTime($input['to']) : null;
+    if ($from === null || $to === null || $from >= $to) {
+        throw new AssistantToolError('from and to must be HH:MM with from before to');
+    }
+    list($free, $busy) = assistantSplitFreeBusy(assistantGuides($conn), fwlDepartureUnits($conn, $date, $date), $from, $to);
+
+    $availability = null;
+    $has = $conn->query("SHOW TABLES LIKE 'availability_requests'");
+    if ($has && $has->num_rows > 0) {
+        $stmt = $conn->prepare("SELECT ar.guide_id, g.name, ar.status, LEFT(t.time, 5) AS time, t.title
+                                FROM availability_requests ar
+                                JOIN tours t ON t.id = ar.tour_id
+                                LEFT JOIN guides g ON g.id = ar.guide_id
+                                WHERE t.date = ?
+                                ORDER BY t.time, g.name");
+        $stmt->bind_param('s', $date);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $availability = [];
+        while ($r = $res->fetch_assoc()) {
+            $availability[] = ['guide_id' => (int) $r['guide_id'], 'name' => $r['name'], 'status' => $r['status'],
+                               'tour_time' => $r['time'], 'tour' => $r['title']];
+        }
+        $stmt->close();
+    }
+    list($freeRows, $total, $truncated) = assistantCap($free);
+    return [
+        'date' => $date,
+        'window' => $from . '-' . $to,
+        'duration_rule' => 'tour durations are not stored, so each departure is assumed to last 2 hours from its start',
+        'active_rule' => ASSISTANT_ACTIVE_RULE,
+        'total' => $total,
+        'truncated' => $truncated,
+        'free' => $freeRows,
+        'busy' => $busy,
+        'availability_replies' => $availability,
+    ];
+}
+
+// ---- step 7.2: answer blocks -----------------------------------------------------------------
+
+const ASSISTANT_MAX_BLOCKS = 6;
+const ASSISTANT_LINK_ROUTES = ['/tours', '/guides', '/payments', '/tickets', '/priority-tickets', '/radios', '/guide-reports'];
+const ASSISTANT_LINK_QUERY_KEYS = ['date', 'start_date', 'end_date', 'guide_id', 'language', 'filter'];
+
+function assistantStr($v, $max) {
+    if (!is_string($v) && !is_int($v) && !is_float($v)) return null;
+    $s = trim((string) $v);
+    if ($s === '' || mb_strlen($s, 'UTF-8') > $max) return null;
+    return $s;
+}
+
+function assistantOptInt($row, $key) {
+    if (!array_key_exists($key, $row) || $row[$key] === null) return [true, null];
+    if (is_int($row[$key]) || (is_string($row[$key]) && ctype_digit($row[$key]))) return [true, (int) $row[$key]];
+    return [false, null];
+}
+
+/**
+ * One block in, the clean block out (only the schema's fields, re-built from scratch) or null.
+ * Nothing the model sends is passed through as-is.
+ */
+function assistantValidateBlock($b) {
+    if (!is_array($b) || !isset($b['type']) || !is_string($b['type'])) return null;
+    switch ($b['type']) {
+        case 'stat':
+            $label = assistantStr(isset($b['label']) ? $b['label'] : null, 80);
+            $value = isset($b['value']) && (is_int($b['value']) || is_float($b['value'])) ? $b['value'] : assistantStr(isset($b['value']) ? $b['value'] : null, 40);
+            return ($label !== null && $value !== null) ? ['type' => 'stat', 'label' => $label, 'value' => $value] : null;
+
+        case 'departure_list':
+            if (!isset($b['rows']) || !is_array($b['rows']) || count($b['rows']) === 0 || count($b['rows']) > ASSISTANT_LIST_CAP) return null;
+            $rows = [];
+            foreach ($b['rows'] as $r) {
+                if (!is_array($r)) return null;
+                $id = isset($r['departure_id']) && is_string($r['departure_id']) && preg_match('/^[gt]\d{1,10}$/', $r['departure_id']) ? $r['departure_id'] : null;
+                $date = isset($r['date']) && assistantValidDate($r['date']) ? $r['date'] : null;
+                $time = isset($r['time']) ? assistantParseTime($r['time']) : null;
+                $title = assistantStr(isset($r['title']) ? $r['title'] : null, 200);
+                if ($id === null || $date === null || $time === null || $title === null) return null;
+                $row = ['departure_id' => $id, 'date' => $date, 'time' => $time, 'title' => $title];
+                if (isset($r['language'])) {
+                    $lang = is_array($r['language']) ? implode(', ', array_filter($r['language'], 'is_string')) : $r['language'];
+                    $lang = assistantStr($lang, 60);
+                    if ($lang === null) return null;
+                    $row['language'] = $lang;
+                }
+                foreach (['guests', 'bookings'] as $k) {
+                    list($ok, $n) = assistantOptInt($r, $k);
+                    if (!$ok) return null;
+                    if ($n !== null) $row[$k] = $n;
+                }
+                if (array_key_exists('guide', $r)) {
+                    $gname = $r['guide'] === null ? null : assistantStr($r['guide'], 100);
+                    if ($r['guide'] !== null && $gname === null) return null;
+                    $row['guide'] = $gname;
+                }
+                $rows[] = $row;
+            }
+            return ['type' => 'departure_list', 'rows' => $rows];
+
+        case 'table':
+            if (!isset($b['columns'], $b['rows']) || !is_array($b['columns']) || !is_array($b['rows'])) return null;
+            $cols = [];
+            foreach ($b['columns'] as $c) { $c = assistantStr($c, 40); if ($c === null) return null; $cols[] = $c; }
+            if (count($cols) < 1 || count($cols) > 8 || count($b['rows']) > ASSISTANT_LIST_CAP) return null;
+            $rows = [];
+            foreach ($b['rows'] as $r) {
+                if (!is_array($r) || count($r) !== count($cols)) return null;
+                $clean = [];
+                foreach (array_values($r) as $cell) {
+                    if ($cell === null || is_int($cell) || is_float($cell)) { $clean[] = $cell; continue; }
+                    if (is_bool($cell)) { $clean[] = $cell ? 'yes' : 'no'; continue; }
+                    if (!is_string($cell) || mb_strlen($cell, 'UTF-8') > 200) return null;
+                    $clean[] = $cell;
+                }
+                $rows[] = $clean;
+            }
+            return ['type' => 'table', 'columns' => $cols, 'rows' => $rows];
+
+        case 'choices':
+            $prompt = assistantStr(isset($b['prompt']) ? $b['prompt'] : null, 200);
+            if ($prompt === null || !isset($b['options']) || !is_array($b['options']) || count($b['options']) < 2 || count($b['options']) > 8) return null;
+            $opts = [];
+            foreach ($b['options'] as $o) {
+                if (is_string($o)) { $o = ['label' => $o, 'value' => $o]; }
+                if (!is_array($o)) return null;
+                $label = assistantStr(isset($o['label']) ? $o['label'] : null, 120);
+                $value = assistantStr(isset($o['value']) ? $o['value'] : (isset($o['label']) ? $o['label'] : null), 200);
+                if ($label === null || $value === null) return null;
+                $opts[] = ['label' => $label, 'value' => $value];
+            }
+            return ['type' => 'choices', 'prompt' => $prompt, 'options' => $opts];
+
+        case 'link':
+            $label = assistantStr(isset($b['label']) ? $b['label'] : null, 80);
+            $route = isset($b['route']) && is_string($b['route']) && in_array($b['route'], ASSISTANT_LINK_ROUTES, true) ? $b['route'] : null;
+            if ($label === null || $route === null) return null;
+            $query = [];
+            if (isset($b['query']) && $b['query'] !== null) {
+                if (!is_array($b['query'])) return null;
+                foreach ($b['query'] as $k => $v) {
+                    if (!in_array($k, ASSISTANT_LINK_QUERY_KEYS, true)) return null;
+                    $v = assistantStr($v, 60);
+                    if ($v === null || !preg_match('/^[A-Za-z0-9 _:.,-]+$/', $v)) return null;
+                    $query[$k] = $v;
+                }
+            }
+            return ['type' => 'link', 'label' => $label, 'route' => $route, 'query' => (object) $query];
+    }
+    return null;
+}
+
+/** show_blocks: validate, keep the good ones for the reply, tell the model what was dropped. */
+function assistantToolShowBlocks($conn, array $input, array $ctx) {
+    if (!isset($input['blocks']) || !is_array($input['blocks'])) {
+        throw new AssistantToolError('blocks must be an array');
+    }
+    $store = isset($ctx['blocks']) && $ctx['blocks'] instanceof ArrayObject ? $ctx['blocks'] : new ArrayObject();
+    $accepted = 0; $dropped = [];
+    foreach (array_values($input['blocks']) as $i => $b) {
+        if (count($store) >= ASSISTANT_MAX_BLOCKS) { $dropped[] = "block $i: more than " . ASSISTANT_MAX_BLOCKS . ' blocks'; continue; }
+        $clean = assistantValidateBlock($b);
+        if ($clean === null) {
+            $dropped[] = "block $i (" . (is_array($b) && isset($b['type']) && is_string($b['type']) ? $b['type'] : '?') . '): does not match the schema';
+            continue;
+        }
+        $store->append($clean);
+        $accepted++;
+    }
+    return ['accepted' => $accepted, 'dropped' => $dropped];
 }

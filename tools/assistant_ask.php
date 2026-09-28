@@ -73,10 +73,16 @@ if ($result['status'] !== 200) {
     fail($result['status'] === 404 ? 2 : 6, $result['status'], $b['error']);
 }
 echo $b['text'] . "\n\n";
+foreach ($b['blocks'] as $blk) {
+    echo '[block ' . $blk['type'] . '] ' . json_encode($blk, JSON_UNESCAPED_UNICODE) . "\n";
+}
 echo "---\n";
 echo "conversation_id: " . $b['conversation_id'] . "   log_id: " . $b['meta']['log_id'] . "   model: " . $client->model() . "\n";
 echo "tools called:    " . (count($b['meta']['tools_called']) ? implode(', ', $b['meta']['tools_called']) : '(none)') . "\n";
-echo "tokens:          in " . $b['meta']['input_tokens'] . " / out " . $b['meta']['output_tokens']
-    . "   (today so far: " . ($used + $b['meta']['input_tokens'] + $b['meta']['output_tokens']) . " of " . assistantDailyTokenCap() . ")\n";
+$m = $b['meta'];
+echo "tokens:          in " . $m['input_tokens'] . " / out " . $m['output_tokens']
+    . " / cache read " . $m['cache_read_tokens'] . " / cache write " . $m['cache_write_tokens']
+    . "   (today so far: " . ($used + $m['input_tokens'] + $m['output_tokens'] + $m['cache_read_tokens'] + $m['cache_write_tokens'])
+    . " of " . assistantDailyTokenCap() . ")\n";
 echo "ms:              " . $b['meta']['ms'] . "\n";
 exit(0);
