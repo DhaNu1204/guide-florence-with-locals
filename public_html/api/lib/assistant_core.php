@@ -146,7 +146,7 @@ function assistantSystemRules() {
         . "- Dates: use the ranges given under \"Dates\" below, never work them out yourself. \"this week\" = today to "
         . "Sunday; \"this month\" = today to the last day of the month; \"tomorrow\" and \"weekend\" as listed. "
         . "Always state the range you used, e.g. \"from Mon 28 Sep to Wed 30 Sep\".\n"
-        . "- Write dates like \"Mon 28 Sep\" and times as 24-hour HH:MM.\n"
+        . "- Write dates like \"Mon 28 Sep\" (in an Italian answer with Italian names: \"lun 28 set\") and times as 24-hour HH:MM.\n"
         . "- Guides: resolve a name with find_guide. If it is not confident, do not pick one: ask which guide, "
         . "with a choices block listing the matches.\n"
         . "- When a time matches several departures, list them all (or ask with a choices block); never pick one silently.\n"
