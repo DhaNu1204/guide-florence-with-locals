@@ -20,6 +20,8 @@ import {
 } from 'react-icons/fi';
 import { BsBoxSeam } from 'react-icons/bs';
 import { useAuth } from '../../contexts/AuthContext';
+import AssistantLauncher from '../assistant/AssistantLauncher'; // step 7.4 (the chat itself is lazy)
+import { useAssistantState } from '../assistant/assistantStore';
 
 const ModernLayout = ({ children }) => {
   const location = useLocation();
@@ -31,6 +33,9 @@ const ModernLayout = ({ children }) => {
   // not from localStorage, which anyone can edit in DevTools.
   const { userRole, userName, logout, canSeePnl } = useAuth();
   const userInfo = { username: userName || 'User', role: userRole || 'viewer' };
+  // Step 7.4: on desktop (lg) the open assistant drawer pushes the page instead of covering it.
+  const { open: assistantOpen } = useAssistantState();
+  const pushForAssistant = assistantOpen && userRole === 'admin';
 
   useEffect(() => {
     // Check if mobile on mount and resize
@@ -378,6 +383,7 @@ const ModernLayout = ({ children }) => {
       <main className={`
         transition-all duration-300 ease-in-out
         ${isMobile ? 'ml-0 mt-16' : isSidebarOpen ? 'ml-64' : 'ml-20'}
+        ${pushForAssistant ? 'lg:mr-[468px]' : ''}
         min-h-screen
       `}>
         <div className="p-4 md:p-6 lg:p-8">
@@ -387,6 +393,9 @@ const ModernLayout = ({ children }) => {
           </div>
         </div>
       </main>
+
+      {/* Step 7.4: assistant button + chat (admins, and only while the server has it switched on) */}
+      <AssistantLauncher />
     </div>
   );
 };

@@ -165,8 +165,12 @@ function assistantSystemRules() {
         . "for tours running that day instead.\n"
         . "- Write money in euro with 2 decimals: \"€1,234.50\" in English, \"1.234,50 €\" in Italian. Answer money with a "
         . "stat block per figure asked (Net Revenue, Total Costs, Profit, or the one cost line asked) plus a link block "
-        . "{route: /daily-pnl, query: {date}} for one day or {start_date, end_date} for a range. Mention it when some "
-        . "departures are estimated (estimated_departures > 0).\n"
+        . "{route: /daily-pnl, query: {date}} for one day or {start, end} for a range. Mention it when some "
+        . "departures are estimated (estimated_departures > 0). Do not give a departure count in a money answer; if one "
+        . "is needed call it \"P&L rows (incl. ticket-only)\" - it is not the Tours page count.\n"
+        // step 7.4: deep links the pages now read
+        . "- Link blocks for lists: {route: /tours, query: {date}} or {start, end}, plus unassigned: \"1\" for a list of "
+        . "departures without a guide, guide_id for one guide's schedule, language for one language.\n"
         . "- Whether this user may see money is stated under \"Access\" below; follow it exactly. Never estimate or work "
         . "out money from any other data.\n"
         . "- Plain text only in the answer: no markdown tables, no headings, no bullet lists of data that is already in a block.";
@@ -316,6 +320,58 @@ function assistantOwnsConversation($conn, $conversationId, $userId) {
     return $ok;
 }
 
+/**
+ * Step 7.4: the user's last 5 conversations (last activity first), each with its first question
+ * as the title. Only conversations inside the 30-day window.
+ */
+function assistantRecentConversations($conn, $userId) {
+    $days = ASSISTANT_RETENTION_DAYS;
+    $stmt = $conn->prepare("
+        SELECT c.id,
+               DATE_FORMAT(MAX(m.created_at), '%Y-%m-%dT%H:%i:%sZ') AS last_at,
+               COUNT(m.id) AS messages,
+               (SELECT JSON_UNQUOTE(JSON_EXTRACT(f.content_json, '$.text')) FROM assistant_messages f
+                 WHERE f.conversation_id = c.id AND f.role = 'user' ORDER BY f.id ASC LIMIT 1) AS title
+        FROM assistant_conversations c
+        JOIN assistant_messages m ON m.conversation_id = c.id
+        WHERE c.user_id = ? AND c.created_at >= UTC_TIMESTAMP() - INTERVAL $days DAY
+        GROUP BY c.id
+        ORDER BY MAX(m.id) DESC
+        LIMIT 5");
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $out = [];
+    while ($r = $res->fetch_assoc()) {
+        $title = (string) $r['title'];
+        if (mb_strlen($title, 'UTF-8') > 80) { $title = mb_substr($title, 0, 79, 'UTF-8') . '…'; }
+        $out[] = ['id' => (int) $r['id'], 'title' => $title, 'last_at' => $r['last_at'], 'messages' => (int) $r['messages']];
+    }
+    $stmt->close();
+    return $out;
+}
+
+/** Step 7.4: a conversation as the UI shows it (the caller has checked ownership). */
+function assistantConversationMessages($conn, $conversationId) {
+    $stmt = $conn->prepare("SELECT role, content_json, DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') AS at
+                            FROM assistant_messages WHERE conversation_id = ? ORDER BY id ASC LIMIT 200");
+    $stmt->bind_param('i', $conversationId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $out = [];
+    while ($r = $res->fetch_assoc()) {
+        $c = json_decode($r['content_json'], true);
+        $out[] = [
+            'role' => $r['role'],
+            'text' => is_array($c) && isset($c['text']) ? (string) $c['text'] : '',
+            'blocks' => is_array($c) && isset($c['blocks']) && is_array($c['blocks']) ? $c['blocks'] : [],
+            'at' => $r['at'],
+        ];
+    }
+    $stmt->close();
+    return $out;
+}
+
 function assistantStoreMessage($conn, $conversationId, $role, array $content) {
     $json = json_encode($content, JSON_UNESCAPED_UNICODE);
     $stmt = $conn->prepare("INSERT INTO assistant_messages (conversation_id, role, content_json) VALUES (?, ?, ?)");
@@ -324,12 +380,18 @@ function assistantStoreMessage($conn, $conversationId, $role, array $content) {
     $stmt->close();
 }
 
-/** Roughly 1 request in 100 removes chats and logs older than the retention window. */
+/**
+ * Removes chats and logs older than the retention window. Step 7.4: runs whenever something is
+ * older than 30 days (one indexed probe per request), so the first request of each day cleans up
+ * - instead of 1 request in 100, which on a quiet day meant never.
+ */
 function assistantPrune($conn) {
-    if (mt_rand(1, 100) !== 1) {
+    $days = ASSISTANT_RETENTION_DAYS;
+    $old = $conn->query("SELECT 1 FROM assistant_messages WHERE created_at < UTC_TIMESTAMP() - INTERVAL $days DAY LIMIT 1");
+    $oldLog = $conn->query("SELECT 1 FROM assistant_logs WHERE created_at < UTC_TIMESTAMP() - INTERVAL $days DAY LIMIT 1");
+    if ((!$old || $old->num_rows === 0) && (!$oldLog || $oldLog->num_rows === 0)) {
         return;
     }
-    $days = ASSISTANT_RETENTION_DAYS;
     $conn->query("DELETE FROM assistant_messages WHERE created_at < UTC_TIMESTAMP() - INTERVAL $days DAY");
     $conn->query("DELETE c FROM assistant_conversations c LEFT JOIN assistant_messages m ON m.conversation_id = c.id
                   WHERE m.id IS NULL AND c.created_at < UTC_TIMESTAMP() - INTERVAL $days DAY");

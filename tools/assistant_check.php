@@ -300,5 +300,21 @@ check('lang: "Uffizi?" -> unknown (general rule)', $lg('Uffizi?'), null);
 check('context states the detected language last', substr(assistantSystemContext(['username' => 'sudesh', 'role' => 'admin'], $now, 'what is today income'), -60),
     substr("Language: the user's latest message is in English. Reply in English, including refusals.", -60));
 
+
+// ---- step 7.4: link keys per route, money count label -------------------------------------------
+$lk = function ($b) { $c = assistantValidateBlock($b); return $c === null ? null : json_decode(json_encode($c), true)['query']; };
+check('link: /tours start+end+unassigned kept', $lk(['type' => 'link', 'label' => 'Open in Tours', 'route' => '/tours', 'query' => ['start' => '2026-09-29', 'end' => '2026-10-04', 'unassigned' => '1']]),
+    ['start' => '2026-09-29', 'end' => '2026-10-04', 'unassigned' => '1']);
+check('link: /daily-pnl start+end kept', $lk(['type' => 'link', 'label' => 'Daily P&L', 'route' => '/daily-pnl', 'query' => ['start' => '2026-09-01', 'end' => '2026-09-29']]),
+    ['start' => '2026-09-01', 'end' => '2026-09-29']);
+check('link: /daily-pnl with guide_id dropped (the page does not read it)', $lk(['type' => 'link', 'label' => 'x', 'route' => '/daily-pnl', 'query' => ['guide_id' => '4']]), null);
+check('link: old start_date key dropped', $lk(['type' => 'link', 'label' => 'x', 'route' => '/tours', 'query' => ['start_date' => '2026-09-29']]), null);
+check('link: /guides takes no query', $lk(['type' => 'link', 'label' => 'x', 'route' => '/guides', 'query' => ['date' => '2026-09-29']]), null);
+check('link: /guides without query ok', $lk(['type' => 'link', 'label' => 'Guides', 'route' => '/guides']), []);
+$sum2 = assistantPnlSummary(['net' => 1.0, 'retail' => 1.0, 'commission' => 0.0, 'card_fee' => 0.0, 'ticket_cost' => 0.0, 'guide_cost' => 0.0,
+    'radio_cost' => 0.0, 'gelato_cost' => 0.0, 'staff_cost' => 0.0, 'other_cost' => 0.0, 'total_cost' => 0.0, 'profit' => 1.0,
+    'units' => 22, 'tour_units' => 12, 'ticket_units' => 10, 'pax' => 86, 'estimated_units' => 0]);
+check('money: count labelled P&L rows (incl. ticket-only), no "departures" key', [$sum2['pnl_rows_incl_ticket_only'], isset($sum2['departures']), isset($sum2['tour_departures'])], [22, false, false]);
+
 echo "\n" . ($fail === 0 ? "ALL OK\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);

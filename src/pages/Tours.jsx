@@ -24,6 +24,9 @@ import { buildUnassignedReportText } from '../utils/unassignedReport';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.7: measurement only
 import LoadProblem from '../components/UI/LoadProblem';
 import { writeFailureMessage } from '../services/netPolicy';
+import { useLocation } from 'react-router-dom';
+import { parseToursParams } from '../utils/deepLinks'; // step 7.4: assistant deep links
+import { useAssistantState } from '../components/assistant/assistantStore';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -260,6 +263,10 @@ const getInitialDateParam = () => {
 const Tours = () => {
   // If the page was opened with ?date=YYYY-MM-DD, start in single-date mode on that date.
   const initialDateParam = getInitialDateParam();
+  // Step 7.4: the assistant's "Open in Tours" links - ?start=&end=, ?unassigned=1, ?guide_id=,
+  // ?language= (validated in utils/deepLinks.js; invalid ones are ignored). Read once, on mount.
+  const [deepLink] = useState(() => parseToursParams(window.location.search));
+  const initialRange = !initialDateParam && deepLink.start && deepLink.end ? deepLink : null;
 
   const [tours, setTours] = useState([]);
   const [tourGroups, setTourGroups] = useState([]);
@@ -275,9 +282,17 @@ const Tours = () => {
   const [loadedFor, setLoadedFor] = useState(null);
   const [shownAt, setShownAt] = useState(null);
   const [guides, setGuides] = useState([]);
-  const [selectedGuideId, setSelectedGuideId] = useState('all');
+  const [selectedGuideId, setSelectedGuideId] = useState(deepLink.guideId || 'all');
   // Step 6.1: filter by the language the tour is given in. 'Unknown' = the rows that have none.
-  const [selectedLanguage, setSelectedLanguage] = useState('all');
+  const [selectedLanguage, setSelectedLanguage] = useState(deepLink.language || 'all');
+  // Step 7.4: ?unassigned=1 - show only departures that still need a guide (a view filter over the
+  // loaded list; cleared with "Show all").
+  const [onlyUnassigned, setOnlyUnassigned] = useState(deepLink.unassigned);
+  const { open: assistantOpen } = useAssistantState(); // step 7.4: the drawer narrows the page on lg
+  // Step 7.4: an assistant link followed while Tours is already open changes only the query string
+  // (same page instance), so apply a NEW query here; the first one was read by the useState()s above.
+  const location = useLocation();
+  const appliedSearch = useRef(location.search);
   const [languageOptions, setLanguageOptions] = useState([]);
   const [filterDate, setFilterDate] = useState(initialDateParam || new Date()); // Default to today (or ?date= deep link)
   const [currentPage, setCurrentPage] = useState(1);
@@ -292,11 +307,11 @@ const Tours = () => {
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
-  const [showUpcoming, setShowUpcoming] = useState(initialDateParam ? false : true); // Single-date mode when ?date= present, else Upcoming
+  const [showUpcoming, setShowUpcoming] = useState(initialDateParam || initialRange ? false : true); // Single-date mode when ?date= present, range for ?start=&end=, else Upcoming
   const [showPast, setShowPast] = useState(false); // Show past 40 days for payment verification
-  const [showDateRange, setShowDateRange] = useState(false); // Custom date range mode
-  const [rangeStartDate, setRangeStartDate] = useState(''); // YYYY-MM-DD string
-  const [rangeEndDate, setRangeEndDate] = useState(''); // YYYY-MM-DD string
+  const [showDateRange, setShowDateRange] = useState(Boolean(initialRange)); // Custom date range mode
+  const [rangeStartDate, setRangeStartDate] = useState(initialRange ? initialRange.start : ''); // YYYY-MM-DD string
+  const [rangeEndDate, setRangeEndDate] = useState(initialRange ? initialRange.end : ''); // YYYY-MM-DD string
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTour, setSelectedTour] = useState(null);
   // "Ask a guide" (availability request) flow
@@ -322,6 +337,28 @@ const Tours = () => {
   });
 
   const toursPerPage = 500; // Load all tours in one page to avoid group splitting across pages
+
+  // Step 7.4: a new query string while the page is open (assistant link from the drawer) -> the
+  // same filters the initial state would have taken. An empty query changes nothing.
+  useEffect(() => {
+    if (location.search === appliedSearch.current) return;
+    appliedSearch.current = location.search;
+    const dl = parseToursParams(location.search);
+    const rawDate = new URLSearchParams(location.search).get('date');
+    const m = rawDate && /^(\d{4})-(\d{2})-(\d{2})$/.test(rawDate) ? rawDate.split('-').map(Number) : null;
+    const anything = m || (dl.start && dl.end) || dl.guideId || dl.language || dl.unassigned;
+    if (!anything) return;
+    if (m) {
+      setFilterDate(new Date(m[0], m[1] - 1, m[2]));
+      setShowUpcoming(false); setShowPast(false); setShowDateRange(false);
+    } else if (dl.start && dl.end) {
+      setRangeStartDate(dl.start); setRangeEndDate(dl.end);
+      setShowDateRange(true); setShowUpcoming(false); setShowPast(false);
+    }
+    setSelectedGuideId(dl.guideId || 'all');
+    setSelectedLanguage(dl.language || 'all');
+    setOnlyUnassigned(dl.unassigned);
+  }, [location.search]);
 
   // Load data function with server-side filtering
   const loadData = async (forceRefresh = false, page = 1, filters = {}) => {
@@ -616,6 +653,26 @@ const Tours = () => {
         }))
     }));
   }, [tours, tourGroups, groupedTourIds, groupById]); // Also depends on groups now
+
+  // Step 7.4: what the list shows. With ?unassigned=1 only departures whose EFFECTIVE guide is
+  // missing (the unassigned report's rule: neither the group nor any member has one; cancelled
+  // bookings are not departures). Without it this is groupedTours, unchanged.
+  const listedTours = useMemo(() => {
+    if (!onlyUnassigned) return groupedTours;
+    const needsGuide = (item) => {
+      if (!item._isGroup) return !item.cancelled && !item.guide_id;
+      const active = (item.group.tours || []).filter((t) => t && !t.cancelled);
+      return active.length > 0 && !item.group.guide_id && !active.some((t) => t.guide_id);
+    };
+    return groupedTours
+      .map((d) => ({
+        ...d,
+        periods: d.periods
+          .map((p) => ({ ...p, items: p.items.filter(needsGuide) }))
+          .filter((p) => p.items.length > 0),
+      }))
+      .filter((d) => d.periods.length > 0);
+  }, [groupedTours, onlyUnassigned]);
 
   // Calculate total tours and participants from grouped data
   // Groups count as 1 tour in the summary
@@ -1207,7 +1264,8 @@ const Tours = () => {
         {/* Filters — responsive */}
         <Card>
           <h3 className="text-base md:text-lg font-semibold mb-3 md:mb-4">Filters</h3>
-          <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
+          {/* Step 7.4: with the assistant drawer open (lg) the page is ~470 px narrower - stack the filters */}
+          <div className={`space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 ${assistantOpen ? 'lg:grid-cols-1 lg:space-y-3' : ''}`}>
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">Filter by Guide</label>
               <select
@@ -1267,16 +1325,27 @@ const Tours = () => {
           </div>
         )}
 
+        {/* Step 7.4: ?unassigned=1 from an assistant link - only departures that need a guide */}
+        {onlyUnassigned && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-tuscan-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="only-unassigned-banner">
+            <span className="flex-1">Showing only departures without a guide</span>
+            <button type="button" onClick={() => setOnlyUnassigned(false)}
+              className="min-h-[44px] rounded-tuscan-lg border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-800 hover:bg-amber-100 touch-manipulation">
+              Show all
+            </button>
+          </div>
+        )}
+
         {/* Tours by Date */}
         <div className="space-y-6">
-          {loadError && !shownAt ? null : groupedTours.length === 0 ? (
+          {loadError && !shownAt ? null : listedTours.length === 0 ? (
             <Card>
               <div className="text-center py-8">
                 <p className="text-stone-500">No tours found for the selected criteria.</p>
               </div>
             </Card>
           ) : (
-            groupedTours.map((dateGroup) => {
+            listedTours.map((dateGroup) => {
               const dateObj = new Date(dateGroup.date);
               const isTodayDate = format(new Date(), 'yyyy-MM-dd') === dateGroup.date;
               const dateStats = computeItemStats(
