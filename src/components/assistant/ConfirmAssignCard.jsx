@@ -27,6 +27,16 @@ export const cardExpiresAt = (block, fallbackNow = Date.now()) => {
   return (Number.isFinite(issued) ? issued : fallbackNow) + ttl * 1000;
 };
 
+// Pages already open (Tours, Dashboard) reload on this event - the same one a Bokun sync sends -
+// so the change shows at once behind the chat, not only on the next page load.
+const announceChange = (departureId) => {
+  try {
+    window.dispatchEvent(new CustomEvent('florence:bookings-updated', { detail: { trigger: 'assistant', departure_id: departureId } }));
+  } catch (_) { /* no window (tests) */ }
+};
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
 const ERRORS = {
   403: 'Only an admin can change assignments.',
   0: 'No connection - nothing was saved. Try again.',
@@ -83,6 +93,7 @@ export default function ConfirmAssignCard({ block, onChoose, onNavigate, disable
       }
       return;
     }
+    announceChange(dep.departure_id);
     const rep = await reportAssignDone({
       departure_id: dep.departure_id, from_guide_id: prev, to_guide_id: guide.id,
       send_whatsapp: !!(wa.offer && sendWa && !wa.disabled_reason),
@@ -103,6 +114,7 @@ export default function ConfirmAssignCard({ block, onChoose, onNavigate, disable
         : (ERRORS[res.status] || 'Not undone - something went wrong. Try again.'));
       return;
     }
+    announceChange(dep.departure_id);
     const rep = result && result.action_id ? await reportUndoDone(result.action_id) : { ok: false };
     setUndoResult(rep.ok ? rep.data : { at: new Date().toTimeString().slice(0, 5) });
     setPhase('undone');
@@ -125,7 +137,7 @@ export default function ConfirmAssignCard({ block, onChoose, onNavigate, disable
         <span className="block truncate text-stone-600">{dep.title}</span>
       </div>
       <div className="mt-0.5 text-xs text-stone-500">
-        {Number(dep.guests) || 0} guests in {Number(dep.bookings) || 0} bookings · now: {nowGuide}
+        {plural(Number(dep.guests) || 0, 'guest', 'guests')} in {plural(Number(dep.bookings) || 0, 'booking', 'bookings')} · now: {nowGuide}
       </div>
 
       {block.checks.length > 0 && (

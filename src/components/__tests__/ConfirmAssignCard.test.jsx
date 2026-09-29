@@ -68,9 +68,14 @@ describe('ConfirmAssignCard (step 7.5)', () => {
     reportAssignDone.mockResolvedValue({ ok: true, data: { success: true, action_id: 55, at: '14:02', by: 'dhanu', whatsapp: null } });
     reportUndoDone.mockResolvedValue({ ok: true, data: { success: true, action_id: 56, at: '14:03', by: 'dhanu' } });
     renderCard(card());
+    const seen = [];
+    const onUpdated = (e) => seen.push(e.detail);
+    window.addEventListener('florence:bookings-updated', onUpdated);
     fireEvent.click(screen.getByText('Confirm assignment'));
     await screen.findByTestId('assistant-confirm-done');
     expect(saveDepartureGuide).toHaveBeenCalledWith(expect.objectContaining({ departure_id: 'g42', type: 'group', id: 42 }), 7, null, { force: false });
+    // the open Tours page / Dashboard reload at once (same event a Bokun sync sends)
+    expect(seen).toEqual([{ trigger: 'assistant', departure_id: 'g42' }]);
     expect(reportAssignDone).toHaveBeenCalledWith({ departure_id: 'g42', from_guide_id: null, to_guide_id: 7, send_whatsapp: false });
     expect(screen.getByText(/Caterina Cavalcaselle assigned · 14:02 by dhanu/)).toBeInTheDocument();
     expect(screen.getByText('Open in Tours').closest('a')).toHaveAttribute('href', '/tours?date=2026-09-30');
@@ -79,6 +84,8 @@ describe('ConfirmAssignCard (step 7.5)', () => {
     await screen.findByTestId('assistant-confirm-undone');
     expect(saveDepartureGuide).toHaveBeenLastCalledWith(expect.objectContaining({ id: 42 }), null, 7, { force: true });
     expect(reportUndoDone).toHaveBeenCalledWith(55);
+    expect(seen).toHaveLength(2);
+    window.removeEventListener('florence:bookings-updated', onUpdated);
   });
 
   it('a stale card (409 departure_changed) saves nothing and offers to reload', async () => {
@@ -116,6 +123,11 @@ describe('ConfirmAssignCard (step 7.5)', () => {
     fireEvent.click(screen.getByText('Confirm assignment'));
     await screen.findByTestId('assistant-confirm-done');
     expect(saveDepartureGuide).toHaveBeenCalledWith(expect.objectContaining({ id: 900 }), 7, null, { force: true });
+  });
+
+  it('singular wording: 1 guest in 1 booking', () => {
+    renderCard(card({ departure: { ...card().departure, guests: 1, bookings: 1 } }));
+    expect(screen.getByText('1 guest in 1 booking · now: no guide')).toBeInTheDocument();
   });
 
   it('replacing: "now:" shows the current guide and the warning line', () => {
