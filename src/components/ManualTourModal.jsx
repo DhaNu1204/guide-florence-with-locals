@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FiX, FiSave } from 'react-icons/fi';
+import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
 
 /**
  * Step 6.4 — add or edit a departure by hand.
@@ -165,7 +166,7 @@ const ManualTourModal = ({ isOpen, onClose, onSave, guides = [], tour = null, sa
               <label className={label} htmlFor="manual-guide">Guide (optional)</label>
               <select id="manual-guide" value={form.guide_id} onChange={set('guide_id')} className={field}>
                 <option value="">No guide yet</option>
-                {guides.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                {pickableGuides(guides, form.guide_id).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </div>
           </div>

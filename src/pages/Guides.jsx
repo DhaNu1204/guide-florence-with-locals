@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiPlus, FiUsers, FiPhone, FiX, FiCalendar, FiEdit2, FiTrash2, FiMail, FiGlobe } from 'react-icons/fi';
-import { getGuides, addGuide, updateGuide, deleteGuide } from '../services/mysqlDB';
+import { getGuides, addGuide, updateGuide, deleteGuide, setGuideFlags } from '../services/mysqlDB';
 import LoadProblem from '../components/UI/LoadProblem';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 import { usePageTitle } from '../contexts/PageTitleContext';
@@ -22,6 +22,40 @@ const isValidGuidePhone = (phone) => {
 };
 
 // Fallback to local storage instead of remote API
+// Step 7.2b: the two per-guide switches (admins) or read-only badges (everyone else).
+const FLAG_LABELS = { active: 'Active', is_partner_agency: 'Partner agency' };
+const GuideFlags = ({ guide, canEdit, busy, onToggle }) => {
+  if (!canEdit) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {Number(guide.active) === 0 && <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-600">Inactive</span>}
+        {Number(guide.is_partner_agency) === 1 && <span className="rounded-full bg-renaissance-50 px-2 py-0.5 text-xs font-medium text-renaissance-700">Partner agency</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {['active', 'is_partner_agency'].map((flag) => {
+        const on = flag === 'active' ? Number(guide.active) !== 0 : Number(guide.is_partner_agency) === 1;
+        return (
+          <label key={flag} className={`inline-flex min-h-[44px] cursor-pointer items-center gap-2 text-sm ${busy ? 'opacity-50' : ''}`}>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label={`${FLAG_LABELS[flag]}: ${guide.name}`}
+              checked={on}
+              disabled={busy}
+              onChange={() => onToggle(guide, flag, on ? 0 : 1)}
+              className="h-4 w-4 accent-terracotta-500"
+            />
+            <span className="text-stone-700">{FLAG_LABELS[flag]}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+};
+
 const Guides = () => {
   const { setPageTitle } = usePageTitle();
   const [guides, setGuides] = useState([]);
@@ -46,6 +80,9 @@ const Guides = () => {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
+  // Step 7.2b: Active (default) / Inactive / All, filtered on the server
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [flagBusy, setFlagBusy] = useState(null); // guide id being saved
   const [pagination, setPagination] = useState({
     current_page: 1,
     per_page: 20,
@@ -73,7 +110,7 @@ const Guides = () => {
 
     // Clean up function to reset page title when component unmounts
     return () => setPageTitle('');
-  }, [setPageTitle, currentPage]);
+  }, [setPageTitle, currentPage, statusFilter]);
 
   const fetchGuides = async (page = 1) => {
     markListStart(); // step 4.8: the page's own data fetch, for the field recorder
@@ -81,7 +118,7 @@ const Guides = () => {
       setLoading(true);
       console.log('Fetching guides from MySQL database, page:', page);
 
-      const response = await getGuides(page);
+      const response = await getGuides(page, 20, statusFilter === 'all' ? null : statusFilter);
 
       // Handle paginated response
       if (response && response.data) {
@@ -283,6 +320,20 @@ const Guides = () => {
   const cancelDelete = () => {
     setDeleteConfirmation({ show: false, guideId: null, guideName: '' });
   };
+
+  // Step 7.2b: flip one flag, then reload the page (a guide switched off leaves the Active list).
+  const toggleFlag = async (guide, flag, value) => {
+    setFlagBusy(guide.id);
+    try {
+      await setGuideFlags(guide.id, { [flag]: value });
+      toast.success(`${guide.name}: ${FLAG_LABELS[flag]} ${value ? 'on' : 'off'}`);
+      await fetchGuides(currentPage);
+    } catch (e) {
+      toast.error(`Could not change ${FLAG_LABELS[flag]} for ${guide.name}`);
+    } finally {
+      setFlagBusy(null);
+    }
+  };
   
   return (
     <div className="space-y-6">
@@ -468,6 +519,21 @@ const Guides = () => {
       
       <LoadProblem error={loadError} what="the guides" shownAt={shownAt} onRetry={() => fetchGuides(currentPage)} retrying={loading} />
 
+      {/* Step 7.2b: which guides the list shows */}
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Show guides">
+        {[['active', 'Active'], ['inactive', 'Inactive'], ['all', 'All']].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => { setStatusFilter(key); setCurrentPage(1); }}
+            aria-pressed={statusFilter === key}
+            className={`min-h-[44px] rounded-tuscan px-4 py-2 text-sm font-medium touch-manipulation ${statusFilter === key ? 'bg-terracotta-500 text-white' : 'bg-white text-stone-600 border border-stone-300 hover:bg-stone-50'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Guides List */}
       <div>
         {loading && !showAddForm ? (
@@ -510,13 +576,16 @@ const Guides = () => {
                   </thead>
                   <tbody className="divide-y divide-stone-200">
                     {guides.map(guide => (
-                      <tr key={guide.id} className="hover:bg-stone-50 transition-colors">
+                      <tr key={guide.id} className={`transition-colors ${Number(guide.active) === 0 ? 'bg-stone-50 opacity-60' : 'hover:bg-stone-50'}`} data-testid={`guide-row-${guide.id}`}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="w-10 h-10 bg-terracotta-100 rounded-tuscan-lg flex items-center justify-center mr-3">
                               <span className="text-terracotta-600 font-semibold text-lg">{guide.name.charAt(0)}</span>
                             </div>
-                            <div className="font-medium text-stone-900">{guide.name}</div>
+                            <div>
+                              <div className="font-medium text-stone-900">{guide.name}</div>
+                              <GuideFlags guide={guide} canEdit={isAdmin()} busy={flagBusy === guide.id} onToggle={toggleFlag} />
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -585,14 +654,15 @@ const Guides = () => {
             {/* Mobile view - Cards */}
             <div className="md:hidden space-y-4">
               {guides.map(guide => (
-                <Card key={guide.id} hover>
+                <Card key={guide.id} hover className={Number(guide.active) === 0 ? 'opacity-60' : ''}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-start">
                       <div className="w-12 h-12 bg-terracotta-100 rounded-tuscan-lg flex items-center justify-center mr-4 flex-shrink-0">
                         <span className="text-terracotta-600 font-semibold text-lg">{guide.name.charAt(0)}</span>
                       </div>
                       <div className="flex-1">
-                        <h3 className="font-medium text-stone-900 mb-2">{guide.name}</h3>
+                        <h3 className="font-medium text-stone-900 mb-1">{guide.name}</h3>
+                        <div className="mb-2"><GuideFlags guide={guide} canEdit={isAdmin()} busy={flagBusy === guide.id} onToggle={toggleFlag} /></div>
                         <div className="space-y-1">
                           <div className="flex items-center text-sm text-stone-600">
                             <FiMail className="h-4 w-4 mr-2 text-stone-400" />

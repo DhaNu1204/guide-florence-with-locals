@@ -316,5 +316,42 @@ $sum2 = assistantPnlSummary(['net' => 1.0, 'retail' => 1.0, 'commission' => 0.0,
     'units' => 22, 'tour_units' => 12, 'ticket_units' => 10, 'pax' => 86, 'estimated_units' => 0]);
 check('money: count labelled P&L rows (incl. ticket-only), no "departures" key', [$sum2['pnl_rows_incl_ticket_only'], isset($sum2['departures']), isset($sum2['tour_departures'])], [22, false, false]);
 
+
+// ---- step 7.2b: guide flags, product durations -----------------------------------------------
+check('bokun duration: 1 h', bokunDurationMinutes(['durationWeeks' => 0, 'durationDays' => 0, 'durationHours' => 1, 'durationMinutes' => 0]), 60);
+check('bokun duration: 1 h 15', bokunDurationMinutes(['durationHours' => 1, 'durationMinutes' => 15]), 75);
+check('bokun duration: 1 day', bokunDurationMinutes(['durationDays' => 1]), 1440);
+check('bokun duration: all zero = unknown', bokunDurationMinutes(['durationHours' => 0, 'durationMinutes' => 0]), null);
+check('bokun duration: no fields = unknown', bokunDurationMinutes(['title' => 'x']), null);
+check('duration valid: null / 60 ok, 4 / 1441 / 1.5 / "abc" refused',
+    [productDurationValid(null), productDurationValid(60), productDurationValid('90'), productDurationValid(4), productDurationValid(1441), productDurationValid(1.5), productDurationValid('abc')],
+    [true, true, true, false, false, false, false]);
+check('guide row flags cast to numbers', guideRowFlags(['id' => '3', 'active' => '0', 'is_partner_agency' => '1']), ['id' => '3', 'active' => 0, 'is_partner_agency' => 1]);
+
+$g2 = [
+    ['id' => 1, 'name' => 'Giulia Rossi', 'languages' => 'English', 'active' => 1, 'is_partner_agency' => 0],
+    ['id' => 2, 'name' => 'Old Guide', 'languages' => 'English', 'active' => 0, 'is_partner_agency' => 0],
+    ['id' => 3, 'name' => 'Agency Uno', 'languages' => 'English', 'active' => 1, 'is_partner_agency' => 1],
+    ['id' => 4, 'name' => 'Marco Neri', 'languages' => 'Italian', 'active' => 1, 'is_partner_agency' => 0],
+];
+$u2 = [
+    ['departure_id' => 'g1', 'time' => '09:00', 'title' => 'Accademia Tour', 'guide_id' => 1, 'duration_minutes' => 60],
+    ['departure_id' => 'g2', 'time' => '09:00', 'title' => 'Uffizi Tour', 'guide_id' => 4, 'duration_minutes' => null],
+    ['departure_id' => 'g3', 'time' => '10:30', 'title' => 'Uffizi Tour', 'guide_id' => 3, 'duration_minutes' => 150],
+];
+list($free, $busy, $partners, $assumed) = assistantSplitFreeBusy($g2, $u2, '10:00', '12:00');
+check('free 10-12: a 60-min 09:00 tour frees Giulia at 10:00', in_array(1, array_column($free, 'guide_id'), true), true);
+check('free 10-12: Marco busy (no duration -> 120 min, until 11:00)', [array_column($busy, 'guide_id'), $busy[0]['departures'][0]['until']], [[4], '11:00']);
+check('free 10-12: the inactive guide is not listed anywhere', in_array(2, array_merge(array_column($free, 'guide_id'), array_column($busy, 'guide_id'), array_column($partners, 'guide_id')), true), false);
+check('free 10-12: the agency only in partner_agencies, busy there', [array_column($partners, 'guide_id'), $partners[0]['free_in_window'], in_array(3, array_column($free, 'guide_id'), true)], [[3], false, false]);
+check('free: titles that fell back to 120 min are listed', $assumed, ['Uffizi Tour']);
+list($free, $busy) = assistantSplitFreeBusy($g2, [['departure_id' => 'g1', 'time' => '09:00', 'title' => 'Accademia Tour', 'guide_id' => 1, 'duration_minutes' => 120]], '10:00', '12:00');
+check('free: the same tour at 120 min keeps Giulia busy at 10:00', array_column($busy, 'guide_id'), [1]);
+
+$rk = assistantRankGuides('old guide', $g2);
+check('find_guide: an inactive guide is still found, marked inactive', [$rk['matches'][0]['guide_id'], $rk['matches'][0]['inactive'] ?? false], [2, true]);
+$rk = assistantRankGuides('agency uno', $g2);
+check('find_guide: a partner agency is marked', [$rk['matches'][0]['guide_id'], $rk['matches'][0]['partner_agency'] ?? false, isset($rk['matches'][0]['inactive'])], [3, true, false]);
+
 echo "\n" . ($fail === 0 ? "ALL OK\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);

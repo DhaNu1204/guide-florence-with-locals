@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiMessageCircle, FiX, FiCheck, FiCopy, FiRefreshCw, FiAlertCircle } from 'react-icons/fi';
 import { createGuideRequest } from '../services/mysqlDB';
+import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
 
 // Format a tour date as dd/MM/yyyy (parse from parts to avoid TZ drift).
 const formatAskDate = (dateStr) => {
@@ -19,7 +20,8 @@ const formatAskDate = (dateStr) => {
  *  - onClose(): close the modal
  *  - onRequested({ tourId, guideName, request }): fired after a request is created
  */
-const AskGuideModal = ({ tour, guides = [], language, time, onClose, onRequested }) => {
+const AskGuideModal = ({ tour, guides: allGuides = [], language, time, onClose, onRequested }) => {
+  const guides = pickableGuides(allGuides); // step 7.2b: never ask an inactive guide
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { guideName, link, waUrl, hasPhone, message }
   const [copied, setCopied] = useState(false);

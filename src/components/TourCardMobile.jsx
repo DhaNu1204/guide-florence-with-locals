@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
 import { FiSave, FiX, FiUsers, FiChevronDown } from 'react-icons/fi';
 import { getPaxBreakdown, formatBreakdown } from '../utils/tourCapacity';
 import ParticipantsButton from './ParticipantsButton';
@@ -194,7 +195,7 @@ const TourCardMobile = ({
               className="flex-1 min-w-0 px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
             >
               <option value="">Unassigned</option>
-              {guides.map(guide => (
+              {pickableGuides(guides, tour.guide_id).map(guide => (
                 <option key={guide.id} value={guide.id}>{guide.name}</option>
               ))}
             </select>

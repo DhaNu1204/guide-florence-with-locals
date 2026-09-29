@@ -155,18 +155,14 @@ ensureManualColumns($conn);
 ensureViatorAccountColumn($conn);   // step 6.9: the old-Viator-account label
 ensureRateTitleColumn($conn);       // step 6.14: the Bokun rate the booking was sold on
 
-// Always ensure known ticket products are classified correctly.
-// Runs after the products table is guaranteed to exist, and after
-// bokun_sync.php may have auto-registered new products as 'tour' via INSERT IGNORE.
-// INSERT ... ON DUPLICATE KEY UPDATE is idempotent:
-//   - Products not yet in the table → inserted as 'ticket'
-//   - Products mis-classified as 'tour' → corrected to 'ticket'
-//   - Products already 'ticket' → no-op
+// Known ticket products (runs after the products table is guaranteed to exist).
+// Step 7.2b: seed only. The type is now set on the /products page (products.php); forcing
+// 'ticket' here on every request would silently undo an admin's change. A product missing from
+// the table is still added as a ticket, as before.
 $conn->query("
-    INSERT INTO products (bokun_product_id, product_type)
+    INSERT IGNORE INTO products (bokun_product_id, product_type)
     VALUES (809838, 'ticket'), (845665, 'ticket'), (877713, 'ticket'),
            (961802, 'ticket'), (1115497, 'ticket'), (1119143, 'ticket'), (1162586, 'ticket')
-    ON DUPLICATE KEY UPDATE product_type = 'ticket'
 ");
 
 // Get the request method

@@ -16,7 +16,8 @@ import {
   FiClipboard,
   FiTrendingUp,
   FiRadio,
-  FiActivity
+  FiActivity,
+  FiPackage
 } from 'react-icons/fi';
 import { BsBoxSeam } from 'react-icons/bs';
 import { useAuth } from '../../contexts/AuthContext';
@@ -146,6 +147,15 @@ const ModernLayout = ({ children }) => {
       bgColor: 'bg-terracotta-50',
       borderColor: 'border-terracotta-500',
       adminOnly: true
+    },
+    {
+      title: 'Products',
+      icon: FiPackage,
+      path: '/products',
+      color: 'text-stone-600',
+      bgColor: 'bg-stone-50',
+      borderColor: 'border-stone-500',
+      adminOnly: true // step 7.2b: product type + duration settings (AdminRoute-guarded)
     },
     {
       title: 'Bokun Integration',

@@ -60,6 +60,8 @@ if (!function_exists('fwlUnassignedReport')) {
     }
 }
 
+require_once __DIR__ . '/guide_product_fields.php'; // step 7.2b: products.duration_minutes
+
 if (!function_exists('fwlDepartureUnits')) {
     /**
      * Every departure between two dates, the way the report counts them: one row per tour unit
@@ -70,9 +72,11 @@ if (!function_exists('fwlDepartureUnits')) {
      * @param string   $start YYYY-MM-DD
      * @param string   $end   YYYY-MM-DD
      * @param int|null $guideId only this effective guide
-     * @return array rows: departure_id, type, id, date, time, title, languages[], guests, bookings, guide_id, guide_name
+     * @return array rows: departure_id, type, id, date, time, title, languages[], guests, bookings, guide_id, guide_name,
+     *               duration_minutes (step 7.2b: the product's length, null = unknown)
      */
     function fwlDepartureUnits($conn, $start, $end, $guideId = null) {
+        ensureProductDurationColumn($conn);
         $having = $guideId !== null ? "HAVING COALESCE(MAX(tg.guide_id), MAX(t.guide_id)) = ?" : "";
         $sql = "SELECT u.*, g.name AS guide_name FROM (
                     SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit,
@@ -82,7 +86,8 @@ if (!function_exists('fwlDepartureUnits')) {
                            COUNT(*) AS bookings,
                            SUM(COALESCE(t.participants, 0)) AS pax,
                            GROUP_CONCAT(DISTINCT NULLIF(TRIM(t.language), '') ORDER BY t.language SEPARATOR ', ') AS languages,
-                           COALESCE(MAX(tg.guide_id), MAX(t.guide_id)) AS guide_id
+                           COALESCE(MAX(tg.guide_id), MAX(t.guide_id)) AS guide_id,
+                           MAX(pr.duration_minutes) AS duration_minutes
                     FROM tours t
                     LEFT JOIN tour_groups tg ON t.group_id = tg.id
                     LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
@@ -116,6 +121,7 @@ if (!function_exists('fwlDepartureUnits')) {
                 'bookings' => (int) $r['bookings'],
                 'guide_id' => $r['guide_id'] !== null ? (int) $r['guide_id'] : null,
                 'guide_name' => $r['guide_name'],
+                'duration_minutes' => $r['duration_minutes'] !== null ? (int) $r['duration_minutes'] : null,
             ];
         }
         $stmt->close();
