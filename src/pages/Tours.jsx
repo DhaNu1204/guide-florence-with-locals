@@ -26,6 +26,7 @@ import LoadProblem from '../components/UI/LoadProblem';
 import { writeFailureMessage } from '../services/netPolicy';
 import { useLocation } from 'react-router-dom';
 import { parseToursParams } from '../utils/deepLinks'; // step 7.4: assistant deep links
+import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
 import { useAssistantState } from '../components/assistant/assistantStore';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
@@ -1551,7 +1552,7 @@ const Tours = () => {
                                         className="px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
                                       >
                                         <option value="">Unassigned</option>
-                                        {guides.map(guide => (
+                                        {pickableGuides(guides, tour.guide_id).map(guide => (
                                           <option key={guide.id} value={guide.id}>{guide.name}</option>
                                         ))}
                                       </select>
@@ -2026,7 +2027,7 @@ const Tours = () => {
                 className="w-full px-3 py-2.5 min-h-[44px] border border-stone-300 rounded-tuscan text-sm font-medium text-stone-700 bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-500 touch-manipulation"
               >
                 <option value="" disabled>Assign Guide...</option>
-                {guides.map(guide => (
+                {pickableGuides(guides).map(guide => (
                   <option key={guide.id} value={guide.id}>{guide.name}</option>
                 ))}
               </select>

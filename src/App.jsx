@@ -31,6 +31,7 @@ const BokunIntegration = lazyWithRetry(() => import('./pages/BokunIntegration'))
 const PriorityTickets = lazyWithRetry(() => import('./pages/PriorityTickets'));
 const DailyPnL = lazyWithRetry(() => import('./pages/DailyPnL'));
 const Radios = lazyWithRetry(() => import('./pages/Radios'));
+const Products = lazyWithRetry(() => import('./pages/Products')); // step 7.2b
 const ClientPerf = lazyWithRetry(() => import('./pages/ClientPerf')); // step 4.7
 const GuideRespond = lazyWithRetry(() => import('./pages/GuideRespond'));
 
@@ -196,6 +197,18 @@ function AppRoutes() {
             <ModernLayout>
               <EditTour />
             </ModernLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/products"
+        element={
+          <ProtectedRoute>
+            <AdminRoute>
+              <ModernLayout>
+                <Products />
+              </ModernLayout>
+            </AdminRoute>
           </ProtectedRoute>
         }
       />

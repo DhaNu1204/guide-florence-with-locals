@@ -90,9 +90,11 @@ export const clearTourCache = () => {
 };
 
 // GUIDES OPERATIONS
-export const getGuides = async (page = 1, perPage = 20) => {
+export const getGuides = async (page = 1, perPage = 20, status = null) => {
   try {
-    const url = `${API_BASE_URL}/guides.php?page=${page}&per_page=${perPage}`;
+    // Step 7.2b: status 'active' | 'inactive' filters the Guides page; none = every guide (pickers).
+    const statusParam = status === 'active' || status === 'inactive' ? `&status=${status}` : '';
+    const url = `${API_BASE_URL}/guides.php?page=${page}&per_page=${perPage}${statusParam}`;
     const response = await axios.get(addCacheBuster(url));
 
     // Handle both paginated response format and legacy array format
@@ -199,6 +201,23 @@ export const deleteGuide = async (guideId) => {
     console.error('Error deleting guide:', error);
     throw error;
   }
+};
+
+// Step 7.2b: the Guides page toggles - sends only { active } and/or { is_partner_agency } (0/1).
+export const setGuideFlags = async (guideId, flags) => {
+  const response = await axios.put(`${API_BASE_URL}/guides.php/${guideId}`, flags);
+  return response.data;
+};
+
+// Step 7.2b: product settings (/products, admin only)
+export const getProducts = async () => {
+  const response = await axios.get(addCacheBuster(`${API_BASE_URL}/products.php`));
+  return Array.isArray(response.data?.data) ? response.data.data : [];
+};
+
+export const updateProduct = async (productId, fields) => {
+  const response = await axios.put(`${API_BASE_URL}/products.php/${productId}`, fields);
+  return response.data?.data;
 };
 
 export const updateGuide = async (guideId, guideData) => {

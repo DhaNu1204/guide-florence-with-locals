@@ -8,6 +8,10 @@ Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins writ
 // Apply rate limiting based on HTTP method
 autoRateLimit('guides');
 
+// Step 7.2b: guides.active + guides.is_partner_agency (self-provisioned, sent as 0/1)
+require_once __DIR__ . '/lib/guide_product_fields.php';
+ensureGuideFlagColumns($conn);
+
 // Log request for debugging
 $method = $_SERVER['REQUEST_METHOD'];
 $raw_data = file_get_contents('php://input');
@@ -31,8 +35,13 @@ if ($method === 'GET') {
     $perPage = isset($_GET['per_page']) ? max(1, min(100, intval($_GET['per_page']))) : 20;
     $offset = ($page - 1) * $perPage;
 
+    // Step 7.2b: ?status=active|inactive filters the Guides page; no status = every guide (pickers
+    // load the full list and decide themselves, so history keeps inactive guides).
+    $status = isset($_GET['status']) ? (string) $_GET['status'] : 'all';
+    $statusWhere = $status === 'active' ? 'WHERE active = 1' : ($status === 'inactive' ? 'WHERE active = 0' : '');
+
     // Get total count for pagination metadata
-    $countSql = "SELECT COUNT(*) as total FROM guides";
+    $countSql = "SELECT COUNT(*) as total FROM guides $statusWhere";
     $countResult = $conn->query($countSql);
     $totalRecords = 0;
 
@@ -42,7 +51,7 @@ if ($method === 'GET') {
     }
 
     // Get guides with pagination using prepared statement
-    $sql = "SELECT * FROM guides ORDER BY id LIMIT ? OFFSET ?";
+    $sql = "SELECT * FROM guides $statusWhere ORDER BY id LIMIT ? OFFSET ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("ii", $perPage, $offset);
     $stmt->execute();
@@ -57,7 +66,7 @@ if ($method === 'GET') {
             } else {
                 $row['languages'] = [];
             }
-            $guides[] = $row;
+            $guides[] = guideRowFlags($row);
         }
 
         // Calculate pagination metadata
@@ -156,7 +165,7 @@ else if ($method === 'POST') {
             }
 
             http_response_code(201); // Created
-            echo json_encode($guide);
+            echo json_encode(guideRowFlags($guide));
         } else {
             http_response_code(500);
             echo json_encode(['error' => 'Failed to add guide']);
@@ -204,6 +213,39 @@ else if ($method === 'PUT') {
     if ($checkResult->num_rows === 0) {
         http_response_code(404);
         echo json_encode(['error' => 'Guide not found']);
+        exit();
+    }
+
+    // Step 7.2b: the two flags. Field omitted = don't touch (array_key_exists, not isset).
+    $flagSets = [];
+    foreach (['active', 'is_partner_agency'] as $flag) {
+        if (array_key_exists($flag, $data)) {
+            $v = $data[$flag];
+            if (!in_array($v, [0, 1, '0', '1', true, false], true)) {
+                http_response_code(400);
+                echo json_encode(['error' => "$flag must be 0 or 1"]);
+                exit();
+            }
+            $flagSets[$flag] = ($v === true || $v === 1 || $v === '1') ? 1 : 0;
+        }
+    }
+    if ($flagSets) {
+        foreach ($flagSets as $flag => $v) {
+            $fs = $conn->prepare("UPDATE guides SET `$flag` = ? WHERE id = ?");
+            $fs->bind_param("ii", $v, $guideId);
+            $fs->execute();
+            $fs->close();
+        }
+    }
+    // A toggle sends only the flags: answer with the guide as it is now, name etc. untouched.
+    if ($flagSets && !array_key_exists('name', $data)) {
+        $gs = $conn->prepare("SELECT * FROM guides WHERE id = ?");
+        $gs->bind_param("i", $guideId);
+        $gs->execute();
+        $guide = $gs->get_result()->fetch_assoc();
+        $gs->close();
+        $guide['languages'] = !empty($guide['languages']) ? array_map('trim', explode(',', $guide['languages'])) : [];
+        echo json_encode(guideRowFlags($guide));
         exit();
     }
 
@@ -264,7 +306,7 @@ else if ($method === 'PUT') {
                 $guide['languages'] = [];
             }
 
-            echo json_encode($guide);
+            echo json_encode(guideRowFlags($guide));
         } else {
             http_response_code(500);
             echo json_encode(['error' => 'Failed to update guide']);

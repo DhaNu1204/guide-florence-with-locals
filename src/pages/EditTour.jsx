@@ -18,6 +18,7 @@ import {
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
+import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
 
 // Predefined tour names and durations (same as in Tours.jsx)
@@ -341,7 +342,7 @@ const EditTour = () => {
                   required
                 >
                   <option value="">Select a guide</option>
-                  {guides.map((guide) => (
+                  {pickableGuides(guides, formData.guideId).map((guide) => (
                     <option key={guide.id} value={guide.id}>
                       {guide.name}
                     </option>

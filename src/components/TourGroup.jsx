@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
 import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors, FiTrash2 } from 'react-icons/fi';
 import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
@@ -231,7 +232,7 @@ const TourGroup = ({
                 className="px-2 py-1 border border-stone-300 rounded-tuscan text-xs focus:outline-none focus:ring-2 focus:ring-terracotta-500 w-20"
               >
                 <option value="">None</option>
-                {guides.map(guide => (
+                {pickableGuides(guides, group.guide_id).map(guide => (
                   <option key={guide.id} value={guide.id}>{guide.name}</option>
                 ))}
               </select>

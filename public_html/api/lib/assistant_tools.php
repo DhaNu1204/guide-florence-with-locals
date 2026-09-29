@@ -77,7 +77,9 @@ function assistantToolRegistry() {
             'name' => 'find_guide',
             'description' => 'Look up a guide by (part of) their name. Ignores case and accents and tolerates small '
                 . 'typos ("Guilia" finds Giulia). Returns the top 3 with a score 0-1 and confident=true only when the '
-                . 'best match is clearly ahead; when not confident, ask the user which one they mean.',
+                . 'best match is clearly ahead; when not confident, ask the user which one they mean. Inactive guides '
+                . '(no new work) are still found and marked inactive: true - say so; partner agencies are marked '
+                . 'partner_agency: true.',
             'input_schema' => [
                 'type' => 'object',
                 'properties' => [
@@ -108,9 +110,11 @@ function assistantToolRegistry() {
         ],
         [
             'name' => 'free_guides',
-            'description' => 'Guides with no departure overlapping a time window on one date, plus the busy ones and '
-                . 'any availability replies guides gave for tours that day. Tour durations are not stored, so each '
-                . 'departure is assumed to last 2 hours from its start - say so in the answer.',
+            'description' => 'Active guides with no departure overlapping a time window on one date, plus the busy ones, '
+                . 'partner agencies in their own list (never count them as free guides) and any availability replies for '
+                . "tours that day. Inactive guides are left out. Each departure lasts its product's duration; for products "
+                . 'without one 120 minutes is assumed - the result lists those products (assumed_120_for); mention them '
+                . 'only when that list is not empty.',
             'input_schema' => [
                 'type' => 'object',
                 'properties' => [
@@ -370,8 +374,8 @@ function assistantToolDaySummary($conn, array $input, array $ctx) {
 
 const ASSISTANT_LIST_CAP = 50;
 const ASSISTANT_MAX_RANGE_DAYS = 93;
-const ASSISTANT_ASSUMED_DURATION_MIN = 120;
-const ASSISTANT_ACTIVE_RULE = 'the guides table has no active/inactive flag, so every guide in it is considered active';
+const ASSISTANT_ASSUMED_DURATION_MIN = 120; // step 7.2b: only for products without duration_minutes
+const ASSISTANT_ACTIVE_RULE = 'inactive guides (guides.active = 0) take no new work and are left out; partner agencies are listed apart';
 
 /** [first 50 rows, total, truncated] */
 function assistantCap(array $rows) {
@@ -452,9 +456,13 @@ function assistantNameScore($query, $fullName) {
 function assistantRankGuides($query, array $guides) {
     $scored = [];
     foreach ($guides as $g) {
-        $scored[] = ['guide_id' => (int) $g['id'], 'name' => (string) $g['name'],
-                     'languages' => isset($g['languages']) ? (string) $g['languages'] : '',
-                     'score' => assistantNameScore($query, $g['name'])];
+        $row = ['guide_id' => (int) $g['id'], 'name' => (string) $g['name'],
+                'languages' => isset($g['languages']) ? (string) $g['languages'] : '',
+                'score' => assistantNameScore($query, $g['name'])];
+        // step 7.2b: still findable, but flagged
+        if (array_key_exists('active', $g) && (int) $g['active'] === 0) { $row['inactive'] = true; }
+        if (!empty($g['is_partner_agency'])) { $row['partner_agency'] = true; }
+        $scored[] = $row;
     }
     usort($scored, function ($a, $b) {
         if ($a['score'] === $b['score']) return strcmp($a['name'], $b['name']);
@@ -498,7 +506,8 @@ function assistantRange(array $input, $startKey = 'start', $endKey = 'end') {
 }
 
 function assistantGuides($conn) {
-    $res = $conn->query("SELECT id, name, languages FROM guides ORDER BY name ASC, id ASC");
+    ensureGuideFlagColumns($conn); // step 7.2b
+    $res = $conn->query("SELECT id, name, languages, active, is_partner_agency FROM guides ORDER BY name ASC, id ASC");
     $out = [];
     while ($r = $res->fetch_assoc()) { $out[] = $r; }
     return $out;
@@ -540,23 +549,35 @@ function assistantFilterDepartures(array $units, $time = null, $productText = nu
 }
 
 /**
- * free_guides core, pure: a guide is busy when one of their departures [start, start + 2 h)
- * overlaps the window [from, to).
+ * free_guides core, pure: a guide is busy when one of their departures [start, start + duration)
+ * overlaps the window [from, to). Duration = the product's duration_minutes, else 120 (step 7.2b;
+ * the titles that fell back are returned). Inactive guides are left out; partner agencies go to
+ * their own list, never into free.
+ * @return array [free, busy, partner_agencies, assumed_120_for (titles)]
  */
 function assistantSplitFreeBusy(array $guides, array $units, $from, $to) {
     $f = assistantMinutes($from); $t = assistantMinutes($to);
-    $busy = []; $day = [];
+    $busy = []; $day = []; $assumed = [];
     foreach ($units as $u) {
         if ($u['guide_id'] === null) continue;
         $s = assistantMinutes($u['time']);
+        $len = isset($u['duration_minutes']) && $u['duration_minutes'] !== null ? (int) $u['duration_minutes'] : null;
+        if ($len === null) { $len = ASSISTANT_ASSUMED_DURATION_MIN; $assumed[$u['title']] = true; }
         $day[$u['guide_id']][] = $u['time'];
-        if ($s < $t && $s + ASSISTANT_ASSUMED_DURATION_MIN > $f) {
-            $busy[$u['guide_id']][] = ['departure_id' => $u['departure_id'], 'time' => $u['time'], 'title' => $u['title']];
+        if ($s < $t && $s + $len > $f) {
+            $busy[$u['guide_id']][] = ['departure_id' => $u['departure_id'], 'time' => $u['time'], 'title' => $u['title'],
+                                       'until' => sprintf('%02d:%02d', intdiv($s + $len, 60) % 24, ($s + $len) % 60)];
         }
     }
-    $free = []; $busyOut = [];
+    $free = []; $busyOut = []; $partners = [];
     foreach ($guides as $g) {
         $id = (int) $g['id'];
+        if (array_key_exists('active', $g) && (int) $g['active'] === 0) continue; // no new work
+        if (!empty($g['is_partner_agency'])) {
+            $partners[] = ['guide_id' => $id, 'name' => $g['name'], 'free_in_window' => !isset($busy[$id]),
+                           'departures_in_window' => isset($busy[$id]) ? $busy[$id] : []];
+            continue;
+        }
         if (isset($busy[$id])) {
             $busyOut[] = ['guide_id' => $id, 'name' => $g['name'], 'departures' => $busy[$id]];
         } else {
@@ -564,7 +585,7 @@ function assistantSplitFreeBusy(array $guides, array $units, $from, $to) {
                        'other_departures_that_day' => isset($day[$id]) ? $day[$id] : []];
         }
     }
-    return [$free, $busyOut];
+    return [$free, $busyOut, $partners, array_keys($assumed)];
 }
 
 // ---- step 7.2: tool handlers -----------------------------------------------------------------
@@ -653,7 +674,7 @@ function assistantToolFreeGuides($conn, array $input, array $ctx) {
     if ($from === null || $to === null || $from >= $to) {
         throw new AssistantToolError('from and to must be HH:MM with from before to');
     }
-    list($free, $busy) = assistantSplitFreeBusy(assistantGuides($conn), fwlDepartureUnits($conn, $date, $date), $from, $to);
+    list($free, $busy, $partners, $assumed) = assistantSplitFreeBusy(assistantGuides($conn), fwlDepartureUnits($conn, $date, $date), $from, $to);
 
     $availability = null;
     $has = $conn->query("SHOW TABLES LIKE 'availability_requests'");
@@ -678,12 +699,14 @@ function assistantToolFreeGuides($conn, array $input, array $ctx) {
     return [
         'date' => $date,
         'window' => $from . '-' . $to,
-        'duration_rule' => 'tour durations are not stored, so each departure is assumed to last 2 hours from its start',
+        'duration_rule' => "each departure lasts its product's duration; products without one are assumed to last 120 minutes",
+        'assumed_120_for' => $assumed,
         'active_rule' => ASSISTANT_ACTIVE_RULE,
         'total' => $total,
         'truncated' => $truncated,
         'free' => $freeRows,
         'busy' => $busy,
+        'partner_agencies' => $partners,
         'availability_replies' => $availability,
     ];
 }
