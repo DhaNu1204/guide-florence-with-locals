@@ -156,7 +156,8 @@ function assistantToolRegistry() {
                 . 'table {type, columns: [..], rows: [[..], ..]}; '
                 . 'choices {type, prompt, options: [{label, value}]} when the user must pick one; '
                 . 'link {type, label, route, query} to open an app page (routes: /tours, /guides, /payments, /tickets, '
-                . '/priority-tickets, /radios, /guide-reports, /daily-pnl; query keys: date, start_date, end_date, guide_id, language, filter). '
+                . '/priority-tickets, /radios, /guide-reports, /daily-pnl; query keys: /tours takes date, or start + end, '
+                . 'plus unassigned=1, guide_id, language; /daily-pnl takes date, or start + end; other routes take none). '
                 . 'Copy values from tool results; never invent rows. Invalid blocks are dropped.',
             'input_schema' => [
                 'type' => 'object',
@@ -691,7 +692,11 @@ function assistantToolFreeGuides($conn, array $input, array $ctx) {
 
 const ASSISTANT_MAX_BLOCKS = 6;
 const ASSISTANT_LINK_ROUTES = ['/tours', '/guides', '/payments', '/tickets', '/priority-tickets', '/radios', '/guide-reports', '/daily-pnl'];
-const ASSISTANT_LINK_QUERY_KEYS = ['date', 'start_date', 'end_date', 'guide_id', 'language', 'filter'];
+// Step 7.4: the query keys each page really reads (Tours / Daily P&L deep links); others take none.
+const ASSISTANT_LINK_QUERY_KEYS = [
+    '/tours' => ['date', 'start', 'end', 'unassigned', 'guide_id', 'language'],
+    '/daily-pnl' => ['date', 'start', 'end'],
+];
 
 function assistantStr($v, $max) {
     if (!is_string($v) && !is_int($v) && !is_float($v)) return null;
@@ -790,7 +795,8 @@ function assistantValidateBlock($b) {
             if (isset($b['query']) && $b['query'] !== null) {
                 if (!is_array($b['query'])) return null;
                 foreach ($b['query'] as $k => $v) {
-                    if (!in_array($k, ASSISTANT_LINK_QUERY_KEYS, true)) return null;
+                    $allowedKeys = isset(ASSISTANT_LINK_QUERY_KEYS[$route]) ? ASSISTANT_LINK_QUERY_KEYS[$route] : [];
+                    if (!in_array($k, $allowedKeys, true)) return null;
                     $v = assistantStr($v, 60);
                     if ($v === null || !preg_match('/^[A-Za-z0-9 _:.,-]+$/', $v)) return null;
                     $query[$k] = $v;
@@ -888,9 +894,8 @@ function assistantPnlSummary(array $t) {
         'costs' => $costs,
         'total_cost' => $t['total_cost'],      // page card "Total Costs"
         'profit' => $t['profit'],              // page card "Day/Week/Month Profit"
-        'departures' => $t['units'],
-        'tour_departures' => $t['tour_units'],
-        'ticket_departures' => $t['ticket_units'],
+        // Step 7.4: NOT the Tours page's departure count - P&L rows include ticket-only products.
+        'pnl_rows_incl_ticket_only' => $t['units'],
         'guests' => $t['pax'],
         'estimated_departures' => $t['estimated_units'],
     ];
@@ -950,7 +955,7 @@ function assistantToolMoney($conn, array $input, array $ctx) {
         foreach (ASSISTANT_PNL_CATEGORIES as $c) {
             if (!isset($by[$c])) continue;
             $t = pnlTotals($by[$c]);
-            $out['by_product'][] = ['product' => $c, 'departures' => $t['units'], 'guests' => $t['pax'],
+            $out['by_product'][] = ['product' => $c, 'pnl_rows_incl_ticket_only' => $t['units'], 'guests' => $t['pax'],
                                     'net_revenue' => $t['net'], 'total_cost' => $t['total_cost'], 'profit' => $t['profit']];
         }
     }
@@ -965,7 +970,7 @@ function assistantToolMoney($conn, array $input, array $ctx) {
         $out['by_channel'] = [];
         foreach ($by as $k => $list) {
             $t = pnlTotals($list);
-            $out['by_channel'][] = ['channel' => $k, 'departures' => $t['units'], 'guests' => $t['pax'],
+            $out['by_channel'][] = ['channel' => $k, 'pnl_rows_incl_ticket_only' => $t['units'], 'guests' => $t['pax'],
                                     'net_revenue' => $t['net'], 'total_cost' => $t['total_cost'], 'profit' => $t['profit']];
         }
         usort($out['by_channel'], function ($a, $b) { return $b['net_revenue'] <=> $a['net_revenue']; });

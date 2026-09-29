@@ -8,6 +8,7 @@ import {
   mergePnlUnits, unmergePnlUnits // step 6.2
 } from '../services/mysqlDB';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
+import { parsePnlParams } from '../utils/deepLinks'; // step 7.4: assistant deep links
 
 const eur = (v) =>
   '€' + Number(v || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -468,10 +469,13 @@ function SettingsModal({ settings, onClose, onSaved }) {
 // Main page
 // ---------------------------------------------------------------------------
 export default function DailyPnL() {
-  const [view, setView] = useState('day'); // 'day' | 'week' | 'month'
-  const [date, setDate] = useState(todayStr());
-  const [weekStart, setWeekStart] = useState(mondayOf(todayStr())); // Monday
-  const [month, setMonth] = useState(todayStr().slice(0, 7)); // YYYY-MM
+  // Step 7.4: ?date= or ?start=&end= (the assistant's Daily P&L links). Invalid -> today, as before.
+  const [deepLink] = useState(() => parsePnlParams(window.location.search));
+  const [view, setView] = useState(deepLink ? deepLink.view : 'day'); // 'day' | 'week' | 'month' | 'range' (7.4, links only)
+  const [date, setDate] = useState(deepLink && deepLink.date ? deepLink.date : todayStr());
+  const [weekStart, setWeekStart] = useState(deepLink && deepLink.weekStart ? deepLink.weekStart : mondayOf(todayStr())); // Monday
+  const [month, setMonth] = useState(deepLink && deepLink.month ? deepLink.month : todayStr().slice(0, 7)); // YYYY-MM
+  const [range] = useState(deepLink && deepLink.view === 'range' ? { start: deepLink.start, end: deepLink.end } : null);
   const [dayData, setDayData] = useState(null);
   const [monthData, setMonthData] = useState(null);
   const [settings, setSettings] = useState(null);
@@ -529,8 +533,9 @@ export default function DailyPnL() {
   useEffect(() => {
     if (view === 'day') loadDay(date);
     else if (view === 'week') loadRange(weekStart, shiftDate(weekStart, 6));
+    else if (view === 'range' && range) loadRange(range.start, range.end); // step 7.4
     else loadMonth(month);
-  }, [view, date, weekStart, month, loadDay, loadRange, loadMonth]);
+  }, [view, date, weekStart, month, range, loadDay, loadRange, loadMonth]);
 
   // Step 6.2 --------------------------------------------------------------------------------
   // Tick two departures on the same day and cost them as one guide. P&L only: nothing in Tours,
@@ -593,6 +598,13 @@ export default function DailyPnL() {
             </button>
           ))}
         </div>
+
+        {/* Step 7.4: a range opened from an assistant link (not a week or a whole month) */}
+        {view === 'range' && range && (
+          <span className="px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg whitespace-nowrap" data-testid="pnl-range-label">
+            {shortDate(range.start)} – {shortDate(range.end)}
+          </span>
+        )}
 
         {view === 'week' && (
           <div className="flex items-center gap-1">
@@ -687,7 +699,7 @@ export default function DailyPnL() {
           <div className={`rounded-xl shadow-tuscan p-4 ${profit >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
             <p className="text-xs text-stone-500 uppercase tracking-wide flex items-center gap-1">
               {profit >= 0 ? <FiTrendingUp className="text-green-600" /> : <FiTrendingDown className="text-red-600" />}
-              {view === 'day' ? 'Day Profit' : view === 'week' ? 'Week Profit' : 'Month Profit (tours)'}
+              {view === 'day' ? 'Day Profit' : view === 'week' ? 'Week Profit' : view === 'range' ? 'Range Profit' : 'Month Profit (tours)'}
             </p>
             <p className={`text-xl font-bold mt-1 ${profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
               {profit >= 0 ? '+' : ''}{eur(profit)}

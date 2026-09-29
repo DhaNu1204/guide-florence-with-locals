@@ -6,7 +6,8 @@
  *   → 200 {success, conversation_id, text, blocks[], meta}  (step 7.2: blocks = validated show_blocks output:
  *     stat | departure_list | table | choices | link - see assistantValidateBlock in lib/assistant_tools.php)
  *
- * Order of checks (each one a real HTTP status, JSON body):
+ * Step 7.4 reads (GET ?action=status | conversations | conversation&id=) are documented below.
+ * Order of checks for a question (each one a real HTTP status, JSON body):
  *   405 not POST · 503 assistant_disabled (ASSISTANT_ENABLED not true - checked before auth, so a
  *   switched-off assistant never even reads a session) · 401 no/expired token · 403 not admin ·
  *   503 assistant_not_configured (no ANTHROPIC_API_KEY) · 429 rate_limited (30/min per user) ·
@@ -24,8 +25,43 @@ function assistantRespond($status, array $body) {
     exit();
 }
 
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
-    header('Allow: POST');
+$method = $_SERVER['REQUEST_METHOD'] ?? '';
+$action = isset($_GET['action']) ? (string) $_GET['action'] : '';
+
+// Step 7.4: the chat UI's reads.
+//   GET ?action=status                -> {enabled, can_see_money}  (admin-only; answers even when the
+//                                        assistant is switched off, so the app can hide the button)
+//   GET ?action=conversations         -> the user's last 5 conversations (last 30 days)
+//   GET ?action=conversation&id=N     -> that conversation's messages, only if it is the user's
+if ($method === 'GET' && $action === 'status') {
+    $user = Middleware::requireRole($conn, 'admin');
+    assistantRespond(200, ['success' => true, 'enabled' => assistantEnabled(),
+                           'can_see_money' => Middleware::isPnlOwner($user)]);
+}
+if ($method === 'GET' && ($action === 'conversations' || $action === 'conversation')) {
+    if (!assistantEnabled()) {
+        assistantRespond(503, ['success' => false, 'error' => 'assistant_disabled']);
+    }
+    $user = Middleware::requireRole($conn, 'admin');
+    try {
+        ensureAssistantTables($conn);
+        assistantPrune($conn);
+        if ($action === 'conversations') {
+            assistantRespond(200, ['success' => true, 'conversations' => assistantRecentConversations($conn, (int) $user['id'])]);
+        }
+        $id = isset($_GET['id']) && ctype_digit((string) $_GET['id']) ? (int) $_GET['id'] : 0;
+        if ($id <= 0 || !assistantOwnsConversation($conn, $id, (int) $user['id'])) {
+            assistantRespond(404, ['success' => false, 'error' => 'conversation_not_found']);
+        }
+        assistantRespond(200, ['success' => true, 'conversation_id' => $id, 'messages' => assistantConversationMessages($conn, $id)]);
+    } catch (Throwable $e) {
+        error_log('assistant.php history: ' . $e->getMessage());
+        assistantRespond(500, ['success' => false, 'error' => 'internal_error']);
+    }
+}
+
+if ($method !== 'POST') {
+    header('Allow: GET, POST');
     assistantRespond(405, ['success' => false, 'error' => 'method_not_allowed']);
 }
 
