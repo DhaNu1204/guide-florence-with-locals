@@ -99,8 +99,8 @@ check('loop: tokens summed', [$r['input_tokens'], $r['output_tokens']], [250, 30
 check('loop: bad date -> tool error, not a crash', $r['tools_called'][0]['ok'], false);
 $sent = $fake->payloads[1]['messages'];
 check('loop: tool_result returned with is_error', [$sent[2]['content'][0]['type'], $sent[2]['content'][0]['is_error']], ['tool_result', true]);
-check('loop: all 7 tools offered to the API', array_column($fake->payloads[0]['tools'], 'name'),
-    ['day_summary', 'find_departures', 'unassigned_departures', 'find_guide', 'guide_schedule', 'free_guides', 'show_blocks']);
+check('loop: the registry passed in is sent as is (8 tools)', array_column($fake->payloads[0]['tools'], 'name'),
+    ['day_summary', 'find_departures', 'unassigned_departures', 'find_guide', 'guide_schedule', 'free_guides', 'money', 'show_blocks']);
 check('loop: system = cached rules + context with today (Rome)',
     [count($fake->payloads[0]['system']), $fake->payloads[0]['system'][0]['cache_control'] ?? null,
      isset($fake->payloads[0]['system'][1]['cache_control']), strpos($fake->payloads[0]['system'][1]['text'], '2026-09-28') !== false],
@@ -225,6 +225,58 @@ check('dates on a Sunday: this week = today only; weekend = today', [$r['this we
     ['Sun 4 Oct (2026-10-04) to Sun 4 Oct (2026-10-04)', 'Sun 4 Oct (2026-10-04) to Sun 4 Oct (2026-10-04)']);
 $r = assistantDateRanges(new DateTime('2026-10-03 10:00', $tz)); // Saturday
 check('dates on a Saturday: weekend = today and tomorrow', $r['weekend'], 'Sat 3 Oct (2026-10-03) to Sun 4 Oct (2026-10-04)');
+
+
+// ---- step 7.3: the money locks ------------------------------------------------------------------
+$names = function ($tools) { return array_map(function ($t) { return $t['name']; }, $tools); };
+check('lock (a): owner dhanu is offered money', in_array('money', $names(assistantToolsForUser(['role' => 'admin', 'username' => 'dhanu', 'email' => ''])), true), true);
+check('lock (a): second admin sudesh is not', in_array('money', $names(assistantToolsForUser(['role' => 'admin', 'username' => 'sudesh', 'email' => ''])), true), false);
+check('lock (a): a viewer is not', in_array('money', $names(assistantToolsForUser(['role' => 'viewer', 'username' => 'viewer', 'email' => ''])), true), false);
+$lockB = function ($u) {
+    try { assistantToolMoney(null, ['start' => '2026-09-29', 'end' => '2026-09-29'], ['user' => $u]); return 'ran'; }
+    catch (AssistantToolError $e) { return strpos($e->getMessage(), 'not allowed') === 0 ? 'refused' : 'other: ' . $e->getMessage(); }
+};
+check('lock (b): the handler refuses sudesh even if called', $lockB(['role' => 'admin', 'username' => 'sudesh', 'email' => '']), 'refused');
+check('lock (b): the handler refuses a missing user', $lockB([]), 'refused');
+// a model that names money without being offered it: the loop answers "unknown tool", nothing runs
+$fake = new FakeClaude([
+    ['stop_reason' => 'tool_use', 'usage' => [], 'content' => [['type' => 'tool_use', 'id' => 'm1', 'name' => 'money', 'input' => ['start' => '2026-09-29', 'end' => '2026-09-29']]]],
+    ['stop_reason' => 'end_turn', 'usage' => [], 'content' => [['type' => 'text', 'text' => 'Only on the owner account.']]],
+]);
+$sudesh = ['id' => 5, 'role' => 'admin', 'username' => 'sudesh', 'email' => ''];
+$r = assistantRunLoop($fake, null, $sudesh, assistantToolsForUser($sudesh), [], 'what is today income', $now);
+check('lock (a)+(b): money not in the tools sent for sudesh', in_array('money', array_column($fake->payloads[0]['tools'], 'name'), true), false);
+$sent = $fake->payloads[1]['messages'];
+check('a money call by sudesh gets an error result, no figures', [$r['tools_called'][0]['ok'], $sent[2]['content'][0]['content']], [false, 'unknown tool: money']);
+
+// ---- step 7.3: P&L filters (pure) --------------------------------------------------------------
+$pr = [
+    ['title' => 'Uffizi Gallery Tour', 'category' => 'Uffizi', 'is_ticket' => false, 'channels' => ['GetYourGuide'], 'bookings' => 2],
+    ['title' => 'Uffizi & Accademia Walking Tour', 'category' => 'Combo', 'is_ticket' => false, 'channels' => ['Viator', 'GetYourGuide'], 'bookings' => 3],
+    ['title' => 'Accademia Reserved Ticket', 'category' => 'Accademia', 'is_ticket' => true, 'channels' => ['Viator'], 'bookings' => 1],
+    ['title' => 'Accademia David Tour', 'category' => 'Accademia', 'is_ticket' => false, 'channels' => ['Viator'], 'bookings' => 1],
+];
+$titles = function ($x) { return array_column($x[0], 'title'); };
+check('pnl filter: "uffizi" = the Uffizi product line (not the Combo)', $titles(assistantPnlFilter($pr, 'uffizi')), ['Uffizi Gallery Tour']);
+check('pnl filter: "Tickets" = ticket products', $titles(assistantPnlFilter($pr, 'Tickets')), ['Accademia Reserved Ticket']);
+check('pnl filter: "gelato" falls back to the title', $titles(assistantPnlFilter($pr, 'walking')), ['Uffizi & Accademia Walking Tour']);
+$v = assistantPnlFilter($pr, null, 'viator');
+check('pnl filter: channel viator keeps Viator-only departures, counts the mixed one', [array_column($v[0], 'title'), $v[2]], [['Accademia Reserved Ticket', 'Accademia David Tour'], 1]);
+$sum = assistantPnlSummary(['net' => 100.5, 'retail' => 120.0, 'commission' => 19.5, 'card_fee' => 0.0, 'ticket_cost' => 30.0, 'guide_cost' => 40.0,
+    'radio_cost' => 2.0, 'gelato_cost' => 0.0, 'staff_cost' => 0.0, 'other_cost' => 0.0, 'total_cost' => 72.0, 'profit' => 28.5,
+    'units' => 2, 'tour_units' => 2, 'ticket_units' => 0, 'pax' => 9, 'estimated_units' => 0]);
+check('pnl summary: the page labels, in the page order', array_column($sum['costs'], 'label'), ['Tickets', 'Guide', 'Radio', 'Gelato', 'Staff', 'Other']);
+check('pnl summary: figures passed through untouched', [$sum['net_revenue'], $sum['total_cost'], $sum['profit'], $sum['guests']], [100.5, 72.0, 28.5, 9]);
+
+// ---- step 7.3: past ranges -------------------------------------------------------------------------
+$r = assistantDateRanges(new DateTime('2026-09-29 00:30', new DateTimeZone('Europe/Rome'))); // Tuesday
+check('dates: yesterday', $r['yesterday'], 'Mon 28 Sep (2026-09-28)');
+check('dates: last week = previous Mon-Sun', $r['last week'], 'Mon 21 Sep (2026-09-21) to Sun 27 Sep (2026-09-27)');
+check('dates: month so far', $r['month so far'], 'Tue 1 Sep (2026-09-01) to Tue 29 Sep (2026-09-29)');
+check('dates: last month', $r['last month'], 'Sat 1 Aug (2026-08-01) to Mon 31 Aug (2026-08-31)');
+$r = assistantDateRanges(new DateTime('2026-10-04 12:00', new DateTimeZone('Europe/Rome'))); // Sunday
+check('dates on a Sunday: last week = the week before', $r['last week'], 'Mon 21 Sep (2026-09-21) to Sun 27 Sep (2026-09-27)');
+check('link to /daily-pnl allowed', assistantValidateBlock(['type' => 'link', 'label' => 'Daily P&L', 'route' => '/daily-pnl', 'query' => ['date' => '2026-09-29']]) !== null, true);
 
 echo "\n" . ($fail === 0 ? "ALL OK\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);

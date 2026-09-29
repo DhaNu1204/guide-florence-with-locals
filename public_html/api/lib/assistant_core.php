@@ -156,6 +156,20 @@ function assistantSystemRules() {
         . "the total and the range, written in the same turn as the show_blocks call. The text must still contain "
         . "the key numbers (it is also read without the blocks). If a list was truncated, say how many there are in total.\n"
         . "- free_guides assumes every tour lasts 2 hours; mention that in the answer.\n"
+        // step 7.3: money
+        . "- Money: \"income\", \"incasso\", \"guadagno\", \"revenue\", \"earnings\" = the Net Revenue of tours RUNNING in the "
+        . "range, from the money tool (the Daily P&L figures); profit, costs and margin come from the same tool. For a money "
+        . "question about the current month use the \"month so far\" range unless the whole month is asked for; \"last week\" "
+        . "and \"yesterday\" as listed; a month name = that whole month (the most recent one that has started).\n"
+        . "- Figures for NEW SALES / bookings made on a date do not exist here: say so in one sentence and offer the money "
+        . "for tours running that day instead.\n"
+        . "- Write money in euro with 2 decimals: \"€1,234.50\" in English, \"1.234,50 €\" in Italian. Answer money with a "
+        . "stat block per figure asked (Net Revenue, Total Costs, Profit, or the one cost line asked) plus a link block "
+        . "{route: /daily-pnl, query: {date}} for one day or {start_date, end_date} for a range. Mention it when some "
+        . "departures are estimated (estimated_departures > 0).\n"
+        . "- If the money tool is NOT in your tool list, money figures (income, revenue, costs, profit, margin, sales, "
+        . "prices) are only available on the owner's account: say so politely in one sentence and offer tour and guest "
+        . "counts instead. Never estimate or work out money from any other data.\n"
         . "- Plain text only in the answer: no markdown tables, no headings, no bullet lists of data that is already in a block.";
 }
 
@@ -178,9 +192,20 @@ function assistantDateRanges(DateTime $now) {
     $monthEnd = (clone $today)->modify('last day of this month');
     $nextMonthStart = (clone $today)->modify('first day of next month');
     $nextMonthEnd = (clone $today)->modify('last day of next month');
+    // step 7.3: the past ranges money questions use
+    $yesterday = (clone $today)->modify('-1 day');
+    $lastMon = (clone $today)->modify('-' . ($dow + 6) . ' days');
+    $lastSun = (clone $lastMon)->modify('+6 days');
+    $monthStart = (clone $today)->modify('first day of this month');
+    $lastMonthStart = (clone $today)->modify('first day of last month');
+    $lastMonthEnd = (clone $today)->modify('last day of last month');
     return [
         'today' => $d($today),
+        'yesterday' => $d($yesterday),
         'tomorrow' => $d($tomorrow),
+        'last week' => $d($lastMon) . ' to ' . $d($lastSun),
+        'month so far' => $d($monthStart) . ' to ' . $d($today),
+        'last month' => $d($lastMonthStart) . ' to ' . $d($lastMonthEnd),
         'this week' => $d($today) . ' to ' . $d($sunday),
         'weekend' => $d($weekendStart) . ' to ' . $d($weekendEnd),
         'next week' => $d($nextMon) . ' to ' . $d($nextSun),

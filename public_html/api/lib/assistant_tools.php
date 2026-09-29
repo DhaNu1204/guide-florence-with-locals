@@ -13,6 +13,7 @@
 
 require_once __DIR__ . '/../tour_classification.php'; // deriveListFields(): the Tours list's own PAX/time/language
 require_once __DIR__ . '/departure_queries.php';        // step 7.2: the unassigned report + per-departure rows
+require_once __DIR__ . '/pnl_core.php';                 // step 7.3: the Daily P&L computation (money tool)
 
 class AssistantToolError extends Exception {}
 
@@ -124,6 +125,29 @@ function assistantToolRegistry() {
             'money' => false,
         ],
         [
+            'name' => 'money',
+            'description' => 'Money for tours RUNNING in a date range (not bookings made then), computed by the Daily P&L '
+                . 'page itself: Net Revenue (retail - commission - card fee), each cost line as the page labels it '
+                . '(Tickets, Guide, Radio, Gelato, Staff, Other), Total Costs, Profit, departures and guests; manual '
+                . 'overrides and merged departures included. product_text: a page product line (Combo, Uffizi, Accademia, '
+                . 'Pitti, Borghese, Mixed, Other, Tickets) or part of a title; channel: e.g. GetYourGuide, Viator; '
+                . 'breakdown: ["product"] and/or ["channel"]. Range up to 93 days.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'start' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                    'end' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                    'product_text' => ['type' => 'string'],
+                    'channel' => ['type' => 'string'],
+                    'breakdown' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['product', 'channel']]],
+                ],
+                'required' => ['start', 'end'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolMoney',
+            'money' => true,
+        ],
+        [
             'name' => 'show_blocks',
             'description' => 'Show structured data next to your short text answer (the app renders these as cards). '
                 . 'Call it once, after the data tools, with every block for this answer. Types: '
@@ -132,7 +156,7 @@ function assistantToolRegistry() {
                 . 'table {type, columns: [..], rows: [[..], ..]}; '
                 . 'choices {type, prompt, options: [{label, value}]} when the user must pick one; '
                 . 'link {type, label, route, query} to open an app page (routes: /tours, /guides, /payments, /tickets, '
-                . '/priority-tickets, /radios, /guide-reports; query keys: date, start_date, end_date, guide_id, language, filter). '
+                . '/priority-tickets, /radios, /guide-reports, /daily-pnl; query keys: date, start_date, end_date, guide_id, language, filter). '
                 . 'Copy values from tool results; never invent rows. Invalid blocks are dropped.',
             'input_schema' => [
                 'type' => 'object',
@@ -666,7 +690,7 @@ function assistantToolFreeGuides($conn, array $input, array $ctx) {
 // ---- step 7.2: answer blocks -----------------------------------------------------------------
 
 const ASSISTANT_MAX_BLOCKS = 6;
-const ASSISTANT_LINK_ROUTES = ['/tours', '/guides', '/payments', '/tickets', '/priority-tickets', '/radios', '/guide-reports'];
+const ASSISTANT_LINK_ROUTES = ['/tours', '/guides', '/payments', '/tickets', '/priority-tickets', '/radios', '/guide-reports', '/daily-pnl'];
 const ASSISTANT_LINK_QUERY_KEYS = ['date', 'start_date', 'end_date', 'guide_id', 'language', 'filter'];
 
 function assistantStr($v, $max) {
@@ -795,4 +819,158 @@ function assistantToolShowBlocks($conn, array $input, array $ctx) {
         $accepted++;
     }
     return ['accepted' => $accepted, 'dropped' => $dropped];
+}
+
+// ---- step 7.3: money (P&L owner only) ---------------------------------------------------------
+
+const ASSISTANT_MONEY_SECONDS = 20;
+const ASSISTANT_MONEY_CHUNK_DAYS = 31;
+// The Daily P&L page's own labels (DailyPnL.jsx COST_FIELDS / summary cards).
+const ASSISTANT_PNL_COST_LABELS = [
+    'ticket_cost' => 'Tickets', 'guide_cost' => 'Guide', 'radio_cost' => 'Radio',
+    'gelato_cost' => 'Gelato', 'staff_cost' => 'Staff', 'other_cost' => 'Other',
+];
+const ASSISTANT_PNL_CATEGORIES = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Borghese', 'Mixed', 'Other', 'Tickets'];
+
+/** The page's product line for a P&L row: its category, or "Tickets" for a ticket product. */
+function assistantPnlCategory(array $r) {
+    return !empty($r['is_ticket']) ? 'Tickets' : (string) $r['category'];
+}
+
+/**
+ * Filter P&L rows (pure). product_text naming a page category ("uffizi", "tickets") keeps that
+ * category - the page's "Profit by product" line; any other text matches the title.
+ * channel keeps departures whose bookings are ALL from that channel; a departure mixing channels
+ * cannot be split without new maths, so it is left out and counted.
+ * @return array [rows, product rule used, mixed-channel departures left out]
+ */
+function assistantPnlFilter(array $rows, $productText = null, $channel = null) {
+    $rule = null;
+    if ($productText !== null && trim($productText) !== '') {
+        $pt = assistantNorm($productText);
+        $cat = null;
+        foreach (ASSISTANT_PNL_CATEGORIES as $c) { if (assistantNorm($c) === $pt || assistantNorm($c) === rtrim($pt, 's')) { $cat = $c; } }
+        if ($cat !== null) {
+            $rule = "category $cat (the page's Profit by product line)";
+            $rows = array_values(array_filter($rows, function ($r) use ($cat) { return assistantPnlCategory($r) === $cat; }));
+        } else {
+            $rule = "title contains \"$productText\"";
+            $rows = array_values(array_filter($rows, function ($r) use ($pt) { return strpos(assistantNorm($r['title']), $pt) !== false; }));
+        }
+    }
+    $mixed = 0;
+    if ($channel !== null && trim($channel) !== '') {
+        $ch = assistantNorm($channel);
+        $keep = [];
+        foreach ($rows as $r) {
+            $chs = array_values(array_unique(array_map('assistantNorm', (array) $r['channels'])));
+            $hits = array_filter($chs, function ($c) use ($ch) { return strpos($c, $ch) !== false; });
+            if (count($hits) === 0) continue;
+            if (count($hits) < count($chs)) { if ($r['bookings'] > 0) $mixed++; continue; }
+            $keep[] = $r;
+        }
+        $rows = $keep;
+    }
+    return [$rows, $rule, $mixed];
+}
+
+/** Totals in the page's words (pnlTotals does the maths; this only renames). */
+function assistantPnlSummary(array $t) {
+    $costs = [];
+    foreach (ASSISTANT_PNL_COST_LABELS as $k => $label) {
+        $costs[] = ['label' => $label, 'amount' => $t[$k]];
+    }
+    return [
+        'net_revenue' => $t['net'],            // page card "Net Revenue"
+        'retail' => $t['retail'],
+        'commission' => $t['commission'],
+        'card_fee' => $t['card_fee'],
+        'costs' => $costs,
+        'total_cost' => $t['total_cost'],      // page card "Total Costs"
+        'profit' => $t['profit'],              // page card "Day/Week/Month Profit"
+        'departures' => $t['units'],
+        'tour_departures' => $t['tour_units'],
+        'ticket_departures' => $t['ticket_units'],
+        'guests' => $t['pax'],
+        'estimated_departures' => $t['estimated_units'],
+    ];
+}
+
+function assistantToolMoney($conn, array $input, array $ctx) {
+    // Lock (b): the handler checks the owner itself, whatever the offered tool list said.
+    $user = isset($ctx['user']) && is_array($ctx['user']) ? $ctx['user'] : [];
+    if (!class_exists('Middleware') || !Middleware::isPnlOwner($user)) {
+        throw new AssistantToolError('not allowed: money figures are only available on the owner account');
+    }
+    list($start, $end) = assistantRange($input);
+    $pt = isset($input['product_text']) && trim((string) $input['product_text']) !== '' ? (string) $input['product_text'] : null;
+    $ch = isset($input['channel']) && trim((string) $input['channel']) !== '' ? (string) $input['channel'] : null;
+    $breakdown = isset($input['breakdown']) && is_array($input['breakdown']) ? $input['breakdown'] : [];
+
+    $t0 = microtime(true);
+    pnlEnsureTables($conn);
+    $settings = pnlLoadSettings($conn);
+    $rows = [];
+    $cursor = new DateTime($start);
+    $last = new DateTime($end);
+    while ($cursor <= $last) {
+        if (microtime(true) - $t0 > ASSISTANT_MONEY_SECONDS) {
+            throw new AssistantToolError('the range is too large to compute in time; ask for a shorter range (e.g. one month)');
+        }
+        $chunkEnd = (clone $cursor)->modify('+' . (ASSISTANT_MONEY_CHUNK_DAYS - 1) . ' days');
+        if ($chunkEnd > $last) { $chunkEnd = clone $last; }
+        foreach (pnlBuildRows($conn, $cursor->format('Y-m-d'), $chunkEnd->format('Y-m-d'), $settings) as $r) { $rows[] = $r; }
+        $cursor = (clone $chunkEnd)->modify('+1 day');
+    }
+    if (microtime(true) - $t0 > ASSISTANT_MONEY_SECONDS) {
+        throw new AssistantToolError('the range is too large to compute in time; ask for a shorter range (e.g. one month)');
+    }
+    list($rows, $rule, $mixed) = assistantPnlFilter($rows, $pt, $ch);
+
+    $out = ['start' => $start, 'end' => $end, 'currency' => 'EUR',
+            'filters' => ['product' => $rule, 'channel' => $ch]];
+    $out += assistantPnlSummary(pnlTotals($rows));
+    if ($ch !== null) {
+        $out['mixed_channel_departures_left_out'] = $mixed;
+    }
+    // The page's month view adds the monthly overheads; same fields, only for a whole calendar month.
+    $s = new DateTime($start);
+    if ($pt === null && $ch === null && $s->format('d') === '01' && $end === $s->format('Y-m-t')) {
+        $overhead = round($settings['staff_monthly'] + $settings['office_monthly'] + $settings['other_monthly'], 2);
+        $out['monthly_overhead'] = $overhead;
+        $out['profit_after_overhead'] = round($out['profit'] - $overhead, 2);
+    }
+    if (in_array('product', $breakdown, true)) {
+        $by = [];
+        foreach ($rows as $r) {
+            if ($r['bookings'] === 0) continue;
+            $by[assistantPnlCategory($r)][] = $r;
+        }
+        $out['by_product'] = [];
+        foreach (ASSISTANT_PNL_CATEGORIES as $c) {
+            if (!isset($by[$c])) continue;
+            $t = pnlTotals($by[$c]);
+            $out['by_product'][] = ['product' => $c, 'departures' => $t['units'], 'guests' => $t['pax'],
+                                    'net_revenue' => $t['net'], 'total_cost' => $t['total_cost'], 'profit' => $t['profit']];
+        }
+    }
+    if (in_array('channel', $breakdown, true)) {
+        $by = [];
+        foreach ($rows as $r) {
+            if ($r['bookings'] === 0) continue;
+            $chs = array_values(array_unique((array) $r['channels']));
+            sort($chs);
+            $by[count($chs) ? implode(' + ', $chs) : 'Unknown'][] = $r;
+        }
+        $out['by_channel'] = [];
+        foreach ($by as $k => $list) {
+            $t = pnlTotals($list);
+            $out['by_channel'][] = ['channel' => $k, 'departures' => $t['units'], 'guests' => $t['pax'],
+                                    'net_revenue' => $t['net'], 'total_cost' => $t['total_cost'], 'profit' => $t['profit']];
+        }
+        usort($out['by_channel'], function ($a, $b) { return $b['net_revenue'] <=> $a['net_revenue']; });
+        $out['channel_note'] = 'a departure with bookings from several channels is listed under the combined name (e.g. "GetYourGuide + Viator")';
+    }
+    $out['ms'] = (int) round((microtime(true) - $t0) * 1000);
+    return $out;
 }
