@@ -155,7 +155,10 @@ function assistantSystemRules() {
         . "departures, table for guides, stat for a single key number) and keep the text to one or two sentences: "
         . "the total and the range, written in the same turn as the show_blocks call. The text must still contain "
         . "the key numbers (it is also read without the blocks). If a list was truncated, say how many there are in total.\n"
-        . "- free_guides assumes every tour lasts 2 hours; mention that in the answer.\n"
+        // step 7.2b: product durations; partner agencies apart; inactive guides out
+        . "- free_guides uses each product's own duration. Mention the 120-minute assumption only for the products it "
+        . "lists in assumed_120_for (none listed = say nothing about durations). Partner agencies are a separate list: "
+        . "never count them as free guides. Inactive guides take no new work and are not suggested.\n"
         // step 7.3: money
         . "- Money: \"income\", \"incasso\", \"guadagno\", \"revenue\", \"earnings\" = the Net Revenue of tours RUNNING in the "
         . "range, from the money tool (the Daily P&L figures); profit, costs and margin come from the same tool. For a money "
