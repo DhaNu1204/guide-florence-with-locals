@@ -38,10 +38,10 @@ describe('AssistantBlocks (step 7.4)', () => {
     expect(screen.getByText('Anna Marchetti')).toBeInTheDocument();
   });
 
-  it('choices send the chosen value', () => {
+  it('choices send the text the user sees (not an id hidden in value)', () => {
     const onChoose = vi.fn();
     renderBlocks([{ type: 'choices', prompt: 'Which Anna?', options: [
-      { label: 'Anna Marchetti', value: 'Anna Marchetti' }, { label: 'Anna Sgobbi', value: 'Anna Sgobbi' },
+      { label: 'Anna Marchetti', value: '9' }, { label: 'Anna Sgobbi', value: '17' },
     ] }], { onChoose });
     fireEvent.click(screen.getByRole('button', { name: 'Anna Sgobbi' }));
     expect(onChoose).toHaveBeenCalledWith('Anna Sgobbi');

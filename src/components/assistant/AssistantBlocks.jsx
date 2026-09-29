@@ -80,7 +80,9 @@ function Choices({ block, onChoose, disabled }) {
             key={i}
             type="button"
             disabled={disabled}
-            onClick={() => onChoose && onChoose(o.value)}
+            // Sends the text the user sees: the model sometimes puts an id in `value` (staging showed
+            // a bare "9" as the user's message), and the chat should read like the tap.
+            onClick={() => onChoose && onChoose(o.label)}
             className="min-h-[44px] rounded-tuscan-lg border-2 border-terracotta-200 bg-white px-3 py-2 text-sm font-medium text-terracotta-700 hover:bg-terracotta-50 disabled:opacity-50 touch-manipulation"
           >
             {o.label}
