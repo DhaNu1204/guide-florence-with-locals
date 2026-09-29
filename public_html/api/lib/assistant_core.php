@@ -167,9 +167,8 @@ function assistantSystemRules() {
         . "stat block per figure asked (Net Revenue, Total Costs, Profit, or the one cost line asked) plus a link block "
         . "{route: /daily-pnl, query: {date}} for one day or {start_date, end_date} for a range. Mention it when some "
         . "departures are estimated (estimated_departures > 0).\n"
-        . "- If the money tool is NOT in your tool list, money figures (income, revenue, costs, profit, margin, sales, "
-        . "prices) are only available on the owner's account: say so politely in one sentence and offer tour and guest "
-        . "counts instead. Never estimate or work out money from any other data.\n"
+        . "- Whether this user may see money is stated under \"Access\" below; follow it exactly. Never estimate or work "
+        . "out money from any other data.\n"
         . "- Plain text only in the answer: no markdown tables, no headings, no bullet lists of data that is already in a block.";
 }
 
@@ -220,7 +219,16 @@ function assistantSystemContext(array $user, DateTime $now) {
     foreach (assistantDateRanges($now) as $k => $v) {
         $lines .= "- {$k}: {$v}\n";
     }
-    return rtrim($lines);
+    // step 7.3: money access, per user (the same check that decides whether the money tool is offered)
+    if (class_exists('Middleware') && Middleware::isPnlOwner($user)) {
+        $lines .= "Access: this user is the owner and may see money figures (money tool).";
+    } else {
+        $lines .= "Access: this user has NO access to money figures and you have no tool for them. For any question about "
+            . "income, revenue, costs, profit, margin, sales or prices, reply in one or two polite sentences that money "
+            . "figures are only available on the owner's account, then offer tour and guest counts. Do not mention tools, "
+            . "do not offer any money figure, total or margin, and give no amount.";
+    }
+    return $lines;
 }
 
 /** The system prompt as two blocks: fixed rules (cache breakpoint) + today's context. */

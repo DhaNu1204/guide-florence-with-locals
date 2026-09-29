@@ -278,5 +278,13 @@ $r = assistantDateRanges(new DateTime('2026-10-04 12:00', new DateTimeZone('Euro
 check('dates on a Sunday: last week = the week before', $r['last week'], 'Mon 21 Sep (2026-09-21) to Sun 27 Sep (2026-09-27)');
 check('link to /daily-pnl allowed', assistantValidateBlock(['type' => 'link', 'label' => 'Daily P&L', 'route' => '/daily-pnl', 'query' => ['date' => '2026-09-29']]) !== null, true);
 
+
+// ---- step 7.3: money access line in the per-request context -----------------------------------
+$ctxOwner = assistantSystemContext(['username' => 'dhanu', 'role' => 'admin', 'email' => ''], $now);
+$ctxOther = assistantSystemContext(['username' => 'sudesh', 'role' => 'admin', 'email' => ''], $now);
+check('context: owner told money is allowed', strpos($ctxOwner, 'may see money figures') !== false, true);
+check('context: second admin told NO access, no tools mentioned to offer', [strpos($ctxOther, 'NO access to money figures') !== false, strpos($ctxOther, 'may see money') === false], [true, true]);
+check('fixed rules identical for both users (cache stays shared)', assistantSystemPrompt(['username' => 'dhanu', 'role' => 'admin'], $now)[0]['text'] === assistantSystemPrompt(['username' => 'sudesh', 'role' => 'admin'], $now)[0]['text'], true);
+
 echo "\n" . ($fail === 0 ? "ALL OK\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);

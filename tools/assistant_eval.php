@@ -257,6 +257,7 @@ foreach ($Q as $n => $qq) {
     $blocks = $b['blocks'] ?? [];
     // every scalar value inside the blocks, separated, so "value":10 reads as 10
     $vals = [];
+    $blocks = json_decode(json_encode($blocks), true); // a link block's query is an object
     array_walk_recursive($blocks, function ($v, $k) use (&$vals) { if ($k !== 'type' && $v !== null && !is_bool($v)) $vals[] = (string) $v; });
     $blob = $text . ' | ' . implode(' | ', $vals);
     $ids = [];
@@ -291,6 +292,8 @@ foreach ($Q as $n => $qq) {
             break;
         case 'nomoney':
             if (hasAnyMoney($blob)) $why[] = 'a money figure appears in the answer';
+            if (!preg_match('/owner|titolare|proprietari/iu', $text)) $why[] = 'does not say money is on the owner account';
+            if (preg_match('/\btool\b|strumento|overall margin|margine (complessivo|totale)/iu', $text)) $why[] = 'mentions a tool or offers a money figure';
             break;
         case 'nosales':
             if (!preg_match('/not available|aren.t available|isn.t available|not supported|don.t have|do not have|can.t|cannot|no data|non (sono |è )?disponibil|non (posso|abbiamo)/iu', $text)) $why[] = 'does not say new-sales figures are unavailable';
