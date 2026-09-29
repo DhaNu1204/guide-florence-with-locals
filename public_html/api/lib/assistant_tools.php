@@ -129,6 +129,26 @@ function assistantToolRegistry() {
             'money' => false,
         ],
         [
+            'name' => 'propose_assignment',
+            'description' => 'Prepare ONE guide assignment for the user to confirm (step 7.5). Writes nothing: it shows a '
+                . 'confirm card with the departure, the guide, clash / replace checks and - on a clash - free alternatives. '
+                . 'Get departure_id from find_departures / unassigned_departures and guide_id from find_guide first; when '
+                . 'several departures match or the name is unclear, ask with a choices block instead of calling this. '
+                . 'Returns refused: true (no card) for a past or fully cancelled departure or an inactive guide - tell the '
+                . 'user why. Never say the guide is assigned: only the Confirm button does that.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'departure_id' => ['type' => 'string', 'description' => 'g<id> or t<id>'],
+                    'guide_id' => ['type' => 'integer'],
+                ],
+                'required' => ['departure_id', 'guide_id'],
+                'additionalProperties' => false,
+            ],
+            'handler' => 'assistantToolProposeAssignment',
+            'money' => false,
+        ],
+        [
             'name' => 'money',
             'description' => 'Money for tours RUNNING in a date range (not bookings made then), computed by the Daily P&L '
                 . 'page itself: Net Revenue (retail - commission - card fee), each cost line as the page labels it '

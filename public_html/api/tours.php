@@ -785,6 +785,28 @@ switch ($method) {
         
         $data = json_decode(file_get_contents('php://input'), true);
 
+        // Step 7.5: optional stale-card guard for the assistant's confirm card. Only when the
+        // request carries expected_previous_guide_id: if the tour's guide is no longer that one,
+        // nothing is saved (409). Without the field this endpoint behaves exactly as before.
+        if (is_array($data) && array_key_exists('expected_previous_guide_id', $data)) {
+            $expPrev = $data['expected_previous_guide_id'];
+            unset($data['expected_previous_guide_id']);
+            $expPrev = ($expPrev === null || $expPrev === '' || (int) $expPrev <= 0) ? null : (int) $expPrev;
+            $curStmt = $conn->prepare("SELECT guide_id FROM tours WHERE id = ?");
+            $curStmt->bind_param("i", $tourId);
+            $curStmt->execute();
+            $curRow = $curStmt->get_result()->fetch_assoc();
+            $curStmt->close();
+            $curGuide = ($curRow && $curRow['guide_id'] !== null && (int) $curRow['guide_id'] > 0) ? (int) $curRow['guide_id'] : null;
+            if ($curRow && $curGuide !== $expPrev) {
+                http_response_code(409);
+                echo json_encode(['success' => false, 'error' => 'departure_changed',
+                                  'message' => 'This departure changed since the card was shown',
+                                  'current_guide_id' => $curGuide]);
+                break;
+            }
+        }
+
         // --- Double-booking guard (guide assignment only; no payment logic) ---
         // When this update assigns a guide to a NON-null value, block it if that
         // guide already has another non-cancelled tour at the same date+time,
