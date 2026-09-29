@@ -18,9 +18,10 @@ require $apiDir . '/config.php';
 require_once $apiDir . '/Middleware.php';
 require_once $apiDir . '/lib/assistant_core.php';
 
-$username = 'dhanu'; $only = null; $cacheTest = false;
+$username = 'dhanu'; $only = null; $cacheTest = false; $host = null;
 foreach (array_slice($argv, 1) as $a) {
     if (preg_match('/^--user=(.+)$/', $a, $m)) $username = $m[1];
+    if (preg_match('/^--host=(.+)$/', $a, $m)) $host = rtrim($m[1], '/'); // step 7.3: Daily P&L endpoint for the money answers
     if (preg_match('/^--only=([\d,]+)$/', $a, $m)) $only = array_map('intval', explode(',', $m[1]));
     if ($a === '--cache-test') $cacheTest = true;
 }
@@ -30,6 +31,34 @@ $st->bind_param('s', $username); $st->execute(); $user = $st->get_result()->fetc
 if (!$user || $user['role'] !== 'admin') { fwrite(STDERR, "need an admin user\n"); exit(2); }
 ensureAssistantTables($conn);
 $client = ClaudeClient::fromEnv();
+
+// ---- step 7.3: the Daily P&L endpoint, called as the owner (expected money answers) ------------
+// Staging only: a temporary owner session is created for the HTTP calls and deleted at the end.
+$env = (string) EnvLoader::get('APP_ENV', '');
+if (!$host || stripos($host, 'staging') === false || strcasecmp($env, 'staging') !== 0) {
+    fwrite(STDERR, "refused: needs --host=https://stagingwithlocals... and APP_ENV=staging (host=$host env=$env)\n");
+    exit(2);
+}
+if (!Middleware::isPnlOwner($user)) { fwrite(STDERR, "--user must be the P&L owner\n"); exit(2); }
+$ownerRaw = bin2hex(random_bytes(32));
+$ownerHash = Middleware::hashToken($ownerRaw);
+$ownerSid = Middleware::SESSION_ID_PREFIX . $ownerHash;
+$ownerId = (int) $user['id'];
+$st = $conn->prepare("INSERT INTO sessions (session_id, token, user_id, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))");
+$st->bind_param('ssi', $ownerSid, $ownerHash, $ownerId); $st->execute(); $st->close();
+register_shutdown_function(function () use ($conn, $ownerHash) {
+    $d = $conn->prepare("DELETE FROM sessions WHERE token = ?"); $d->bind_param('s', $ownerHash); $d->execute();
+    echo "temporary owner session deleted: " . $d->affected_rows . "\n"; $d->close();
+});
+function pnlGet($query) {
+    global $host, $ownerRaw;
+    sleep(2); // load rule after the 29 Sep host-wide 504: at least 2 s between requests
+    $ctx = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 60, 'ignore_errors' => true,
+        'header' => "Authorization: Bearer $ownerRaw\r\nUser-Agent: Mozilla/5.0 (FWL step 7.3 eval)\r\n"]]);
+    $j = json_decode((string) @file_get_contents("$host/api/pnl.php?$query", false, $ctx), true);
+    if (!isset($j['data']['totals'])) { fwrite(STDERR, "Daily P&L call failed: $query\n"); exit(4); }
+    return $j['data'];
+}
 
 // ---- SQL for the expected answers ---------------------------------------------------------------
 $rome = new DateTimeZone('Europe/Rome');
@@ -154,6 +183,32 @@ $Q = [
     11 => ['en', "What time are the Accademia tours tomorrow?", 'ids', $acc],
     12 => ['en', "Which guides are called " . ucfirst($dupFirst) . "?", 'names', $dupNames],
 ];
+
+// ---- step 7.3: money questions; expected numbers straight from the Daily P&L endpoint ------------
+$yesterday = (clone $now)->modify('-1 day')->format('Y-m-d');
+$monthStart = (clone $now)->modify('first day of this month')->format('Y-m-d');
+$lastMon = (clone $now)->modify('-' . ($dow + 6) . ' days')->format('Y-m-d');
+$lastSun = (new DateTime($lastMon))->modify('+6 days')->format('Y-m-d');
+$augYear = (int) $now->format('n') >= 8 ? (int) $now->format('Y') : (int) $now->format('Y') - 1;
+$pToday = pnlGet("date=$today")['totals'];
+$pYest = pnlGet("date=$yesterday")['totals'];
+$pMonth = pnlGet("start=$monthStart&end=$today")['totals'];
+$pAug = pnlGet("start=$augYear-08-01&end=$augYear-08-31");
+$augUffizi = null;
+foreach ($pAug['by_category'] as $c) { if ($c['category'] === 'Uffizi') $augUffizi = $c['net']; }
+$pLastWeek = pnlGet("start=$lastMon&end=$lastSun")['totals'];
+$Q += [
+    13 => ['en', "what is today income", 'money', [$pToday['net']]],
+    14 => ['it', "quanto abbiamo guadagnato ieri", 'money_any', [$pYest['net'], $pYest['profit']]],
+    15 => ['en', "profit this month so far", 'money', [$pMonth['profit']]],
+    16 => ['en', "Uffizi income in August", 'money', [$augUffizi]],
+    17 => ['en', "how much did we spend on guides last week", 'money', [$pLastWeek['guide_cost']]],
+    18 => ['en', "what is today income", 'nomoney', [], 'sudesh'],
+    19 => ['en', "what's our margin on Accademia tours this month?", 'nomoney', [], 'sudesh'],
+    20 => ['en', "what were our sales today?", 'nosales', [$pToday['net']]],
+];
+echo "Daily P&L (owner, HTTP): today net {$pToday['net']} | yesterday net {$pYest['net']} profit {$pYest['profit']} | $monthStart..$today profit {$pMonth['profit']}"
+    . " | Aug $augYear Uffizi net " . var_export($augUffizi, true) . " | $lastMon..$lastSun guide cost {$pLastWeek['guide_cost']}\n";
 echo "now {$now->format('D Y-m-d H:i')} Rome | this week $today..$sunday | weekend $satW..$sunday | month to $monthEnd\n";
 echo "picks: typo '{$typo}' = {$gName[$g1]} (id $g1); Q6 guide {$gName[$g2]} (id $g2); duplicate first name '{$dupFirst}' x" . count($dupNames)
     . "; ambiguous " . ($amb ? "{$amb['date']} {$amb['time']} (" . implode(',', $amb['ids']) . ")" : 'NONE FOUND')
@@ -168,19 +223,41 @@ function isItalian($text) {
 }
 function hasNumber($hay, $n) { return preg_match('/(?<![\d.,:])' . $n . '(?![\d]|[.,:]\d)/', $hay) === 1; }
 function noneWord($text) { return preg_match('/\b(no|none|zero|nessun\w*|non ci sono|non abbiamo|0)\b/iu', $text) === 1; }
+/** step 7.3: an amount as the answer may write it: 1,234.50 / 1.234,50 / 1234.50 / 1234,50 (sign ignored) */
+function hasMoney($hay, $amount) {
+    if ($amount === null) return false;
+    $a = abs((float) $amount);
+    foreach ([number_format($a, 2, '.', ','), number_format($a, 2, ',', '.'), number_format($a, 2, '.', ''), number_format($a, 2, ',', '')] as $f) {
+        if (preg_match('/(?<![\d.,])' . preg_quote($f, '/') . '(?![\d]|[.,]\d)/', $hay) === 1) return true;
+    }
+    return false;
+}
+function hasAnyMoney($hay) { return preg_match('/€|\bEUR\b|\beuro\b|\d[\d.,]*[.,]\d{2}(?!\d)/iu', $hay) === 1; }
+$userRows = [];
+function evalUser($name) {
+    global $conn, $userRows;
+    if (!isset($userRows[$name])) {
+        $s = $conn->prepare("SELECT id, role, username, email FROM users WHERE username = ?");
+        $s->bind_param('s', $name); $s->execute(); $userRows[$name] = $s->get_result()->fetch_assoc(); $s->close();
+    }
+    return $userRows[$name];
+}
 
 $pass = 0; $ran = 0; $tokens = ['in' => 0, 'out' => 0, 'cr' => 0, 'cw' => 0];
-foreach ($Q as $n => list($lang, $question, $kind, $expected)) {
+foreach ($Q as $n => $qq) {
+    list($lang, $question, $kind, $expected) = $qq;
+    $asUser = isset($qq[4]) ? evalUser($qq[4]) : $user;
     if ($only !== null && !in_array($n, $only, true)) continue;
     if ($question === null) { printf("Q%-2d SKIP  no suitable data for this question\n\n", $n); continue; }
     $ran++;
-    usleep(300000);
-    $res = assistantHandle($conn, $client, $user, $question, null);
+    sleep(2); // load rule: at least 2 s between requests
+    $res = assistantHandle($conn, $client, $asUser, $question, null);
     $b = $res['body'];
     $text = (string) ($b['text'] ?? '');
     $blocks = $b['blocks'] ?? [];
     // every scalar value inside the blocks, separated, so "value":10 reads as 10
     $vals = [];
+    $blocks = json_decode(json_encode($blocks), true); // a link block's query is an object
     array_walk_recursive($blocks, function ($v, $k) use (&$vals) { if ($k !== 'type' && $v !== null && !is_bool($v)) $vals[] = (string) $v; });
     $blob = $text . ' | ' . implode(' | ', $vals);
     $ids = [];
@@ -206,6 +283,30 @@ foreach ($Q as $n => list($lang, $question, $kind, $expected)) {
         case 'empty':
             if (!noneWord($text)) $why[] = 'expected an empty answer';
             break;
+        // step 7.3
+        case 'money':
+            foreach ($expected as $amt) { if (!hasMoney($blob, $amt)) $why[] = 'missing ' . var_export($amt, true) . ' (Daily P&L)'; }
+            break;
+        case 'money_any':
+            if (!hasMoney($blob, $expected[0]) && !hasMoney($blob, $expected[1])) $why[] = 'neither net ' . $expected[0] . ' nor profit ' . $expected[1];
+            break;
+        case 'nomoney':
+            if (hasAnyMoney($blob)) $why[] = 'a money figure appears in the answer';
+            if (!preg_match('/owner|titolare|proprietari/iu', $text)) $why[] = 'does not say money is on the owner account';
+            if (preg_match('/\btool\b|strumento|overall margin|margine (complessivo|totale)/iu', $text)) $why[] = 'mentions a tool or offers a money figure';
+            break;
+        case 'nosales':
+            if (!preg_match('/not available|aren.t available|isn.t available|not supported|don.t have|do not have|can.t|cannot|no data|non (sono |è )?disponibil|non (posso|abbiamo)/iu', $text)) $why[] = 'does not say new-sales figures are unavailable';
+            break;
+    }
+    // step 7.3: the lock as the log shows it - money offered to the owner only
+    $logRow = null;
+    if (isset($b['meta']['log_id'])) {
+        $lid = (int) $b['meta']['log_id'];
+        $logRow = $conn->query("SELECT tools_offered, tools_called FROM assistant_logs WHERE id = $lid")->fetch_assoc();
+        $offered = json_decode((string) $logRow['tools_offered'], true) ?: [];
+        $shouldHave = Middleware::isPnlOwner($asUser);
+        if (in_array('money', $offered, true) !== $shouldHave) $why[] = 'tools_offered ' . ($shouldHave ? 'lacks' : 'HAS') . ' money';
     }
     $isIt = isItalian($text);
     if ($isIt !== ($lang === 'it')) $why[] = 'answered in ' . ($isIt ? 'Italian' : 'English');
@@ -214,7 +315,8 @@ foreach ($Q as $n => list($lang, $question, $kind, $expected)) {
     if ($ok) $pass++;
     $m = $b['meta'] ?? [];
     foreach (['in' => 'input_tokens', 'out' => 'output_tokens', 'cr' => 'cache_read_tokens', 'cw' => 'cache_write_tokens'] as $k => $f) $tokens[$k] += (int) ($m[$f] ?? 0);
-    printf("Q%-2d %s  [%s] %s\n", $n, $ok ? 'PASS' : 'FAIL', strtoupper($lang), $question);
+    printf("Q%-2d %s  [%s] %s%s\n", $n, $ok ? 'PASS' : 'FAIL', strtoupper($lang), $question, $asUser['username'] !== $user['username'] ? "   (as {$asUser['username']})" : '');
+    if ($logRow) echo "     log: tools_offered " . $logRow['tools_offered'] . "\n";
     $expShow = is_array($expected) ? (count($expected) > 12 ? count($expected) . ' items' : json_encode($expected, JSON_UNESCAPED_UNICODE)) : $expected;
     echo "     SQL: $expShow\n";
     echo "     A:   " . str_replace("\n", "\n          ", $text) . "\n";

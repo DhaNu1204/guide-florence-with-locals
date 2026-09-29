@@ -18,11 +18,14 @@ require $apiDir . '/config.php';
 require_once $apiDir . '/Middleware.php';
 require_once $apiDir . '/lib/assistant_core.php'; // step 7.2: the unassigned tool vs the report
 
-$host = null; $sha = null; $skipSmoke = false;
+$host = null; $sha = null; $skipSmoke = false; $skipRate = false;
+$pauseDefault = 2000000; // step 7.3 load rule: 2 s between requests (was 1.3 s)
 foreach (array_slice($argv, 1) as $a) {
     if (preg_match('/^--host=(.+)$/', $a, $m)) { $host = rtrim($m[1], '/'); }
     if (preg_match('/^--sha=(.+)$/', $a, $m)) { $sha = $m[1]; }
     if ($a === '--skip-smoke') { $skipSmoke = true; }
+    if ($a === '--skip-ratelimit') { $skipRate = true; }
+    if (preg_match('/^--pause=(\d+(?:\.\d+)?)$/', $a, $m)) { $pauseDefault = (int) round((float) $m[1] * 1000000); }
 }
 $env = (string) EnvLoader::get('APP_ENV', '');
 if (!$host || stripos($host, 'staging') === false || strcasecmp($env, 'staging') !== 0) {
@@ -60,9 +63,9 @@ $tokens['viewer'] = tempSession($conn, (int) $viewer['id']);
 echo "users: owner={$owner['username']} admin2={$admin2['username']} viewer={$viewer['username']}\n\n";
 
 /** One HTTP call. $who = owner|admin2|viewer|null. Returns [code, json, rawBody, headers]. */
-function http($method, $url, $who = null, $body = null, $timeout = 20, $pause = 1300000) {
-    global $tokens;
-    usleep($pause); // the host drops bursts faster than ~1 request/second
+function http($method, $url, $who = null, $body = null, $timeout = 20, $pause = null) {
+    global $tokens, $pauseDefault;
+    usleep($pause !== null ? $pause : $pauseDefault); // the host drops bursts faster than ~1 request/second
     $h = "Content-Type: application/json\r\nUser-Agent: Mozilla/5.0 (FWL step 7.1 check)\r\n";
     if ($who !== null) { $h .= "Authorization: Bearer {$tokens[$who]}\r\n"; }
     $ctx = stream_context_create(['http' => [
@@ -215,6 +218,9 @@ try {
     check("(e) one log row per question ($asked asked, " . ($logsAfter - $logsBefore) . " new), tokens + ms filled", $logsAfter - $logsBefore === $asked && $good === $asked, "$good good");
 
     // ---- (d) rate limit, per user ------------------------------------------------------------
+    // Step 7.3: --skip-ratelimit. The load rule after the 29 Sep host-wide 504 (>= 2 s between
+    // requests) cannot fit 31 requests into the limiter's 60 s window.
+    if ($skipRate) { throw new RuntimeException('__skip_rate__'); }
     echo "\n== (d) 31 requests in a minute (as {$admin2['username']}, invalid body = no model call) ==\n";
     $codes = [];
     $t0 = microtime(true);
@@ -229,6 +235,9 @@ try {
     check('    the limit is per user: the owner still gets through (400, not 429)', $c === 400, (string) $c);
     $logsAfter2 = (int) $conn->query("SELECT COUNT(*) AS n FROM assistant_logs")->fetch_assoc()['n'];
     check('    rejected requests write no log rows', $logsAfter2 === $logsAfter, ($logsAfter2 - $logsAfter) . ' new');
+} catch (RuntimeException $e) {
+    if ($e->getMessage() !== '__skip_rate__') throw $e;
+    echo "\n(d) rate-limit probe skipped (--skip-ratelimit)\n";
 } finally {
     $d = $conn->prepare("DELETE FROM sessions WHERE token = ?");
     foreach ($tokens as $raw) { $h = Middleware::hashToken($raw); $d->bind_param('s', $h); $d->execute(); }

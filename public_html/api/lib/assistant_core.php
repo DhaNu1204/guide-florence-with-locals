@@ -156,6 +156,19 @@ function assistantSystemRules() {
         . "the total and the range, written in the same turn as the show_blocks call. The text must still contain "
         . "the key numbers (it is also read without the blocks). If a list was truncated, say how many there are in total.\n"
         . "- free_guides assumes every tour lasts 2 hours; mention that in the answer.\n"
+        // step 7.3: money
+        . "- Money: \"income\", \"incasso\", \"guadagno\", \"revenue\", \"earnings\" = the Net Revenue of tours RUNNING in the "
+        . "range, from the money tool (the Daily P&L figures); profit, costs and margin come from the same tool. For a money "
+        . "question about the current month use the \"month so far\" range unless the whole month is asked for; \"last week\" "
+        . "and \"yesterday\" as listed; a month name = that whole month (the most recent one that has started).\n"
+        . "- Figures for NEW SALES / bookings made on a date do not exist here: say so in one sentence and offer the money "
+        . "for tours running that day instead.\n"
+        . "- Write money in euro with 2 decimals: \"€1,234.50\" in English, \"1.234,50 €\" in Italian. Answer money with a "
+        . "stat block per figure asked (Net Revenue, Total Costs, Profit, or the one cost line asked) plus a link block "
+        . "{route: /daily-pnl, query: {date}} for one day or {start_date, end_date} for a range. Mention it when some "
+        . "departures are estimated (estimated_departures > 0).\n"
+        . "- Whether this user may see money is stated under \"Access\" below; follow it exactly. Never estimate or work "
+        . "out money from any other data.\n"
         . "- Plain text only in the answer: no markdown tables, no headings, no bullet lists of data that is already in a block.";
 }
 
@@ -178,9 +191,20 @@ function assistantDateRanges(DateTime $now) {
     $monthEnd = (clone $today)->modify('last day of this month');
     $nextMonthStart = (clone $today)->modify('first day of next month');
     $nextMonthEnd = (clone $today)->modify('last day of next month');
+    // step 7.3: the past ranges money questions use
+    $yesterday = (clone $today)->modify('-1 day');
+    $lastMon = (clone $today)->modify('-' . ($dow + 6) . ' days');
+    $lastSun = (clone $lastMon)->modify('+6 days');
+    $monthStart = (clone $today)->modify('first day of this month');
+    $lastMonthStart = (clone $today)->modify('first day of last month');
+    $lastMonthEnd = (clone $today)->modify('last day of last month');
     return [
         'today' => $d($today),
+        'yesterday' => $d($yesterday),
         'tomorrow' => $d($tomorrow),
+        'last week' => $d($lastMon) . ' to ' . $d($lastSun),
+        'month so far' => $d($monthStart) . ' to ' . $d($today),
+        'last month' => $d($lastMonthStart) . ' to ' . $d($lastMonthEnd),
         'this week' => $d($today) . ' to ' . $d($sunday),
         'weekend' => $d($weekendStart) . ' to ' . $d($weekendEnd),
         'next week' => $d($nextMon) . ' to ' . $d($nextSun),
@@ -189,20 +213,60 @@ function assistantDateRanges(DateTime $now) {
     ];
 }
 
-function assistantSystemContext(array $user, DateTime $now) {
+/**
+ * Step 7.3: English or Italian, from common function words (place and product names like
+ * "Accademia" or "Uffizi" are not counted). null when it cannot tell - the prompt's general rule
+ * applies then. Pure; tools/assistant_check.php covers it.
+ */
+function assistantDetectLanguage($text) {
+    $t = ' ' . assistantNorm($text) . ' ';
+    $it = ['quanti', 'quante', 'quanto', 'quanta', 'oggi', 'domani', 'ieri', 'chi', 'sono', 'abbiamo', 'guida', 'guide',
+           'settimana', 'questo', 'questa', 'il', 'lo', 'la', 'gli', 'le', 'di', 'del', 'della', 'dei', 'che', 'per',
+           'con', 'libero', 'libera', 'liberi', 'incasso', 'guadagno', 'guadagnato', 'mese', 'senza', 'quali', 'quale',
+           'dammi', 'elenco', 'ci', 'mi', 'tour di', 'alle', 'dalle', 'ho', 'hai', 'ha', 'e', 'un', 'una', 'nel', 'mattina', 'pomeriggio'];
+    $en = ['what', 'how', 'many', 'much', 'who', 'which', 'is', 'are', 'the', 'today', 'tomorrow', 'yesterday', 'this',
+           'week', 'month', 'our', 'we', 'did', 'do', 'does', 'give', 'me', 'list', 'free', 'on', 'at', 'in', 'of', 'for',
+           'with', 'have', 'has', 'income', 'profit', 'sales', 'margin', 's', 'whats', 'were', 'was', 'there', 'and', 'a',
+           'show', 'tell', 'unassigned', 'guides', 'tours', 'spend', 'spent', 'called', 'so', 'far', 'last', 'next', 'time'];
+    $ci = 0; $ce = 0;
+    foreach ($it as $w) { $ci += substr_count($t, ' ' . $w . ' '); }
+    foreach ($en as $w) { $ce += substr_count($t, ' ' . $w . ' '); }
+    if ($ci === $ce) return null;
+    return $ci > $ce ? 'Italian' : 'English';
+}
+
+function assistantSystemContext(array $user, DateTime $now, $message = null) {
     $name = isset($user['username']) && $user['username'] !== '' ? $user['username'] : 'the user';
     $lines = "You are talking to {$name}. Now it is " . $now->format('l j F Y, H:i') . " in Florence (Europe/Rome).\nDates:\n";
     foreach (assistantDateRanges($now) as $k => $v) {
         $lines .= "- {$k}: {$v}\n";
     }
-    return rtrim($lines);
+    // step 7.3: money access, per user (the same check that decides whether the money tool is offered)
+    if (class_exists('Middleware') && Middleware::isPnlOwner($user)) {
+        $lines .= "Access: this user is the owner and may see money figures (money tool).";
+    } else {
+        $lines .= "Access: this user has NO access to money figures and you have no tool for them. For any question about "
+            . "income, revenue, costs, profit, margin, sales or prices, reply in one or two polite sentences that money "
+            . "figures are only available on the owner's account, then offer tour and guest counts. Do not mention tools, "
+            . "do not offer any money figure, total or margin, and give no amount.";
+    }
+    // Last line on purpose (closest to the question). Prompt wording alone did not hold: English
+    // refusals came back in Italian on staging, so the language is detected here and stated.
+    $lang = $message !== null ? assistantDetectLanguage($message) : null;
+    if ($lang !== null) {
+        $lines .= "\nLanguage: the user's latest message is in {$lang}. Reply in {$lang}, including refusals.";
+    } else {
+        $lines .= "\nLanguage: reply in the language the user's latest message is written in (English or Italian), "
+            . "including refusals.";
+    }
+    return $lines;
 }
 
 /** The system prompt as two blocks: fixed rules (cache breakpoint) + today's context. */
-function assistantSystemPrompt(array $user, DateTime $now) {
+function assistantSystemPrompt(array $user, DateTime $now, $message = null) {
     return [
         ['type' => 'text', 'text' => assistantSystemRules(), 'cache_control' => ['type' => 'ephemeral']],
-        ['type' => 'text', 'text' => assistantSystemContext($user, $now)],
+        ['type' => 'text', 'text' => assistantSystemContext($user, $now, $message)],
     ];
 }
 
@@ -291,7 +355,7 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
     $messages[] = ['role' => 'user', 'content' => $message];
     $payloadBase = [
         'max_tokens' => 2048,
-        'system' => assistantSystemPrompt($user, $now),
+        'system' => assistantSystemPrompt($user, $now, $message),
         // step 7.2: automatic breakpoint on the growing tail (tool rounds re-read it); the fixed
         // tools + rules prefix has its own explicit breakpoint in the system prompt.
         'cache_control' => ['type' => 'ephemeral'],
