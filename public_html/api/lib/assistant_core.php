@@ -213,7 +213,29 @@ function assistantDateRanges(DateTime $now) {
     ];
 }
 
-function assistantSystemContext(array $user, DateTime $now) {
+/**
+ * Step 7.3: English or Italian, from common function words (place and product names like
+ * "Accademia" or "Uffizi" are not counted). null when it cannot tell - the prompt's general rule
+ * applies then. Pure; tools/assistant_check.php covers it.
+ */
+function assistantDetectLanguage($text) {
+    $t = ' ' . assistantNorm($text) . ' ';
+    $it = ['quanti', 'quante', 'quanto', 'quanta', 'oggi', 'domani', 'ieri', 'chi', 'sono', 'abbiamo', 'guida', 'guide',
+           'settimana', 'questo', 'questa', 'il', 'lo', 'la', 'gli', 'le', 'di', 'del', 'della', 'dei', 'che', 'per',
+           'con', 'libero', 'libera', 'liberi', 'incasso', 'guadagno', 'guadagnato', 'mese', 'senza', 'quali', 'quale',
+           'dammi', 'elenco', 'ci', 'mi', 'tour di', 'alle', 'dalle', 'ho', 'hai', 'ha', 'e', 'un', 'una', 'nel', 'mattina', 'pomeriggio'];
+    $en = ['what', 'how', 'many', 'much', 'who', 'which', 'is', 'are', 'the', 'today', 'tomorrow', 'yesterday', 'this',
+           'week', 'month', 'our', 'we', 'did', 'do', 'does', 'give', 'me', 'list', 'free', 'on', 'at', 'in', 'of', 'for',
+           'with', 'have', 'has', 'income', 'profit', 'sales', 'margin', 's', 'whats', 'were', 'was', 'there', 'and', 'a',
+           'show', 'tell', 'unassigned', 'guides', 'tours', 'spend', 'spent', 'called', 'so', 'far', 'last', 'next', 'time'];
+    $ci = 0; $ce = 0;
+    foreach ($it as $w) { $ci += substr_count($t, ' ' . $w . ' '); }
+    foreach ($en as $w) { $ce += substr_count($t, ' ' . $w . ' '); }
+    if ($ci === $ce) return null;
+    return $ci > $ce ? 'Italian' : 'English';
+}
+
+function assistantSystemContext(array $user, DateTime $now, $message = null) {
     $name = isset($user['username']) && $user['username'] !== '' ? $user['username'] : 'the user';
     $lines = "You are talking to {$name}. Now it is " . $now->format('l j F Y, H:i') . " in Florence (Europe/Rome).\nDates:\n";
     foreach (assistantDateRanges($now) as $k => $v) {
@@ -228,18 +250,23 @@ function assistantSystemContext(array $user, DateTime $now) {
             . "figures are only available on the owner's account, then offer tour and guest counts. Do not mention tools, "
             . "do not offer any money figure, total or margin, and give no amount.";
     }
-    // Last line on purpose (closest to the question): an English question with an Italian place name
-    // ("Accademia") drew an Italian refusal on staging.
-    $lines .= "\nLanguage: reply in the language the user's latest message is written in (English or Italian), "
-        . "whatever the words for places or products; this includes refusals.";
+    // Last line on purpose (closest to the question). Prompt wording alone did not hold: English
+    // refusals came back in Italian on staging, so the language is detected here and stated.
+    $lang = $message !== null ? assistantDetectLanguage($message) : null;
+    if ($lang !== null) {
+        $lines .= "\nLanguage: the user's latest message is in {$lang}. Reply in {$lang}, including refusals.";
+    } else {
+        $lines .= "\nLanguage: reply in the language the user's latest message is written in (English or Italian), "
+            . "including refusals.";
+    }
     return $lines;
 }
 
 /** The system prompt as two blocks: fixed rules (cache breakpoint) + today's context. */
-function assistantSystemPrompt(array $user, DateTime $now) {
+function assistantSystemPrompt(array $user, DateTime $now, $message = null) {
     return [
         ['type' => 'text', 'text' => assistantSystemRules(), 'cache_control' => ['type' => 'ephemeral']],
-        ['type' => 'text', 'text' => assistantSystemContext($user, $now)],
+        ['type' => 'text', 'text' => assistantSystemContext($user, $now, $message)],
     ];
 }
 
@@ -328,7 +355,7 @@ function assistantRunLoop($client, $conn, array $user, array $tools, array $hist
     $messages[] = ['role' => 'user', 'content' => $message];
     $payloadBase = [
         'max_tokens' => 2048,
-        'system' => assistantSystemPrompt($user, $now),
+        'system' => assistantSystemPrompt($user, $now, $message),
         // step 7.2: automatic breakpoint on the growing tail (tool rounds re-read it); the fixed
         // tools + rules prefix has its own explicit breakpoint in the system prompt.
         'cache_control' => ['type' => 'ephemeral'],

@@ -286,5 +286,19 @@ check('context: owner told money is allowed', strpos($ctxOwner, 'may see money f
 check('context: second admin told NO access, no tools mentioned to offer', [strpos($ctxOther, 'NO access to money figures') !== false, strpos($ctxOther, 'may see money') === false], [true, true]);
 check('fixed rules identical for both users (cache stays shared)', assistantSystemPrompt(['username' => 'dhanu', 'role' => 'admin'], $now)[0]['text'] === assistantSystemPrompt(['username' => 'sudesh', 'role' => 'admin'], $now)[0]['text'], true);
 
+
+// ---- step 7.3: language detection (English refusals drifted into Italian on staging) -----------
+$lg = function ($q) { return assistantDetectLanguage($q); };
+check('lang: "what is today income" -> English', $lg('what is today income'), 'English');
+check('lang: "what\'s our margin on Accademia tours this month?" -> English', $lg("what's our margin on Accademia tours this month?"), 'English');
+check('lang: "quanto abbiamo guadagnato ieri" -> Italian', $lg('quanto abbiamo guadagnato ieri'), 'Italian');
+check('lang: "Chi è libero domani dalle 15 alle 18?" -> Italian', $lg('Chi è libero domani dalle 15 alle 18?'), 'Italian');
+check('lang: "I tour di Camilla questa settimana" -> Italian', $lg('I tour di Camilla questa settimana'), 'Italian');
+check('lang: "who is free tomorrow 10-12" -> English', $lg('who is free tomorrow 10-12'), 'English');
+check('lang: "Uffizi income in August" -> English', $lg('Uffizi income in August'), 'English');
+check('lang: "Uffizi?" -> unknown (general rule)', $lg('Uffizi?'), null);
+check('context states the detected language last', substr(assistantSystemContext(['username' => 'sudesh', 'role' => 'admin'], $now, 'what is today income'), -60),
+    substr("Language: the user's latest message is in English. Reply in English, including refusals.", -60));
+
 echo "\n" . ($fail === 0 ? "ALL OK\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);
