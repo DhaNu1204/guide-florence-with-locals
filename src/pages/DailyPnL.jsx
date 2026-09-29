@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   FiChevronLeft, FiChevronRight, FiSettings, FiTrendingUp, FiTrendingDown,
   FiCalendar, FiX, FiRotateCcw
@@ -475,7 +476,22 @@ export default function DailyPnL() {
   const [date, setDate] = useState(deepLink && deepLink.date ? deepLink.date : todayStr());
   const [weekStart, setWeekStart] = useState(deepLink && deepLink.weekStart ? deepLink.weekStart : mondayOf(todayStr())); // Monday
   const [month, setMonth] = useState(deepLink && deepLink.month ? deepLink.month : todayStr().slice(0, 7)); // YYYY-MM
-  const [range] = useState(deepLink && deepLink.view === 'range' ? { start: deepLink.start, end: deepLink.end } : null);
+  const [range, setRange] = useState(deepLink && deepLink.view === 'range' ? { start: deepLink.start, end: deepLink.end } : null);
+  // Step 7.4: an assistant link followed while this page is open changes only the query string -
+  // apply the new one (the first was read above).
+  const location = useLocation();
+  const appliedSearch = useRef(location.search);
+  useEffect(() => {
+    if (location.search === appliedSearch.current) return;
+    appliedSearch.current = location.search;
+    const dl = parsePnlParams(location.search);
+    if (!dl) return;
+    if (dl.view === 'day') setDate(dl.date);
+    if (dl.view === 'week') setWeekStart(dl.weekStart);
+    if (dl.view === 'month') setMonth(dl.month);
+    if (dl.view === 'range') setRange({ start: dl.start, end: dl.end });
+    setView(dl.view);
+  }, [location.search]);
   const [dayData, setDayData] = useState(null);
   const [monthData, setMonthData] = useState(null);
   const [settings, setSettings] = useState(null);

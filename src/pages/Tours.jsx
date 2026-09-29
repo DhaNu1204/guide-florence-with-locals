@@ -24,6 +24,7 @@ import { buildUnassignedReportText } from '../utils/unassignedReport';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.7: measurement only
 import LoadProblem from '../components/UI/LoadProblem';
 import { writeFailureMessage } from '../services/netPolicy';
+import { useLocation } from 'react-router-dom';
 import { parseToursParams } from '../utils/deepLinks'; // step 7.4: assistant deep links
 import { useAssistantState } from '../components/assistant/assistantStore';
 
@@ -288,6 +289,10 @@ const Tours = () => {
   // loaded list; cleared with "Show all").
   const [onlyUnassigned, setOnlyUnassigned] = useState(deepLink.unassigned);
   const { open: assistantOpen } = useAssistantState(); // step 7.4: the drawer narrows the page on lg
+  // Step 7.4: an assistant link followed while Tours is already open changes only the query string
+  // (same page instance), so apply a NEW query here; the first one was read by the useState()s above.
+  const location = useLocation();
+  const appliedSearch = useRef(location.search);
   const [languageOptions, setLanguageOptions] = useState([]);
   const [filterDate, setFilterDate] = useState(initialDateParam || new Date()); // Default to today (or ?date= deep link)
   const [currentPage, setCurrentPage] = useState(1);
@@ -332,6 +337,28 @@ const Tours = () => {
   });
 
   const toursPerPage = 500; // Load all tours in one page to avoid group splitting across pages
+
+  // Step 7.4: a new query string while the page is open (assistant link from the drawer) -> the
+  // same filters the initial state would have taken. An empty query changes nothing.
+  useEffect(() => {
+    if (location.search === appliedSearch.current) return;
+    appliedSearch.current = location.search;
+    const dl = parseToursParams(location.search);
+    const rawDate = new URLSearchParams(location.search).get('date');
+    const m = rawDate && /^(\d{4})-(\d{2})-(\d{2})$/.test(rawDate) ? rawDate.split('-').map(Number) : null;
+    const anything = m || (dl.start && dl.end) || dl.guideId || dl.language || dl.unassigned;
+    if (!anything) return;
+    if (m) {
+      setFilterDate(new Date(m[0], m[1] - 1, m[2]));
+      setShowUpcoming(false); setShowPast(false); setShowDateRange(false);
+    } else if (dl.start && dl.end) {
+      setRangeStartDate(dl.start); setRangeEndDate(dl.end);
+      setShowDateRange(true); setShowUpcoming(false); setShowPast(false);
+    }
+    setSelectedGuideId(dl.guideId || 'all');
+    setSelectedLanguage(dl.language || 'all');
+    setOnlyUnassigned(dl.unassigned);
+  }, [location.search]);
 
   // Load data function with server-side filtering
   const loadData = async (forceRefresh = false, page = 1, filters = {}) => {

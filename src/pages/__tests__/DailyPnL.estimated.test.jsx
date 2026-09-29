@@ -6,6 +6,7 @@
  * The chip is now loud, and the day header says how many of the day's departures are guesses.
  */
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mkRow = (over = {}) => ({
@@ -60,7 +61,7 @@ describe('Daily P&L - a guess must look like a guess (step 6.6)', () => {
 
   it('shows nothing extra when every figure came from an invoice', async () => {
     PAYLOAD = dayPayload([mkRow()]);
-    render(<DailyPnL />);
+    render(<MemoryRouter><DailyPnL /></MemoryRouter>); // step 7.4: the page reads its query via useLocation
     await waitFor(() => expect(screen.getAllByText(/Uffizi Gallery Guided Tour/).length).toBeGreaterThan(0));
     expect(screen.queryByTestId('pnl-estimated-chip')).toBeNull();
     expect(screen.queryByTestId('pnl-estimated-count')).toBeNull();
@@ -77,7 +78,7 @@ describe('Daily P&L - a guess must look like a guess (step 6.6)', () => {
       ],
       { units: 2, tour_units: 2, estimated_units: 1 }
     );
-    render(<DailyPnL />);
+    render(<MemoryRouter><DailyPnL /></MemoryRouter>); // step 7.4: the page reads its query via useLocation
 
     const chip = await screen.findByTestId('pnl-estimated-chip');
     expect(chip.textContent).toMatch(/estimated — not from an invoice/);
@@ -101,7 +102,7 @@ describe('Daily P&L - a guess must look like a guess (step 6.6)', () => {
       ],
       { units: 2, tour_units: 2, retail: 339.12, commission: 30, card_fee: 3.59, net: 305.53 }
     );
-    render(<DailyPnL />);
+    render(<MemoryRouter><DailyPnL /></MemoryRouter>); // step 7.4: the page reads its query via useLocation
 
     const chip = await screen.findByTestId('pnl-card-fee-chip');
     expect(chip.textContent).toMatch(/card fee/);
@@ -125,7 +126,7 @@ describe('Daily P&L - a guess must look like a guess (step 6.6)', () => {
         by_category: [], monthly_overhead: 0, profit_after_overhead: 100, settings: {},
       },
     };
-    render(<DailyPnL />);
+    render(<MemoryRouter><DailyPnL /></MemoryRouter>); // step 7.4: the page reads its query via useLocation
     // the page opens on the day view; the tiles read from whichever view is active, and the
     // count must be driven by the server total rather than by rows the month view never has
     await waitFor(() => expect(screen.queryByText(/Net Revenue/i)).toBeTruthy());
