@@ -210,7 +210,7 @@ const DateFilter = ({
             key={s.key}
             type="button"
             onClick={s.onClick}
-            className={`flex-1 min-w-[72px] min-h-[44px] px-3 py-2 rounded-tuscan text-sm font-medium whitespace-nowrap transition-colors touch-manipulation active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-500 ${
+            className={`flex-1 min-w-max min-h-[44px] px-3 py-2 rounded-tuscan text-sm font-medium whitespace-nowrap transition-colors touch-manipulation active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-500 ${
               s.active
                 ? 'bg-terracotta-500 text-white shadow-sm'
                 : 'text-stone-600 hover:bg-stone-200 active:bg-stone-300'

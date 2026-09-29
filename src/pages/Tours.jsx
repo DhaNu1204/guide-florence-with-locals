@@ -25,6 +25,7 @@ import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.7: m
 import LoadProblem from '../components/UI/LoadProblem';
 import { writeFailureMessage } from '../services/netPolicy';
 import { parseToursParams } from '../utils/deepLinks'; // step 7.4: assistant deep links
+import { useAssistantState } from '../components/assistant/assistantStore';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -286,6 +287,7 @@ const Tours = () => {
   // Step 7.4: ?unassigned=1 - show only departures that still need a guide (a view filter over the
   // loaded list; cleared with "Show all").
   const [onlyUnassigned, setOnlyUnassigned] = useState(deepLink.unassigned);
+  const { open: assistantOpen } = useAssistantState(); // step 7.4: the drawer narrows the page on lg
   const [languageOptions, setLanguageOptions] = useState([]);
   const [filterDate, setFilterDate] = useState(initialDateParam || new Date()); // Default to today (or ?date= deep link)
   const [currentPage, setCurrentPage] = useState(1);
@@ -1235,7 +1237,8 @@ const Tours = () => {
         {/* Filters — responsive */}
         <Card>
           <h3 className="text-base md:text-lg font-semibold mb-3 md:mb-4">Filters</h3>
-          <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
+          {/* Step 7.4: with the assistant drawer open (lg) the page is ~470 px narrower - stack the filters */}
+          <div className={`space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 ${assistantOpen ? 'lg:grid-cols-1 lg:space-y-3' : ''}`}>
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">Filter by Guide</label>
               <select

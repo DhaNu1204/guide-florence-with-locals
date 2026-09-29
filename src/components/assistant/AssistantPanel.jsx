@@ -161,9 +161,11 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
   const errorLine = assistantErrorMessage(s.error);
   const first = firstNameOf(userName);
 
+  // h-[100dvh]: the visible viewport (a phone's browser bars and the desktop window both), so the
+  // input row is never pushed below the bottom edge.
   const shell = isDesktop
-    ? 'fixed top-0 right-0 z-40 h-full w-[468px] border-l border-stone-200 bg-white shadow-tuscan-xl'
-    : 'fixed inset-0 z-[60] bg-white';
+    ? 'fixed top-0 right-0 z-40 h-[100dvh] w-[468px] border-l border-stone-200 bg-white shadow-tuscan-xl'
+    : 'fixed inset-x-0 top-0 z-[60] h-[100dvh] bg-white';
 
   return (
     <aside
@@ -174,7 +176,7 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
       style={isDesktop ? undefined : { paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-stone-200 px-3 py-2">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-stone-200 px-3 py-2">
         {!isDesktop && (
           <button type="button" onClick={onClose} aria-label="Back"
             className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-tuscan-lg hover:bg-stone-100 touch-manipulation">
@@ -198,7 +200,7 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
       </div>
 
       {!online && (
-        <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+        <div className="flex flex-shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
           <FiWifiOff className="flex-shrink-0" />
           <span className="flex-1">Offline — the assistant needs a connection</span>
           <Link to={`/tours?date=${today}`} onClick={followLink} className="whitespace-nowrap font-medium underline">
@@ -208,7 +210,8 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
       )}
 
       {/* Messages */}
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto bg-tuscan-gradient px-3 py-4">
+      {/* min-h-0: lets the list scroll inside the column instead of growing past it (which pushed the input off-screen) */}
+      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-tuscan-gradient px-3 py-4">
         {s.messages.length === 0 ? (
           <div>
             <p className="text-lg font-semibold text-stone-800">{first ? `Hi ${first}` : 'Hi'} — what do you need?</p>
@@ -263,10 +266,10 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
 
       {/* Error + input */}
       {errorLine && (
-        <p className="border-t border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{errorLine}</p>
+        <p className="flex-shrink-0 border-t border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{errorLine}</p>
       )}
       <form
-        className="flex items-end gap-2 border-t border-stone-200 bg-white px-3 py-2"
+        className="flex flex-shrink-0 items-end gap-2 border-t border-stone-200 bg-white px-3 py-2"
         onSubmit={(e) => { e.preventDefault(); send(s.draft, { fromDraft: true }); }}
       >
         <textarea
