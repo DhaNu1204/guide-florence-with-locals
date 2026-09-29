@@ -228,6 +228,10 @@ function assistantSystemContext(array $user, DateTime $now) {
             . "figures are only available on the owner's account, then offer tour and guest counts. Do not mention tools, "
             . "do not offer any money figure, total or margin, and give no amount.";
     }
+    // Last line on purpose (closest to the question): an English question with an Italian place name
+    // ("Accademia") drew an Italian refusal on staging.
+    $lines .= "\nLanguage: reply in the language the user's latest message is written in (English or Italian), "
+        . "whatever the words for places or products; this includes refusals.";
     return $lines;
 }
 
