@@ -5,6 +5,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { FiArrowRight } from 'react-icons/fi';
 import { buildAssistantLink, shortDay } from '../../utils/assistantUi';
+import ConfirmAssignCard, { validConfirmAssign } from './ConfirmAssignCard';
 
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 const isScalar = (v) => typeof v === 'string' || typeof v === 'number';
@@ -130,6 +131,7 @@ export default function AssistantBlocks({ blocks, onChoose, onNavigate, disabled
     else if (b.type === 'table' && validTable(b)) groups.push({ type: 'table', block: b });
     else if (b.type === 'choices' && validChoices(b)) groups.push({ type: 'choices', block: b });
     else if (b.type === 'link' && buildAssistantLink(b) && isStr(b.label)) groups.push({ type: 'link', block: b });
+    else if (b.type === 'confirm_assign' && validConfirmAssign(b)) groups.push({ type: 'confirm_assign', block: b }); // step 7.5
     // anything else (unknown type, bad shape, route not allowed): skipped
   });
   if (groups.length === 0) return null;
@@ -140,6 +142,7 @@ export default function AssistantBlocks({ blocks, onChoose, onNavigate, disabled
         if (g.type === 'departures') return <DepartureList key={i} rows={g.block.rows} />;
         if (g.type === 'table') return <Table key={i} columns={g.block.columns} rows={g.block.rows} />;
         if (g.type === 'choices') return <Choices key={i} block={g.block} onChoose={onChoose} disabled={disabled} />;
+        if (g.type === 'confirm_assign') return <ConfirmAssignCard key={i} block={g.block} onChoose={onChoose} onNavigate={onNavigate} disabled={disabled} />;
         return <LinkPill key={i} block={g.block} onNavigate={onNavigate} />;
       })}
     </div>

@@ -83,8 +83,22 @@ if (!$limiter->check('assistant', ASSISTANT_RATE_LIMIT, 60)) {
     assistantRespond(429, ['success' => false, 'error' => 'rate_limited', 'retry_after' => $limiter->getResetTime()]);
 }
 
+$rawBody = json_decode(file_get_contents('php://input'), true);
+
+// Step 7.5: the confirm card reports back AFTER the Tours endpoint saved (or undid) the change.
+if ($action === 'assign_done' || $action === 'undo_done') {
+    try {
+        ensureAssistantTables($conn);
+        $res = $action === 'assign_done' ? assistantAssignDone($conn, $user, $rawBody) : assistantUndoDone($conn, $user, $rawBody);
+    } catch (Throwable $e) {
+        error_log('assistant.php ' . $action . ': ' . $e->getMessage());
+        assistantRespond(500, ['success' => false, 'error' => 'internal_error']);
+    }
+    assistantRespond($res['status'], $res['body']);
+}
+
 try {
-    list($message, $conversationId) = assistantParseBody(json_decode(file_get_contents('php://input'), true));
+    list($message, $conversationId) = assistantParseBody($rawBody);
 } catch (InvalidArgumentException $e) {
     assistantRespond(400, ['success' => false, 'error' => $e->getMessage()]);
 }

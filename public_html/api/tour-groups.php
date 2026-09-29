@@ -20,6 +20,7 @@ require_once 'Middleware.php';
 require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBreakdown()
 require_once __DIR__ . '/rate_helpers.php';  // step 6.14: tours.rate_title + the Vasari rule
 require_once __DIR__ . '/group_helpers.php'; // step 3.5: propagateGuideToTours() lives there (shared with bokun_sync.php)
+require_once __DIR__ . '/lib/assistant_assign.php'; // step 7.5: fwlDepartureById() for the stale-card guard (no side effects)
 
 // Require authentication for all tour group operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -745,6 +746,21 @@ function updateGroup($conn, $groupId, $data) {
         return;
     }
     $checkStmt->close();
+
+    // Step 7.5: optional stale-card guard (the assistant's confirm card). The departure's
+    // EFFECTIVE guide (the group's, else a member's) must still be the one the card showed;
+    // otherwise nothing is saved (409). Without the field nothing changes.
+    if (is_array($data) && array_key_exists('expected_previous_guide_id', $data)) {
+        list($same, $current) = fwlDepartureGuideMatches($conn, 'g' . (int) $groupId, $data['expected_previous_guide_id']);
+        unset($data['expected_previous_guide_id']);
+        if (!$same) {
+            http_response_code(409);
+            echo json_encode(['success' => false, 'error' => 'departure_changed',
+                              'message' => 'This departure changed since the card was shown',
+                              'current_guide_id' => $current]);
+            return;
+        }
+    }
 
     // Build dynamic update
     $setFields = [];

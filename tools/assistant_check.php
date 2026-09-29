@@ -99,8 +99,8 @@ check('loop: tokens summed', [$r['input_tokens'], $r['output_tokens']], [250, 30
 check('loop: bad date -> tool error, not a crash', $r['tools_called'][0]['ok'], false);
 $sent = $fake->payloads[1]['messages'];
 check('loop: tool_result returned with is_error', [$sent[2]['content'][0]['type'], $sent[2]['content'][0]['is_error']], ['tool_result', true]);
-check('loop: the registry passed in is sent as is (8 tools)', array_column($fake->payloads[0]['tools'], 'name'),
-    ['day_summary', 'find_departures', 'unassigned_departures', 'find_guide', 'guide_schedule', 'free_guides', 'money', 'show_blocks']);
+check('loop: the registry passed in is sent as is (9 tools)', array_column($fake->payloads[0]['tools'], 'name'),
+    ['day_summary', 'find_departures', 'unassigned_departures', 'find_guide', 'guide_schedule', 'free_guides', 'propose_assignment', 'money', 'show_blocks']);
 check('loop: system = cached rules + context with today (Rome)',
     [count($fake->payloads[0]['system']), $fake->payloads[0]['system'][0]['cache_control'] ?? null,
      isset($fake->payloads[0]['system'][1]['cache_control']), strpos($fake->payloads[0]['system'][1]['text'], '2026-09-28') !== false],
@@ -352,6 +352,32 @@ $rk = assistantRankGuides('old guide', $g2);
 check('find_guide: an inactive guide is still found, marked inactive', [$rk['matches'][0]['guide_id'], $rk['matches'][0]['inactive'] ?? false], [2, true]);
 $rk = assistantRankGuides('agency uno', $g2);
 check('find_guide: a partner agency is marked', [$rk['matches'][0]['guide_id'], $rk['matches'][0]['partner_agency'] ?? false, isset($rk['matches'][0]['inactive'])], [3, true, false]);
+
+
+// ---- step 7.5: WhatsApp offer window, overlaps, template variables, forged cards ------------------
+$tz = new DateTimeZone('Europe/Rome');
+$at = function ($s) use ($tz) { return new DateTime($s, $tz); };
+$o = assistantWhatsappOffer('2026-09-30', $at('2026-09-30 08:00'), true, true);
+check('whatsapp: a departure today -> box, ticked', [$o['offer'], $o['default'], $o['disabled_reason']], [true, true, null]);
+$o = assistantWhatsappOffer('2026-10-01', $at('2026-09-30 21:10'), true, true);
+check('whatsapp: tomorrow before 21:30 -> no box, "tonight\'s 21:30" line', [$o['offer'], $o['note']], [false, "Included in tonight's 21:30 message"]);
+$o = assistantWhatsappOffer('2026-10-01', $at('2026-09-30 21:30'), true, true);
+check('whatsapp: tomorrow from 21:30 on -> box', $o['offer'], true);
+$o = assistantWhatsappOffer('2026-10-03', $at('2026-09-30 22:00'), true, true);
+check('whatsapp: a later date -> the evening-before line', [$o['offer'], $o['note']], [false, 'Included in the 21:30 message the evening before']);
+$o = assistantWhatsappOffer('2026-09-30', $at('2026-09-30 08:00'), false, true);
+check('whatsapp: no ASSIGN_WHATSAPP_TEMPLATE_SID -> box hidden', [$o['offer'], $o['note']], [false, null]);
+$o = assistantWhatsappOffer('2026-09-30', $at('2026-09-30 08:00'), true, false);
+check('whatsapp: no usable phone -> box shown, unticked, disabled with reason', [$o['offer'], $o['default'], $o['disabled_reason'] !== null], [true, false, true]);
+check('overlap: 09:30+240 vs 10:00+90', assistantOverlaps(570, 240, 600, 90), true);
+check('overlap: 09:00+60 ends as 10:00 starts', assistantOverlaps(540, 60, 600, 90), false);
+$vars = assistantAssignWhatsappVars('Caterina Cavalcaselle', ['title' => "Uffizi Gallery\nTour", 'date' => '2026-10-01', 'time' => '10:00', 'guests' => 7], $at('2026-09-30 22:00'));
+check('whatsapp vars: first name, one-line title, "domani", time, guests', $vars, ['1' => 'Caterina', '2' => 'Uffizi Gallery Tour', '3' => 'domani', '4' => '10:00', '5' => '7']);
+$vars = assistantAssignWhatsappVars('Ana', ['title' => 'X', 'date' => '2026-10-05', 'time' => '09:00', 'guests' => 2], $at('2026-09-30 10:00'));
+check('whatsapp vars: a later date in Italian', $vars['3'], 'lun 5 ott');
+check('a confirm_assign sent through show_blocks is dropped (only propose_assignment builds cards)',
+    assistantValidateBlock(['type' => 'confirm_assign', 'departure' => ['departure_id' => 'g1'], 'guide' => ['id' => 1]]), null);
+check('guide id normalisation: null / "" / 0 / "7"', [fwlNormGuideId(null), fwlNormGuideId(''), fwlNormGuideId(0), fwlNormGuideId('7')], [null, null, null, 7]);
 
 echo "\n" . ($fail === 0 ? "ALL OK\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);

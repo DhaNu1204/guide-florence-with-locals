@@ -12,6 +12,7 @@
 
 require_once __DIR__ . '/ClaudeClient.php';
 require_once __DIR__ . '/assistant_tools.php';
+require_once __DIR__ . '/assistant_assign.php'; // step 7.5: propose_assignment + confirm/undo audit
 
 const ASSISTANT_MAX_ROUNDS = 6;          // model calls per question; the last one may not call tools
 const ASSISTANT_TIME_BUDGET = 40;        // seconds for the whole request (the host cuts at 60)
@@ -176,6 +177,13 @@ function assistantSystemRules() {
         . "departures without a guide, guide_id for one guide's schedule, language for one language.\n"
         . "- Whether this user may see money is stated under \"Access\" below; follow it exactly. Never estimate or work "
         . "out money from any other data.\n"
+        // step 7.5: assignments
+        . "- To assign or change a guide: find the departure (find_departures / unassigned_departures) and the guide "
+        . "(find_guide), then call propose_assignment - it shows a confirm card. When several departures match, or the "
+        . "guide is not confident, ask with a choices block instead. One card per answer: for several departures, list "
+        . "them and propose the first; the next one comes after the user confirms. Never say a guide is assigned or "
+        . "changed - nothing changes until the user taps Confirm. Keep the text to one line next to the card; if it was "
+        . "refused, say why (for an inactive guide: reactivate them on the Guides page first).\n"
         . "- Plain text only in the answer: no markdown tables, no headings, no bullet lists of data that is already in a block.";
 }
 
