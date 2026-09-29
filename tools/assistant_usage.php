@@ -1,0 +1,105 @@
+<?php
+if (php_sapi_name() !== 'cli') { http_response_code(404); exit; } // CLI-only (step 7.6): never deployed
+/**
+ * Step 7.6 - assistant usage per day (Europe/Rome), read-only.
+ *
+ *   FWL_API_DIR=<api dir> php82 tools/assistant_usage.php [--days=7]
+ *
+ * Per day and user: questions, tokens (uncached in / out / cache read / cache write, and "cap
+ * tokens" = what counts toward ASSISTANT_DAILY_TOKEN_CAP: in + out + cache write + cache read / 10),
+ * errors (upstream / busy / internal, cap hits NOT included), cap hits (429 daily_cap_reached,
+ * logged since 7.6), average seconds. Then per day: assignment confirms, undos, WhatsApps
+ * really sent, and WhatsApp lines that were dry runs / not sent / failed.
+ * Nothing is written - missing tables are reported, never created.
+ */
+$apiDir = getenv('FWL_API_DIR') ?: __DIR__ . '/../public_html/api';
+$_SERVER['REQUEST_METHOD'] = 'GET'; $_SERVER['REQUEST_URI'] = '/cli';
+require $apiDir . '/config.php';
+require_once $apiDir . '/Middleware.php';
+require_once $apiDir . '/lib/assistant_core.php'; // assistantDailyTokenCap() / assistantEnabled(): the endpoint's own rules
+
+$days = 7;
+foreach (array_slice($argv, 1) as $a) if (preg_match('/^--days=(\d{1,3})$/', $a, $m)) $days = max(1, (int) $m[1]);
+
+$rome = new DateTimeZone('Europe/Rome');
+$utc = new DateTimeZone('UTC');
+$first = (new DateTime('today', $rome))->modify('-' . ($days - 1) . ' days');
+$fromUtc = (clone $first)->setTimezone($utc)->format('Y-m-d H:i:s');
+$has = function ($t) use ($conn) { $r = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($t) . "'"); return $r && $r->num_rows > 0; };
+// created_at is TIMESTAMP and the DB session is UTC (step 2.1): read it as UTC, group by the Rome day
+$romeDay = function ($ts) use ($rome, $utc) { return (new DateTime($ts, $utc))->setTimezone($rome)->format('Y-m-d D'); };
+
+$env = (string) EnvLoader::get('APP_ENV', '?');
+$cap = assistantDailyTokenCap();
+echo "assistant usage - $env - last $days day(s) from " . $first->format('Y-m-d') . " (Europe/Rome)"
+    . " - enabled=" . (assistantEnabled() ? 'true' : 'false') . " cap=$cap\n\n";
+
+$users = [];
+$r = $conn->query("SELECT id, username FROM users");
+while ($x = $r->fetch_assoc()) $users[(int) $x['id']] = $x['username'];
+
+if (!$has('assistant_logs')) {
+    echo "no assistant_logs table yet (the assistant has never answered here)\n";
+} else {
+    $st = $conn->prepare("SELECT user_id, created_at, input_tokens, output_tokens, COALESCE(cache_read_tokens, 0) cr,
+                                 COALESCE(cache_write_tokens, 0) cw, ms, error
+                          FROM assistant_logs WHERE created_at >= ? ORDER BY created_at");
+    $st->bind_param('s', $fromUtc); $st->execute(); $res = $st->get_result();
+    $agg = []; $dayCap = [];
+    while ($x = $res->fetch_assoc()) {
+        $d = $romeDay($x['created_at']);
+        $u = $users[(int) $x['user_id']] ?? ('#' . $x['user_id']);
+        $a = &$agg[$d][$u];
+        if (!$a) $a = ['q' => 0, 'in' => 0, 'out' => 0, 'cr' => 0, 'cw' => 0, 'err' => 0, 'cap' => 0, 'ms' => 0];
+        if ($x['error'] === 'daily_cap_reached') { $a['cap']++; unset($a); continue; }
+        $a['q']++;
+        foreach (['in' => 'input_tokens', 'out' => 'output_tokens', 'cr' => 'cr', 'cw' => 'cw', 'ms' => 'ms'] as $k => $f) $a[$k] += (int) $x[$f];
+        if ($x['error'] !== null && $x['error'] !== '') $a['err']++;
+        $dayCap[$d] = ($dayCap[$d] ?? 0) + (int) $x['input_tokens'] + (int) $x['output_tokens'] + (int) $x['cw'] + (int) ceil($x['cr'] / 10);
+        unset($a);
+    }
+    $st->close();
+    printf("%-15s %-10s %5s %9s %8s %10s %9s %10s %5s %5s %7s\n", 'day', 'user', 'asked', 'in', 'out', 'cache rd', 'cache wr', 'cap tokens', 'err', 'cap!', 'avg s');
+    $tot = ['q' => 0, 'err' => 0, 'cap' => 0, 'captok' => 0];
+    if (!$agg) echo "(no questions in this period)\n";
+    foreach ($agg as $d => $byUser) {
+        foreach ($byUser as $u => $a) {
+            $capTok = $a['in'] + $a['out'] + $a['cw'] + (int) ceil($a['cr'] / 10);
+            printf("%-15s %-10s %5d %9d %8d %10d %9d %10d %5d %5d %7s\n", $d, $u, $a['q'], $a['in'], $a['out'], $a['cr'], $a['cw'],
+                $capTok, $a['err'], $a['cap'], $a['q'] ? number_format($a['ms'] / $a['q'] / 1000, 1) : '-');
+            $tot['q'] += $a['q']; $tot['err'] += $a['err']; $tot['cap'] += $a['cap'];
+        }
+        printf("%-15s %-10s %5s %9s %8s %10s %9s %10d %5s %5s   (%d%% of the cap)\n", '', '= day', '', '', '', '', '', $dayCap[$d] ?? 0, '', '', $cap > 0 ? round(100 * ($dayCap[$d] ?? 0) / $cap) : 0);
+        $tot['captok'] += $dayCap[$d] ?? 0;
+    }
+    echo "\ntotal: {$tot['q']} questions, {$tot['captok']} cap tokens, {$tot['err']} errors, {$tot['cap']} cap hits\n";
+    $e = $conn->prepare("SELECT error, COUNT(*) n FROM assistant_logs WHERE created_at >= ? AND error IS NOT NULL AND error <> 'daily_cap_reached' GROUP BY error ORDER BY n DESC LIMIT 5");
+    $e->bind_param('s', $fromUtc); $e->execute(); $er = $e->get_result();
+    while ($x = $er->fetch_assoc()) echo "  error x{$x['n']}: " . mb_substr($x['error'], 0, 100) . "\n";
+    $e->close();
+}
+
+echo "\n";
+if (!$has('assistant_actions')) {
+    echo "no assistant_actions table yet (no assignment confirmed from a card here)\n";
+} else {
+    $st = $conn->prepare("SELECT action, whatsapp_sent, whatsapp_result, created_at FROM assistant_actions WHERE created_at >= ? ORDER BY created_at");
+    $st->bind_param('s', $fromUtc); $st->execute(); $res = $st->get_result();
+    $act = [];
+    while ($x = $res->fetch_assoc()) {
+        $d = $romeDay($x['created_at']);
+        $a = &$act[$d];
+        if (!$a) $a = ['confirm' => 0, 'undo' => 0, 'wa_sent' => 0, 'wa_dry' => 0, 'wa_not' => 0, 'wa_fail' => 0];
+        if ($x['action'] === 'undo') $a['undo']++; else $a['confirm']++;
+        $w = (string) $x['whatsapp_result'];
+        if ((int) $x['whatsapp_sent'] === 1) $a['wa_sent']++;
+        elseif (strpos($w, 'DRY RUN') === 0) $a['wa_dry']++;
+        elseif (strpos($w, 'failed') === 0) $a['wa_fail']++;
+        elseif (strpos($w, 'not sent') === 0) $a['wa_not']++;
+        unset($a);
+    }
+    $st->close();
+    printf("%-15s %8s %6s %8s %8s %9s %9s\n", 'day', 'confirms', 'undos', 'WA sent', 'WA dry', 'WA not', 'WA failed');
+    if (!$act) echo "(no confirms or undos in this period)\n";
+    foreach ($act as $d => $a) printf("%-15s %8d %6d %8d %8d %9d %9d\n", $d, $a['confirm'], $a['undo'], $a['wa_sent'], $a['wa_dry'], $a['wa_not'], $a['wa_fail']);
+}

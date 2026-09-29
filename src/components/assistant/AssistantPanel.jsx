@@ -6,6 +6,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FiArrowLeft, FiX, FiEdit, FiSend, FiWifiOff, FiClock } from 'react-icons/fi';
 import AssistantBlocks from './AssistantBlocks';
+import VoiceInput from './VoiceInput';
+import { appendTranscript } from '../../utils/voiceInput';
 import {
   useAssistantState, setAssistantState, getAssistantState, resetConversation, nextMessageId,
 } from './assistantStore';
@@ -50,6 +52,7 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
   const [recent, setRecent] = useState(null);
   const listRef = useRef(null);
   const inputRef = useRef(null);
+  const [voice, setVoice] = useState({ listening: false, transcript: '', error: null }); // step 7.6
 
   const suggestions = [
     "Today's tours and guests",
@@ -268,6 +271,15 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
       {errorLine && (
         <p className="flex-shrink-0 border-t border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{errorLine}</p>
       )}
+      {(voice.listening || voice.error) && (
+        <p
+          className={`flex-shrink-0 border-t px-3 py-2 text-sm ${voice.error ? 'border-amber-100 bg-amber-50 text-amber-800' : 'border-stone-100 bg-stone-50 text-stone-700'}`}
+          role={voice.error ? 'alert' : 'status'}
+          data-testid="voice-status"
+        >
+          {voice.error || <><span className="font-semibold text-red-600">Listening…</span>{voice.transcript ? ` ${voice.transcript}` : ''}</>}
+        </p>
+      )}
       <form
         className="flex flex-shrink-0 items-end gap-2 border-t border-stone-200 bg-white px-3 py-2"
         onSubmit={(e) => { e.preventDefault(); send(s.draft, { fromDraft: true }); }}
@@ -283,6 +295,16 @@ export default function AssistantPanel({ status, userName, isDesktop: forceDeskt
           placeholder="Ask about tours, guides…"
           aria-label="Message"
           className="max-h-32 min-h-[44px] flex-1 resize-none rounded-tuscan-lg border border-stone-300 px-3 py-2.5 text-sm focus:border-terracotta-400 focus:outline-none focus:ring-2 focus:ring-terracotta-200"
+        />
+        {/* step 7.6: the heard text only goes into the box - the user checks it and taps Send */}
+        <VoiceInput
+          userName={userName}
+          disabled={s.sending}
+          onStatus={setVoice}
+          onText={(t) => {
+            setAssistantState({ draft: appendTranscript(getAssistantState().draft, t) });
+            if (inputRef.current) inputRef.current.focus();
+          }}
         />
         <button type="submit" aria-label="Send" disabled={s.sending || !s.draft.trim()}
           className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-tuscan-lg bg-terracotta-500 text-white hover:bg-terracotta-600 disabled:opacity-50 touch-manipulation">

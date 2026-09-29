@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, configure } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const getGuides = vi.fn();
@@ -24,18 +24,22 @@ const old = { id: 2, name: 'Old Guide', email: '', phone: '', languages: [], act
 
 const renderIt = () => render(<MemoryRouter><Guides /></MemoryRouter>);
 
-describe('Guides page flags (step 7.2b)', () => {
+// The Guides page is heavy to render; under a full parallel suite it took 15-27 s (seen 2026-09-29).
+// Generous waits so the suite is not flaky - they only matter when the machine is busy.
+configure({ asyncUtilTimeout: 30000 });
+
+describe('Guides page flags (step 7.2b)', { timeout: 90000 }, () => {
   beforeEach(() => { getGuides.mockReset(); setGuideFlags.mockReset(); auth.admin = true; });
 
-  it('asks for active guides by default, and inactive / all on the filter', { timeout: 15000 }, async () => {
+  it('asks for active guides by default, and inactive / all on the filter', async () => {
     getGuides.mockResolvedValue(page([giulia]));
     renderIt();
-    await waitFor(() => expect(getGuides).toHaveBeenCalledWith(1, 20, 'active'), { timeout: 5000 });
+    await waitFor(() => expect(getGuides).toHaveBeenCalledWith(1, 20, 'active'), { timeout: 30000 });
     getGuides.mockResolvedValue(page([old]));
     fireEvent.click(screen.getByRole('button', { name: 'Inactive' }));
-    await waitFor(() => expect(getGuides).toHaveBeenLastCalledWith(1, 20, 'inactive'), { timeout: 5000 });
+    await waitFor(() => expect(getGuides).toHaveBeenLastCalledWith(1, 20, 'inactive'), { timeout: 30000 });
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
-    await waitFor(() => expect(getGuides).toHaveBeenLastCalledWith(1, 20, null), { timeout: 5000 });
+    await waitFor(() => expect(getGuides).toHaveBeenLastCalledWith(1, 20, null), { timeout: 30000 });
   });
 
   it('an admin switches a guide off: only the flag is sent, the list reloads', async () => {
