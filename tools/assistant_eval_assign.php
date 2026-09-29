@@ -136,11 +136,18 @@ $repU = null; $repG = null;
 foreach ($units as $u) {
     if ($u['guide_id'] !== null && $uniqueAt($u) && ($g = $freeGuide($u))) { $repU = $u; $repG = $g; break; }
 }
-// 7 past: yesterday's first departure alone at its time
-$pastU = null;
-$yUnits = array_values(array_filter(fwlDepartureUnits($conn, $yesterday, $yesterday), function ($u) { return $u['bookings'] > 0; }));
-foreach ($yUnits as $u) {
-    if (count(array_filter($yUnits, function ($o) use ($u) { return $o['time'] === $u['time']; })) === 1) { $pastU = $u; break; }
+// 7 past: the latest departure that has already started (today, else up to 7 days back), alone at its time
+$pastU = null; $pastWhen = null;
+for ($k = 0; $k <= 7 && !$pastU; $k++) {
+    $d = (clone $now)->modify("-$k day")->format('Y-m-d');
+    $dUnits = array_values(array_filter(fwlDepartureUnits($conn, $d, $d), function ($u) use ($now) {
+        return $u['bookings'] > 0 && strtotime($u['date'] . ' ' . $u['time']) <= strtotime($now->format('Y-m-d H:i:s'));
+    }));
+    foreach (array_reverse($dUnits) as $u) {
+        if (count(array_filter($dUnits, function ($o) use ($u) { return $o['time'] === $u['time']; })) === 1) {
+            $pastU = $u; $pastWhen = $k === 0 ? 'today' : ($k === 1 ? 'yesterday' : 'on ' . (new DateTime($d))->format('l j F')); break;
+        }
+    }
 }
 $pastG = $activeGuides[0] ?? null;
 // 8 Italian: tomorrow, keyword + hour unique, guide with a unique first name and free
@@ -168,7 +175,7 @@ $Q = [
           $clashU ? ['dep' => $clashU['departure_id'], 'guide' => (int) $clashG['id']] : null],
     6 => ['en', $repU ? "Assign {$repG['name']} to " . $say($repU) : null, 'replace',
           $repU ? ['dep' => $repU['departure_id'], 'guide' => (int) $repG['id'], 'old' => $repU['guide_name'], 'new' => $repG['name']] : null],
-    7 => ['en', $pastU && $pastG ? "Assign {$pastG['name']} to the {$pastU['time']} " . $keyword($pastU['title']) . ' yesterday' : null, 'refuse', '/past|already (started|happened|took place)|yesterday/i'],
+    7 => ['en', $pastU && $pastG ? "Assign {$pastG['name']} to the {$pastU['time']} " . $keyword($pastU['title']) . ' ' . $pastWhen : null, 'refuse', '/past|already (started|happened|took place)|yesterday/i'],
     8 => ['it', $itU ? 'assegna ' . explode(' ', trim($itG['name']))[0] . ' alle ' . ltrim(substr($itU['time'], 0, 2), '0') . (substr($itU['time'], 3, 2) !== '00' ? ':' . substr($itU['time'], 3, 2) : '') . ' ' . $keyword($itU['title']) . ' domani' : null, 'card',
           $itU ? ['dep' => $itU['departure_id'], 'guide' => (int) $itG['id'], 'replace' => $itU['guide_id'] !== null] : null],
 ];
@@ -220,7 +227,7 @@ foreach ($Q as $n => list($lang, $question, $kind, $exp)) {
     }
     if (preg_match('/\b(is now assigned|has been assigned|assigned successfully|ho assegnato|è stat[oa] assegnat)/iu', $text)) $why[] = 'claims the guide is assigned';
     $detected = assistantDetectLanguage($text); // the server's own detector; null = cannot tell (short text)
-    if ($detected !== null && $detected !== $lang) $why[] = 'answered in ' . ($detected === 'it' ? 'Italian' : 'English');
+    if ($detected !== null && $detected !== ($lang === 'it' ? 'Italian' : 'English')) $why[] = 'answered in ' . $detected;
     if ($res['status'] !== 200) $why = ['status ' . $res['status'] . ' ' . ($b['error'] ?? '')];
     $ok = !$why;
     if ($ok) $pass++;
