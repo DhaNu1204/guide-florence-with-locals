@@ -106,6 +106,8 @@ try {
 try {
     ensureAssistantTables($conn);
     if (assistantTokensToday($conn, assistantNow()) >= assistantDailyTokenCap()) {
+        // step 7.6: a zero-token log row so tools/assistant_usage.php can count cap hits
+        assistantWriteLog($conn, ['user_id' => (int) $user['id'], 'question' => $message, 'error' => 'daily_cap_reached']);
         assistantRespond(429, ['success' => false, 'error' => 'daily_cap_reached']);
     }
     $result = assistantHandle($conn, $client, $user, $message, $conversationId);
