@@ -76,8 +76,12 @@ describe('classifyError / isTransient', () => {
 
 describe('messages', () => {
   it('describes a failed load in plain words', () => {
-    expect(describeLoadError(new TimeoutError(15000))).toMatch(/did not answer in time/);
-    expect(describeLoadError({ code: 'ERR_NETWORK', isAxiosError: true })).toMatch(/No connection/);
+    // Step 4.10: measured facts only - never "the connection is probably weak"
+    expect(describeLoadError(new TimeoutError(15000))).toBe('The server did not answer within 15 seconds.');
+    expect(describeLoadError({ code: 'ECONNABORTED', config: { timeout: 15000, fwlRetried: true } }))
+      .toBe('The server did not answer within 15 seconds (tried twice).');
+    expect(describeLoadError({ code: 'ERR_NETWORK', isAxiosError: true })).toMatch(/could not reach the server/);
+    expect(describeLoadError(new TimeoutError(15000))).not.toMatch(/weak/);
     expect(describeLoadError({ response: { status: 503 } })).toMatch(/error 503/);
   });
 

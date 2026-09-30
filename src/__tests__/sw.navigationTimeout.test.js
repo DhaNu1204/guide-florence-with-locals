@@ -11,7 +11,9 @@ import { resolve } from 'node:path';
 import vm from 'node:vm';
 
 const SW_SOURCE = readFileSync(resolve(__dirname, '../../public/sw.js'), 'utf8');
-const SHELL = '<!DOCTYPE html><html><head><meta charset="UTF-8" /></head><body><div id="root"></div></body></html>';
+const SHELL = '<!DOCTYPE html><html><head><meta charset="UTF-8" />'
+  + '<script type="module" crossorigin src="/assets/index-AbC123xy.js"></script>'
+  + '<link rel="stylesheet" crossorigin href="/assets/index-Css456zz.css"></head><body><div id="root"></div></body></html>';
 
 let listeners;
 let cacheStore;
@@ -60,7 +62,14 @@ function navigate(url = 'https://withlocals.test/tickets') {
 
 const html = (body) => new Response(body, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 
-beforeEach(() => { vi.useFakeTimers(); loadWorker(); });
+const asset = (type) => new Response('x', { status: 200, headers: { 'Content-Type': type } });
+// Step 4.10: a shell is only served when the files it names are cached as well.
+const cacheShellAssets = () => {
+  cacheStore.set('/assets/index-AbC123xy.js', asset('text/javascript'));
+  cacheStore.set('/assets/index-Css456zz.css', asset('text/css'));
+};
+
+beforeEach(() => { vi.useFakeTimers(); loadWorker(); cacheShellAssets(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('sw.js navigation (step 4.8)', () => {
@@ -108,5 +117,42 @@ describe('sw.js navigation (step 4.8)', () => {
     await navigate();
     await vi.advanceTimersByTimeAsync(0);
     expect(await cacheStore.get('/index.html').clone().text()).toBe(SHELL);
+  });
+});
+
+describe('sw.js cached shell must be bootable (step 4.10)', () => {
+  it('a shell whose entry script is not cached is never served: the page waits for the network', async () => {
+    cacheStore.set('/index.html', html(SHELL));
+    cacheStore.delete('/assets/index-AbC123xy.js');
+    let answer;
+    networkFetch = () => new Promise((r) => { answer = r; });
+    const responded = navigate();
+    let settled = null;
+    responded.then((r) => { settled = r; });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(settled).toBeNull();
+    answer(html(SHELL.replace('root', 'root-live')));
+    const body = await (await responded).text();
+    expect(body).toContain('root-live');
+    expect(body).not.toContain('fwl-shell');
+  });
+
+  it('an HTML answer cached under the script URL does not count as the script', async () => {
+    cacheStore.set('/index.html', html(SHELL));
+    cacheStore.set('/assets/index-AbC123xy.js', html('<html>spa fallback</html>'));
+    networkFetch = async () => { throw new TypeError('Failed to fetch'); };
+    let failed = false;
+    await navigate().catch(() => { failed = true; });
+    expect(failed).toBe(true); // no usable shell: the network error stands (as on a first visit)
+  });
+
+  it('never intercepts /api/ (live data, auth headers untouched)', () => {
+    let responded = false;
+    listeners.fetch({
+      request: { url: 'https://withlocals.test/api/tours.php?view=list', method: 'GET', mode: 'cors' },
+      respondWith: () => { responded = true; },
+      waitUntil: () => {},
+    });
+    expect(responded).toBe(false);
   });
 });

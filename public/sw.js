@@ -14,6 +14,14 @@
  *  - Hashed static assets (/assets/*) are cached stale-while-revalidate.
  *
  * Bump CACHE_VERSION to force-clear old caches on deploy if ever needed.
+ *
+ * Step 4.10 (2026-09-30): the cached shell is served only if every script and stylesheet it names
+ * is in the cache too - an index.html whose bundle is gone (pruned from the server after two
+ * deploys, never cached here) would start a white page. The app itself now checks for a newer
+ * build on open/resume (src/utils/appUpdate.js), so a load started from this cached shell moves
+ * to the current version as soon as the network answers. /api/ is still never touched.
+ * CACHE_VERSION stays fwl-v2 on purpose: a new name would delete the cached shell that a phone
+ * on a stalled link starts from.
  */
 const CACHE_VERSION = 'fwl-v2'; // step 4.1b: bumped to drop caches that hold an HTML fallback under an asset URL
 
@@ -32,11 +40,23 @@ function isHtml(res) {
 // shell is the same app either way - its own requests then have their own timeouts.
 const NAV_TIMEOUT_MS = 5000;
 
+// Step 4.10: every /assets/ file a shell names must be cached (as a real asset, not HTML).
+async function shellIsBootable(html) {
+  const refs = html.match(/\/assets\/[A-Za-z0-9._-]+\.(?:js|css)/g) || [];
+  if (!refs.length) return false;
+  for (const ref of refs) {
+    const hit = await caches.match(ref);
+    if (!hit || isHtml(hit)) return false;
+  }
+  return true;
+}
+
 // The cached index.html, marked so the page knows it was started from the cache.
 async function cachedShell() {
   const cached = await caches.match('/index.html');
   if (!cached) return null;
   const html = await cached.text();
+  if (!(await shellIsBootable(html))) return null; // step 4.10: never start a shell that cannot run
   const headers = new Headers(cached.headers);
   headers.delete('content-length');
   headers.delete('content-encoding');

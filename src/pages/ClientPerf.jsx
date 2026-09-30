@@ -180,6 +180,13 @@ const ClientPerf = () => {
                   <td className="px-3 py-2 whitespace-nowrap text-[11px] text-stone-600">
                     <div>{r.effective_type || 'unknown'}{r.conn_rtt !== null ? ` · ${r.conn_rtt}ms` : ''}</div>
                     <div>{r.device}</div>
+                    {/* Step 4.10: home-screen app or a browser tab, and which install */}
+                    {r.display_mode && (
+                      <div className={r.display_mode === 'standalone' ? 'text-renaissance-700 font-medium' : ''}>
+                        {r.display_mode === 'standalone' ? 'home-screen app' : 'browser tab'}
+                        {r.install_id ? ` · ${String(r.install_id).slice(0, 6)}` : ''}
+                      </div>
+                    )}
                     {!r.online && <div className="text-red-600">offline</div>}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-[11px] text-stone-600">
@@ -194,6 +201,14 @@ const ClientPerf = () => {
                     {r.timeouts > 0 && <div className="text-red-600">{r.timeouts}× timed out</div>}
                     {r.auto_retries > 0 && <div>auto-retry {r.auto_retry_ok}/{r.auto_retries} ok</div>}
                     {r.user_retries > 0 && <div>Retry pressed {r.user_retries}×</div>}
+                    {/* Step 4.10: what stalled, and could the server be reached right after */}
+                    {r.stuck && <div className="text-red-600">stalled: {r.stuck}</div>}
+                    {r.probe_status && (
+                      <div className={r.probe_status === 'ok' ? '' : 'text-red-600'}>
+                        server check: {r.probe_status}{r.probe_ms !== null ? ` ${r.probe_ms}ms` : ''}
+                      </div>
+                    )}
+                    {r.sent_late === 1 && <div>delivered by a later load</div>}
                     <div className="text-stone-400">sent: {r.reason}</div>
                   </td>
                 </tr>

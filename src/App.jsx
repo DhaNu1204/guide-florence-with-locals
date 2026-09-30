@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocat
 import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './components/Toast/ToastProvider';
+import UpdateBanner from './components/UpdateBanner'; // step 4.10: installed app picks up new versions
 import { SESSION_EXPIRED_EVENT, FORBIDDEN_EVENT, resetSessionExpiryGuard } from './services/sessionExpiry';
 import { WRITE_UNKNOWN_EVENT, WRITE_UNKNOWN_MESSAGE } from './services/netPolicy';
 import ModernLayout from './components/Layout/ModernLayout';
@@ -307,6 +308,7 @@ function App() {
           <SessionExpiryListener />
           <ForbiddenListener />
           <WriteUnknownListener />
+          <UpdateBanner />
           <AuthProvider>
             <PageTitleProvider>
               <BokunAutoSyncProvider>

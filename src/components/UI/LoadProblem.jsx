@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FiAlertTriangle, FiRefreshCw } from 'react-icons/fi';
-import { describeLoadError, formatShownAt } from '../../services/netPolicy';
-import { markUserRetry } from '../../utils/perfBeacon';
+import {
+  describeLoadError, formatShownAt, classifyError, probeServer, describeProbe,
+} from '../../services/netPolicy';
+import { markUserRetry, markProbe } from '../../utils/perfBeacon';
 
 /**
  * Step 4.8: the one way a page says its data could not be loaded.
@@ -13,8 +15,27 @@ import { markUserRetry } from '../../utils/perfBeacon';
  *                       "we don't know" are different answers.
  *
  * Both carry a Retry button (44 px, thumb-sized) and a one-line plain reason.
+ *
+ * Step 4.10: after a timeout or a network failure the banner checks, once, whether the server can
+ * be reached at all (health.php?probe=1, 6 s) and says what it measured - instead of the old
+ * guess "the connection is probably weak". The result also goes to the field recorder.
  */
 const LoadProblem = ({ error, what = 'the data', shownAt = null, onRetry, retrying = false }) => {
+  const [probe, setProbe] = useState(null);
+  const kind = error && typeof error !== 'string' ? classifyError(error).kind : null;
+  const shouldProbe = kind === 'timeout' || kind === 'network';
+
+  useEffect(() => {
+    if (!shouldProbe) { setProbe(null); return undefined; }
+    let alive = true;
+    setProbe({ status: 'checking' });
+    probeServer().then((p) => {
+      markProbe(p);
+      if (alive) setProbe(p);
+    });
+    return () => { alive = false; };
+  }, [error, shouldProbe]);
+
   if (!error) return null;
   const reason = typeof error === 'string' ? error : describeLoadError(error);
   const stale = Boolean(shownAt);
@@ -40,6 +61,11 @@ const LoadProblem = ({ error, what = 'the data', shownAt = null, onRetry, retryi
               : `Could not load ${what}.`}
           </p>
           <p className="text-sm opacity-90">{reason}</p>
+          {probe && (
+            <p className="text-sm opacity-90 mt-1" data-testid="load-problem-probe">
+              {probe.status === 'checking' ? 'Checking whether the server can be reached…' : describeProbe(probe)}
+            </p>
+          )}
         </div>
       </div>
       {onRetry && (

@@ -16,7 +16,7 @@ vi.mock('../../contexts/PageTitleContext', () => {
   return { usePageTitle: () => ({ setPageTitle }) };
 });
 vi.mock('../../utils/perfBeacon', () => ({
-  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(),
+  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(), markProbe: vi.fn(),
 }));
 vi.mock('../../services/ticketsService', () => ({
   getTickets: vi.fn(), addTicket: vi.fn(), deleteTicket: vi.fn(), updateTicket: vi.fn(),
@@ -38,7 +38,7 @@ describe('Tickets page when the fetch fails (step 4.8)', () => {
     renderPage();
     const box = await screen.findByTestId('load-problem');
     expect(box).toHaveTextContent('Could not load the tickets.');
-    expect(box).toHaveTextContent('No connection to the server');
+    expect(box).toHaveTextContent('The request could not reach the server');
     expect(screen.queryByText('No tickets available')).toBeNull();
     expect(markListStart).toHaveBeenCalled();
     expect(markListEnd).toHaveBeenCalledWith(false);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FiCalendar,
@@ -17,11 +17,15 @@ import {
 } from 'react-icons/fi';
 import Card from './UI/Card';
 import Button from './UI/Button';
-import { getTours, getAllGuides, getRecentGuideResponses } from '../services/mysqlDB';
+import {
+  getTours, getAllGuides, getRecentGuideResponses, getUnassignedReport, getUnassignedCount,
+} from '../services/mysqlDB';
 import LoadProblem from './UI/LoadProblem';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.8: measurement only
+import { saveLastGood, loadLastGood } from '../services/lastGood';
+import { formatShownAt } from '../services/netPolicy';
 import { authFetch } from '../services/authFetch';
-import { isTicketProduct, filterToursOnly } from '../utils/tourFilters';
+import { filterToursOnly } from '../utils/tourFilters';
 import { isGuidePaid, guidePaymentState } from '../utils/paymentBadges';
 import { useBokunSync } from '../hooks/useBokunAutoSync';
 import { useToast } from './Toast/ToastProvider';
@@ -37,6 +41,33 @@ const toDateParam = (d) => {
   if (isNaN(dt.getTime())) return '';
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 };
+
+// Step 4.10: YYYY-MM-DD in the phone's own calendar (no UTC shift), and "12:30" not "12:30:00".
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '');
+
+/**
+ * Step 4.10: "Tours needing a guide — next 7 days" lists DEPARTURES from the server's unassigned
+ * report - the rule the Tours page and the assistant use (a group counts once, tour vs ticket from
+ * products.product_type, the group's guide counts). It used to count bookings with a title keyword
+ * filter, so it said 31 where the report said 20. Each row keeps one member booking for "Ask".
+ */
+export const departureRows = (departures, tours) => (Array.isArray(departures) ? departures : []).map((d) => {
+  const unit = String(d.tour_unit || '');
+  const id = Number(unit.slice(1));
+  const members = (Array.isArray(tours) ? tours : []).filter((t) => !t.cancelled && (
+    unit.startsWith('g') ? Number(t.group_id) === id : Number(t.id) === id));
+  return {
+    key: unit,
+    date: d.date,
+    time: hhmm(d.time),
+    title: d.title,
+    bookings: d.bookings,
+    pax: d.pax,
+    language: d.language,
+    tour: members[0] || null,
+  };
+});
 
 // Helper function to format time ago
 const formatTimeAgo = (date) => {
@@ -95,9 +126,31 @@ const Dashboard = () => {
   const [loadError, setLoadError] = useState(null);
   const [loadedAt, setLoadedAt] = useState(null);
   const [shownAt, setShownAt] = useState(null);
+  // Step 4.10: the last good Dashboard kept on the phone, shown (with its time) until fresh data
+  // arrives or when the load fails - never an empty page when something is known.
+  const [savedAt, setSavedAt] = useState(null);
+  const loadedAtRef = useRef(null);
+  const savedAtRef = useRef(null);
   const toast = useToast();
 
+  const applyView = (v) => {
+    if (!v) return;
+    setStats(v.stats);
+    setRecentTours(v.recentTours || []);
+    setUpcomingTours(v.upcomingTours || []);
+    setNeedsGuideSoon(v.needsGuideSoon || []);
+    setRecentResponses(v.recentResponses || []);
+    setGuides(v.guides || []);
+  };
+
   useEffect(() => {
+    let alive = true;
+    loadLastGood('dashboard').then((saved) => {
+      if (!alive || !saved || loadedAtRef.current) return;
+      applyView(saved.data);
+      savedAtRef.current = saved.at;
+      setSavedAt(saved.at);
+    });
     loadDashboardData();
 
     // Reload dashboard when a Bokun sync brings in new/changed bookings
@@ -106,43 +159,56 @@ const Dashboard = () => {
       loadDashboardData(true);
     };
     window.addEventListener('florence:bookings-updated', onBookingsUpdated);
-    return () => window.removeEventListener('florence:bookings-updated', onBookingsUpdated);
+    return () => {
+      alive = false;
+      window.removeEventListener('florence:bookings-updated', onBookingsUpdated);
+    };
   }, []);
 
   const loadDashboardData = async (forceRefresh = false) => {
     setLoading(true);
     markListStart(); // step 4.8: the page's own data fetch, for the field recorder
     try {
-      // Fetch upcoming tours for display lists
-      // Step 4.2: light rows (view=list) — the Dashboard reads no bokun_data
-      const upcomingResponse = await getTours(forceRefresh, 1, 500, { upcoming: true, view: 'list' });
-      // Fetch all tours for accurate payment stats (past tours need to be counted)
-      const allToursResponse = await getTours(forceRefresh, 1, 500, { view: 'list' });
-      const guidesData = await getAllGuides();
-      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
-
-      // Recent guide availability responses (accepted/declined, last 7 days)
-      try {
-        const recentResp = await getRecentGuideResponses(7);
-        setRecentResponses(recentResp && recentResp.data ? recentResp.data : []);
-      } catch (e) {
-        console.warn('Failed to fetch recent guide responses:', e);
-      }
-
-      // Fetch pending payments count from API (authoritative source)
+      const today = new Date();
+      const inAWeek = new Date(today);
+      inAWeek.setDate(inAWeek.getDate() + 7);
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      let pendingPaymentsCount = 0;
-      try {
-        const pendingResponse = await authFetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`);
-        if (pendingResponse.ok) {
-          const pendingData = await pendingResponse.json();
-          if (pendingData.success) {
-            pendingPaymentsCount = pendingData.count || (pendingData.data ? pendingData.data.length : 0);
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to fetch pending payments count:', e);
-      }
+
+      // Step 4.10: the requests go out together. They used to run one after another, so on a
+      // stalling link each one could cost 30 s (15 s + one retry) before the next even started.
+      // The two tour lists keep their order: the second is normally answered by the 1-minute
+      // cache the first one fills, so running them together would only add a download.
+      const tourLists = (async () => {
+        // Step 4.2: light rows (view=list) — the Dashboard reads no bokun_data
+        const upcoming = await getTours(forceRefresh, 1, 500, { upcoming: true, view: 'list' });
+        // All tours, for the paid-tours stat (past tours need to be counted)
+        const all = await getTours(forceRefresh, 1, 500, { view: 'list' });
+        return [upcoming, all];
+      })();
+      // Recent guide availability responses (accepted/declined, last 7 days) - optional
+      const recentResponsesReq = getRecentGuideResponses(7)
+        .then((r) => (r && r.data ? r.data : []))
+        .catch((e) => { console.warn('Failed to fetch recent guide responses:', e); return []; });
+      // Pending payments count from the API (authoritative source) - optional
+      const pendingReq = authFetch(`${API_BASE_URL}/guide-payments.php?action=pending_tours`)
+        .then(async (res) => {
+          if (!res.ok) return 0;
+          const pendingData = await res.json();
+          return pendingData.success ? (pendingData.count || (pendingData.data ? pendingData.data.length : 0)) : 0;
+        })
+        .catch((e) => { console.warn('Failed to fetch pending payments count:', e); return 0; });
+
+      const [[upcomingResponse, allToursResponse], guidesData, weekReport, unassignedTotal, recentResp, pendingPaymentsCount] =
+        await Promise.all([
+          tourLists,
+          getAllGuides(),
+          // Step 4.10: who still needs a guide = the server's unassigned report (departures)
+          getUnassignedReport({ start_date: ymd(today), end_date: ymd(inAWeek) }),
+          getUnassignedCount({ upcoming: true }),
+          recentResponsesReq,
+          pendingReq,
+        ]);
+      const guidesList = Array.isArray(guidesData) ? guidesData : (guidesData?.data || []);
 
       const upcomingData = upcomingResponse && upcomingResponse.data ? upcomingResponse.data : upcomingResponse;
       const allToursData = allToursResponse && allToursResponse.data ? allToursResponse.data : allToursResponse;
@@ -152,7 +218,7 @@ const Dashboard = () => {
         const allGuidedTours = filterToursOnly(allToursData);
         const upcomingGuidedTours = filterToursOnly(upcomingData);
 
-        calculateStats(allGuidedTours, upcomingGuidedTours, guidesData, pendingPaymentsCount);
+        const newStats = calculateStats(allGuidedTours, pendingPaymentsCount, unassignedTotal);
 
         const now = new Date();
 
@@ -174,27 +240,8 @@ const Dashboard = () => {
           })
           .slice(0, 10);
 
-        // Tours needing a guide within the next 7 days (today .. today+7)
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
-        const endOfWindow = new Date(startOfToday);
-        endOfWindow.setDate(endOfWindow.getDate() + 7);
-        endOfWindow.setHours(23, 59, 59, 999);
-
-        const needsSoon = upcomingGuidedTours
-          .filter(tour => {
-            if (tour.cancelled) return false;
-            const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
-            if (hasGuide) return false;
-            const tourDate = new Date(tour.date);
-            tourDate.setHours(0, 0, 0, 0);
-            return tourDate >= startOfToday && tourDate <= endOfWindow;
-          })
-          .sort((a, b) => {
-            const dateA = new Date(a.date + ' ' + a.time);
-            const dateB = new Date(b.date + ' ' + b.time);
-            return dateA - dateB;
-          });
+        // Departures needing a guide within the next 7 days (today .. today+7), from the report
+        const needsSoon = departureRows(weekReport && weekReport.departures, upcomingData);
 
         // Upcoming tours list
         const upcoming = upcomingGuidedTours
@@ -211,37 +258,37 @@ const Dashboard = () => {
           })
           .slice(0, 15);
 
-        setRecentTours(recent);
-        setUpcomingTours(upcoming);
-        setNeedsGuideSoon(needsSoon);
+        const view = {
+          stats: newStats,
+          recentTours: recent,
+          upcomingTours: upcoming,
+          needsGuideSoon: needsSoon,
+          recentResponses: recentResp,
+          guides: guidesList,
+        };
+        applyView(view);
+        saveLastGood('dashboard', view); // step 4.10
       }
+      loadedAtRef.current = Date.now();
       setLoadError(null);
       setShownAt(null);
-      setLoadedAt(Date.now());
+      setSavedAt(null);
+      setLoadedAt(loadedAtRef.current);
       markListEnd(true);
     } catch (error) {
       markListEnd(false);
       console.error('Error loading dashboard data:', error);
       setLoadError(error);
-      setShownAt(loadedAt); // keep what is on screen with its time - or show nothing
+      // keep what is on screen with its time: this session's data, else the saved copy - or nothing
+      setShownAt(loadedAtRef.current || savedAtRef.current || null);
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateStats = (allTours, upcomingTours, guides, pendingPaymentsCount = 0) => {
+  const calculateStats = (allTours, pendingPaymentsCount = 0, unassignedDepartures = 0) => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-
-    // Count unassigned UPCOMING tours (future tours without guide)
-    const unassignedTours = upcomingTours.filter(tour => {
-      if (tour.cancelled) return false;
-      const tourDate = new Date(tour.date);
-      tourDate.setHours(0, 0, 0, 0);
-      if (tourDate < now) return false;
-      const hasGuide = tour.guide_id && tour.guide_name && tour.guide_id !== 'null' && tour.guide_id !== '';
-      return !hasGuide;
-    }).length;
 
     // Count paid PAST tours (for display purposes)
     const pastTours = allTours.filter(tour => {
@@ -255,16 +302,19 @@ const Dashboard = () => {
     const paidTours = pastTours.filter(tour => isGuidePaid(tour)).length;
 
     // Use API count for unpaid tours (authoritative source - checks payments table)
-    setStats({
-      unassignedTours,
+    return {
+      // Step 4.10: upcoming DEPARTURES without a guide, from the server's unassigned report (the
+      // number the Tours page banner shows); it used to count bookings in the browser.
+      unassignedTours: Number(unassignedDepartures) || 0,
       unpaidTours: pendingPaymentsCount,
       paidTours,
       totalGuidedTours: allTours.filter(t => !t.cancelled).length
-    });
+    };
   };
 
 
-  if (loading) {
+  // Step 4.10: the spinner only when there is nothing at all to show (no saved copy either)
+  if (loading && !loadedAt && !savedAt) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-terracotta-500"></div>
@@ -285,6 +335,11 @@ const Dashboard = () => {
   return (
     <div className="space-y-4 md:space-y-6">
       <LoadProblem error={loadError} what="the dashboard" shownAt={shownAt} onRetry={() => loadDashboardData(true)} />
+      {!loadError && savedAt && !loadedAt && (
+        <p className="text-sm text-stone-500" data-testid="dashboard-saved-note">
+          Showing saved data from {formatShownAt(savedAt)} — updating…
+        </p>
+      )}
 
       {/* Header with Tuscan styling */}
       <div className="flex items-center justify-between gap-2">
@@ -323,7 +378,7 @@ const Dashboard = () => {
           <div className="flex items-start justify-between gap-2 mb-3">
             <h2 className="text-base md:text-lg font-bold text-gold-800 flex items-center">
               <FiAlertCircle className="mr-2 flex-shrink-0 text-gold-600" />
-              ⚠️ Tours needing a guide — next 7 days ({needsGuideSoon.length})
+              ⚠️ Departures needing a guide — next 7 days ({needsGuideSoon.length})
             </h2>
             <Link
               to={`/tours?date=${toDateParam(needsGuideSoon[0].date)}`}
@@ -333,38 +388,41 @@ const Dashboard = () => {
             </Link>
           </div>
           <div className="space-y-2">
-            {visibleItems(needsGuideSoon, 'alert').map((tour) => (
+            {visibleItems(needsGuideSoon, 'alert').map((dep) => (
               <div
-                key={tour.id}
+                key={dep.key}
                 className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-tuscan-lg border border-gold-200 hover:border-gold-300 transition-all min-h-[44px]"
               >
                 <Link
-                  to={`/tours?date=${toDateParam(tour.date)}`}
+                  to={`/tours?date=${toDateParam(dep.date)}`}
                   className="flex items-center gap-x-3 gap-y-0.5 flex-wrap min-w-0 flex-1 touch-manipulation"
                 >
                   <span className="flex items-center text-sm font-semibold text-stone-800 whitespace-nowrap">
                     <FiCalendar className="mr-1 text-gold-600 w-4 h-4" />
-                    {new Date(tour.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    {new Date(dep.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
                   </span>
                   <span className="flex items-center text-sm text-stone-600 whitespace-nowrap">
                     <FiClock className="mr-1 text-stone-400 w-4 h-4" />
-                    {tour.time}
+                    {dep.time}
                   </span>
-                  <span className="text-sm text-stone-700 line-clamp-1 min-w-0">{tour.title}</span>
+                  <span className="text-sm text-stone-700 line-clamp-1 min-w-0">{dep.title}</span>
+                  <span className="text-xs text-stone-500 whitespace-nowrap">
+                    {dep.pax} PAX{dep.bookings > 1 ? ` · ${dep.bookings} bookings` : ''}
+                  </span>
                 </Link>
-                {dashRequested[tour.id] ? (
+                {dep.tour && dashRequested[dep.tour.id] ? (
                   <span className="text-xs font-medium text-olive-700 whitespace-nowrap flex-shrink-0">
-                    richiesto a {dashRequested[tour.id]}
+                    richiesto a {dashRequested[dep.tour.id]}
                   </span>
-                ) : (
+                ) : dep.tour ? (
                   <button
-                    onClick={() => setAskTour(tour)}
+                    onClick={() => setAskTour(dep.tour)}
                     className="inline-flex items-center gap-1 px-2.5 py-1.5 min-h-[36px] text-xs font-medium text-olive-700 bg-olive-50 hover:bg-olive-100 active:bg-olive-200 border border-olive-200 rounded-tuscan transition-colors touch-manipulation flex-shrink-0"
                     title="Ask a guide via WhatsApp"
                   >
                     <FiMessageCircle size={13} /> Ask
                   </button>
-                )}
+                ) : null}
               </div>
             ))}
           </div>
@@ -373,7 +431,7 @@ const Dashboard = () => {
       ) : (
         <div className="bg-gradient-to-br from-olive-50 to-olive-100/50 border border-olive-200 rounded-tuscan-xl shadow-tuscan-sm px-4 py-3 flex items-center text-sm text-olive-800">
           <span className="mr-2">✅</span>
-          All tours in the next 7 days have a guide.
+          All departures in the next 7 days have a guide.
         </div>
       )}
 
@@ -415,13 +473,13 @@ const Dashboard = () => {
         <div className="group bg-gradient-to-br from-gold-50 to-gold-100/50 rounded-tuscan-xl border border-gold-200/50 p-5 md:p-6 shadow-tuscan hover:shadow-tuscan-lg transition-all duration-300">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-gold-700 mb-2">Unassigned Tours</p>
+              <p className="text-sm font-medium text-gold-700 mb-2">Unassigned Departures</p>
               <p className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
                 {stats.unassignedTours}
               </p>
               <p className="text-xs text-stone-500 mt-2 flex items-center">
                 <FiCalendar className="mr-1" />
-                Future tours without guide
+                Upcoming departures without a guide
               </p>
             </div>
             <div className="w-14 h-14 bg-gold-200/50 rounded-tuscan-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
@@ -544,7 +602,7 @@ const Dashboard = () => {
                       </span>
                       <span className="flex items-center">
                         <FiClock className="mr-1 text-stone-400 w-3 h-3 md:w-4 md:h-4" />
-                        {tour.time}
+                        {hhmm(tour.time)}
                       </span>
                       <span className={`flex items-center ${tour.guide_name ? 'text-olive-600' : 'text-gold-600'}`}>
                         <FiUsers className="mr-1 w-3 h-3 md:w-4 md:h-4" />
@@ -613,7 +671,7 @@ const Dashboard = () => {
                       </span>
                       <span className="flex items-center">
                         <FiClock className="mr-1 text-stone-400 w-3 h-3 md:w-4 md:h-4" />
-                        {tour.time}
+                        {hhmm(tour.time)}
                       </span>
                       <span className="text-gold-600 font-medium">
                         Needs Guide

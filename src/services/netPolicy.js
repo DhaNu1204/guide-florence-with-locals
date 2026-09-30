@@ -110,11 +110,34 @@ export function isOutcomeUnknown(err) {
   return isTransient(err);
 }
 
-/** A short, plain reason for a failed load, fit for the owner on a street corner. */
+/** How long the request that failed was allowed, in ms (fetchWithTimeout or axios), or null. */
+function failedAfterMs(err) {
+  if (!err) return null;
+  if (Number.isFinite(err.timeoutMs)) return err.timeoutMs;
+  if (Number.isFinite(err.config?.timeout) && err.config.timeout > 0) return err.config.timeout;
+  return null;
+}
+
+/** Was the failed request already the automatic second attempt? */
+function wasRetried(err) {
+  return Boolean(err && (err.fwlRetried || err.config?.fwlRetried));
+}
+
+/**
+ * A short, plain reason for a failed load, fit for the owner on a street corner.
+ * Step 4.10: only what was measured. The old timeout text ("the connection is probably weak") was
+ * a guess - on 2026-09-30 the owner's phone had full 5G and the request never reached the server.
+ */
 export function describeLoadError(err) {
   const { kind, status } = classifyError(err);
-  if (kind === 'timeout') return 'The server did not answer in time — the connection is probably weak.';
-  if (kind === 'network') return 'No connection to the server — check your signal.';
+  if (kind === 'timeout') {
+    const ms = failedAfterMs(err);
+    const secs = ms ? ` within ${Math.round(ms / 1000)} seconds` : ' in time';
+    return `The server did not answer${secs}${wasRetried(err) ? ' (tried twice)' : ''}.`;
+  }
+  if (kind === 'network') {
+    return `The request could not reach the server${wasRetried(err) ? ' (tried twice)' : ''}.`;
+  }
   if (kind === 'http' && status >= 500) return `The server had a problem (error ${status}).`;
   if (kind === 'http') return `The server refused the request (error ${status}).`;
   // Not a network problem (e.g. an incomplete group list): the app's own message is the truth.
@@ -180,6 +203,46 @@ export function httpError(response) {
   e.fwlKind = 'http';
   e.status = response.status;
   return e;
+}
+
+// Step 4.10 ------------------------------------------------------------------------------------
+export const PROBE_TIMEOUT_MS = 6000;
+
+/**
+ * After a failed load: can this device reach the server at all, right now, and how fast?
+ * health.php?probe=1 answers ~60 bytes without touching the database, so the result tells a dead
+ * path ("nothing gets through") from a stalled request ("the server answers, that request did
+ * not"). Never throws. Resolves { status: 'ok'|'timeout'|'network'|'http'|'offline', ms, code }.
+ */
+export async function probeServer(ms = PROBE_TIMEOUT_MS) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { status: 'offline', ms: 0, code: null };
+  }
+  const base = import.meta.env.VITE_API_URL || '/api';
+  const started = Date.now();
+  try {
+    const res = await fetchWithTimeout(`${base}/health.php?probe=1&_=${started}`, { cache: 'no-store' }, ms);
+    const took = Date.now() - started;
+    return res.ok ? { status: 'ok', ms: took, code: res.status } : { status: 'http', ms: took, code: res.status };
+  } catch (e) {
+    const { kind } = classifyError(e);
+    return { status: kind === 'timeout' ? 'timeout' : 'network', ms: Date.now() - started, code: null };
+  }
+}
+
+/** One plain sentence for a probe result (measured facts only). */
+export function describeProbe(p) {
+  if (!p) return '';
+  const secs = (v) => `${(v / 1000).toFixed(1)} s`;
+  if (p.status === 'ok') {
+    return `A quick check just now reached the server in ${secs(p.ms)}, so the server is up — the request above got stuck on the way. Tap Retry; if it keeps failing, turning mobile data off and on (or WiFi) gives the phone a fresh connection.`;
+  }
+  if (p.status === 'offline') return 'This phone reports that it is offline.';
+  if (p.status === 'timeout') {
+    return `A quick check just now got no answer either (${secs(p.ms)}): this phone cannot reach the server at the moment.`;
+  }
+  if (p.status === 'http') return `A quick check just now got an error from the server (${p.code}).`;
+  return 'A quick check just now could not reach the server either.';
 }
 
 /** "09:12" today, "22 Sep 18:40" on another day - for "showing data from …". */

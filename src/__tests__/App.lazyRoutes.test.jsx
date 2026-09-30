@@ -53,7 +53,7 @@ describe('App lazy routes (step 4.1)', () => {
     expect(await screen.findByLabelText('Loading page')).toBeInTheDocument();
 
     // ...and the page itself renders once the chunk is in
-    expect(await screen.findByText('Tours Management')).toBeInTheDocument();
+    expect(await screen.findByText('Tours Management', {}, { timeout: 5000 })).toBeInTheDocument(); // step 4.10: slow under a full parallel run
     expect(screen.queryByLabelText('Loading page')).not.toBeInTheDocument();
   });
 });

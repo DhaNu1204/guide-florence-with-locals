@@ -4,6 +4,7 @@ import {
 } from '../utils/perfBeacon'; // step 4.7/4.8: measurement only
 import { fetchWithTimeout, classifyError, VERIFY_TIMEOUT_MS, WRITE_TIMEOUT_MS } from '../services/netPolicy';
 import { notifySessionExpired } from '../services/sessionExpiry';
+import { clearLastGood } from '../services/lastGood';
 
 const AuthContext = createContext(null);
 
@@ -83,7 +84,7 @@ export const AuthProvider = ({ children }) => {
         return { result: 'unknown', reason: `http:${response.status}` };
       } catch (error) {
         const { kind } = classifyError(error);
-        if (kind === 'timeout') markTimeout();
+        if (kind === 'timeout') markTimeout('auth.php');
         return { result: 'unknown', reason: kind === 'timeout' ? 'timeout' : 'network' };
       }
     };
@@ -206,6 +207,7 @@ export const AuthProvider = ({ children }) => {
         console.error('Logout call failed (clearing locally anyway):', error);
       }
     }
+    clearLastGood(); // step 4.10: the next person on this phone must not see saved screens
     localStorage.removeItem('token');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
