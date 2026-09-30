@@ -8,6 +8,7 @@ description: Safe, verified production deploy for the Florence with Locals app. 
 The working deploy method is running **`bash scripts/deploy.sh`** from the project root. It tests SSH, makes a remote backup, builds the frontend (vite), scp's the backend PHP files, and rsync/scp's the frontend. Follow every step. Goal: zero broken deploys.
 
 ## Hard rules
+- **Hosting setting, not code:** Hostinger edge Security level for withlocals must stay 'Essentially off'. Medium challenges mobile-carrier IPs and breaks the installed app's API calls. If the phone check fails on mobile data but works on WiFi, look at hPanel → Security for the site before touching code (2026-09-30).
 1. Work on branch `master`. Never `main` (abandoned, unrelated history).
 2. Never modify payment logic (payments.php, Payments.jsx, payment calc/grouping) or passwords/secrets/.env*. If a diff touches these, STOP and ask the user.
 3. Verify each changed file is COMPLETE (not truncated) before committing.

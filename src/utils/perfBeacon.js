@@ -71,6 +71,7 @@ const state = {
   loadId: null,            // step 4.10: this load's id (the server stores a re-sent row once)
   stuck: [],               // step 4.10: endpoint file names whose timer fired
   probe: null,             // step 4.10: { status, ms } of the reachability check after a failure
+  probePhase: { start: null, end: null, status: 'none' }, // step 4.10a: the row waits for the check
   firstAfterRelease: null,
   deadlineTimer: null,
   settleTimer: null,
@@ -314,7 +315,7 @@ export const flushOutbox = safe(() => {
 
 /** All started phases finished? (A phase that never started does not hold the load open.) */
 function allSettled() {
-  return [state.verify, state.verifyRetry, state.chunk, state.list].every((p) => p.status !== 'started');
+  return [state.verify, state.verifyRetry, state.chunk, state.list, state.probePhase].every((p) => p.status !== 'started');
 }
 
 function scheduleSettleCheck() {
@@ -393,7 +394,13 @@ export const markAutoRetry = safe((ok) => {
 });
 export const markUserRetry = safe(() => { state.userRetries += 1; });
 /** Step 4.10: the reachability check after a failed load; the first result of the load is kept. */
+/**
+ * Step 4.10a: a check started -> the row waits for its answer (at most PROBE_TIMEOUT_MS, 6 s), so
+ * a failed load reports what the check found. On 2026-09-30 20:53 the row went out first.
+ */
+export const markProbeStart = safe(() => startPhase(state.probePhase));
 export const markProbe = safe((result) => {
+  endPhase(state.probePhase, Boolean(result && result.status === 'ok'));
   if (!state.probe && result && result.status) {
     state.probe = { status: String(result.status).slice(0, 8), ms: Number.isFinite(result.ms) ? Math.round(result.ms) : null };
   }

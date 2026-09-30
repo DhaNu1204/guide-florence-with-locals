@@ -119,6 +119,21 @@ describe('perfBeacon step 4.10', () => {
     expect(outbox()).toHaveLength(1);
   });
 
+  it('step 4.10a: a running server check holds the row until it answers', async () => {
+    const m = await loadFresh();
+    m.markEntry('fwl@0.0.2');
+    m.markVerifyStart(); m.markVerifyEnd(true);
+    m.markListStart(); m.markTimeout('/api/tours.php'); m.markListEnd(false);
+    m.markProbeStart();
+    vi.advanceTimersByTime(4000);
+    expect(beacons.length).toBe(0);          // still waiting for the check
+    m.markProbe({ status: 'timeout', ms: 6000 });
+    vi.advanceTimersByTime(1600);
+    expect(beacons.length).toBe(1);
+    expect(payloadOf().probe_status).toBe('timeout');
+    expect(payloadOf().probe_ms).toBe(6000);
+  });
+
   it('endpointName never keeps a query string', async () => {
     const m = await loadFresh();
     expect(m.__internals.endpointName('/api/tours.php?token=secret')).toBe('tours.php');

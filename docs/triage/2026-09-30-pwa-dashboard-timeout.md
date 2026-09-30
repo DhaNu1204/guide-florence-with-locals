@@ -110,3 +110,31 @@ alone costs 30 s before the error.
 
 ## Fix → step 4.10 (new, Phase 4)
 See `docs/IMPLEMENTATION_PLAN.md` 4.10.
+
+## Update 2026-09-30 evening — root cause found (hosting setting)
+**Root cause:** the Hostinger edge **Security level** for `withlocals.deetech.cc` was **Medium**. At
+that level the edge challenges visitors it considers risky - here the mobile carrier's (shared,
+carrier-NAT) IP addresses. A browser tab can pass a challenge page; the installed app's
+background API calls (JSON `fetch`) cannot, so they got no usable answer until the app's timers
+fired. That explains every observation: only on mobile data, WiFi fine; the server and PHP never
+saw the requests (no recorder row, no log line); the other admin's iPhone hit it too.
+The exact behaviour of the edge towards a challenged `fetch` (held open vs. answered with a
+challenge page) was not captured - the owner's fix removed it before it could be recorded.
+
+**Fix (owner, hPanel, ~20:50 Rome):** Security level → **Essentially off**. No code change.
+Rule recorded in `CLAUDE.md` and both deploy skills: Hostinger edge Security level for withlocals must stay 'Essentially off'. Medium challenges mobile-carrier IPs and breaks the installed app's API calls.
+
+**Checks after the change (production, recorder rows, Rome time):**
+- 20:52:29, 20:52:48, 20:53:50, 20:55:18 - home-screen app (`display_mode=standalone`, new install
+  `96119a8a…`, build `CHHFPWak`): auth check 141–207 ms, Dashboard data 324 ms – 4.2 s, all OK.
+- 20:53:27 - one more failed load, 3 minutes after the change: 13 timers, every Dashboard request
+  stalled. Most likely the setting still reaching all edge servers; to be confirmed by the next
+  day's rows (no failed loads expected).
+- Same automated Chromium, 20:58: production answered the page directly (200); **staging still
+  served the challenge first (403 "Loading …")** - staging is still above "Essentially off".
+- Production smoke test 12/12.
+
+**Recorder fixes found on that row (step 4.10a):** `stuck` lost its commas on the server
+(`perfStr` strips them - now stored space-separated), and the row went out before the server
+check answered (a running check now holds the row, at most 6 s).
+

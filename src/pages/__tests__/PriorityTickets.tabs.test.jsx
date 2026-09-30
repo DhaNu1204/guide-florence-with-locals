@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../utils/perfBeacon', () => ({
-  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(), markProbe: vi.fn(),
+  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(), markProbe: vi.fn(), markProbeStart: vi.fn(),
 }));
 vi.mock('../../services/mysqlDB', () => ({
   getTours: vi.fn(),
