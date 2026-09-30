@@ -48,7 +48,7 @@ export const authFetch = async (url, options = {}) => {
       }
       return response;
     } catch (error) {
-      if (classifyError(error).kind === 'timeout') markTimeout();
+      if (classifyError(error).kind === 'timeout') markTimeout(url);
       throw error;
     }
   };
@@ -65,6 +65,7 @@ export const authFetch = async (url, options = {}) => {
         markAutoRetry(false);
         // A gateway answer on the retry is still an answer: hand it back like before.
         if (retryError.response) return retryError.response;
+        retryError.fwlRetried = true; // step 4.10: "(tried twice)" in the load message
         throw retryError;
       }
     } else if (method !== 'GET' && method !== 'HEAD' && isOutcomeUnknown(error)) {

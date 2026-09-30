@@ -82,6 +82,39 @@ function clientPerfEnsureColumns($conn) {
     ");
 }
 
+/**
+ * Step 4.10: which app sent the row and what stalled (see
+ * database/migrations/20260930_client_perf_step410.sql). Same in-place pattern as 4.8.
+ *   display_mode  'standalone' (home-screen app) | 'browser' (a tab) - the 2026-09-30 question
+ *   install_id    random id per app install / browser profile (not a person, not a device id)
+ *   build         entry-script hash the load ran
+ *   stuck         endpoint file names whose timer fired, e.g. "tours.php,guide-payments.php"
+ *   probe_status / probe_ms  the reachability check after a failed load
+ *   load_id       client id of the load, UNIQUE: a row re-sent later is stored once
+ *   sent_late     1 = delivered by a later load (the beacon of the failed load never arrived)
+ */
+function clientPerfEnsureColumns410($conn) {
+    $stmt = $conn->prepare(
+        "SELECT COUNT(*) n FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'client_perf' AND COLUMN_NAME = 'load_id'");
+    $stmt->execute();
+    $has = (int) ($stmt->get_result()->fetch_assoc()['n'] ?? 0) > 0;
+    $stmt->close();
+    if ($has) { return; }
+    $conn->query("
+        ALTER TABLE `client_perf`
+          ADD COLUMN `display_mode` VARCHAR(12) NULL DEFAULT NULL AFTER `device`,
+          ADD COLUMN `install_id`   VARCHAR(16) NULL DEFAULT NULL AFTER `display_mode`,
+          ADD COLUMN `build`        VARCHAR(24) NULL DEFAULT NULL AFTER `install_id`,
+          ADD COLUMN `stuck`        VARCHAR(120) NULL DEFAULT NULL AFTER `build`,
+          ADD COLUMN `probe_status` VARCHAR(8)  NULL DEFAULT NULL AFTER `stuck`,
+          ADD COLUMN `probe_ms`     INT(11)     NULL DEFAULT NULL AFTER `probe_status`,
+          ADD COLUMN `load_id`      VARCHAR(20) NULL DEFAULT NULL AFTER `probe_ms`,
+          ADD COLUMN `sent_late`    TINYINT(1)  NOT NULL DEFAULT 0 AFTER `load_id`,
+          ADD UNIQUE KEY `uniq_client_perf_load_id` (`load_id`)
+    ");
+}
+
 /** Retention: 60 days, applied on roughly one insert in fifty so it costs nothing per request. */
 function clientPerfPrune($conn) {
     if (random_int(1, 50) !== 1) { return; }
@@ -112,28 +145,8 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // ---------------------------------------------------------------------------------------
 // POST: one row per page load.
 // ---------------------------------------------------------------------------------------
-if ($method === 'POST') {
-    $raw = file_get_contents('php://input');
-    $in = json_decode($raw, true);
-    if (!is_array($in)) {
-        http_response_code(400);
-        echo json_encode(['success' => false]);
-        exit();
-    }
-
-    // Auth without touching the session (see the file header).
-    $user = Middleware::findSessionUser($conn, isset($in['token']) ? (string) $in['token'] : '');
-    if (!$user) {
-        // Quietly: a beacon has no user to tell, and a noisy 401 here would only add log noise.
-        http_response_code(401);
-        echo json_encode(['success' => false]);
-        exit();
-    }
-
-    clientPerfEnsureTable($conn);
-    clientPerfEnsureColumns($conn);
-
-    $userId  = (int) $user['id'];
+/** One row. Step 4.10: moved out of the POST branch so a batch of late rows can reuse it. */
+function clientPerfInsert($conn, $userId, array $in, $late) {
     $release = perfStr($in['release'] ?? null, 32);
     $route   = perfStr($in['route'] ?? null, 40);
     $reason  = in_array($in['reason'] ?? '', ['complete', 'deadline', 'hidden', 'pagehide'], true)
@@ -162,33 +175,86 @@ if ($method === 'POST') {
     $aok  = max(0, min($arr, (int) ($in['auto_retry_ok'] ?? 0)));
     $urt  = max(0, min(999, (int) ($in['user_retries'] ?? 0)));
     $shell = !empty($in['shell_fallback']) ? 1 : 0;
-
+    // Step 4.10
+    $dmode = in_array($in['display_mode'] ?? '', ['standalone', 'browser'], true) ? $in['display_mode'] : null;
+    $inst  = perfStr($in['install_id'] ?? null, 16);
+    $build = perfStr($in['build'] ?? null, 24);
+    $stuck = perfStr($in['stuck'] ?? null, 120);
+    $pst   = in_array($in['probe_status'] ?? '', ['ok', 'timeout', 'network', 'http', 'offline'], true) ? $in['probe_status'] : null;
+    $pms   = perfInt($in['probe_ms'] ?? null, 0, 600000);
+    $loadId = perfStr($in['load_id'] ?? null, 20);
+    $late  = $late ? 1 : 0;
+    // A late row keeps the time of the load it describes (client clock, epoch seconds), if sane.
+    $at = perfInt($in['at_s'] ?? null, 0, 4102444800);
+    if (!$late || $at === null || $at < time() - 7 * 86400 || $at > time() + 300) { $at = null; }
+    
     $stmt = $conn->prepare(
-        "INSERT INTO client_perf
-            (user_id, release_tag, route, reason, entry_at,
+        "INSERT IGNORE INTO client_perf
+            (created_at, user_id, release_tag, route, reason, entry_at,
              verify_start, verify_end, verify_status,
              chunk_start, chunk_end, chunk_status,
              list_start, list_end, list_status,
              rate_limited, online, sw_controlled, first_after_release,
              effective_type, conn_rtt, conn_downlink, device,
-             verify_error, verify_retry, timeouts, auto_retries, auto_retry_ok, user_retries, shell_fallback)
-         VALUES (?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?)");
+             verify_error, verify_retry, timeouts, auto_retries, auto_retry_ok, user_retries, shell_fallback,
+             display_mode, install_id, build, stuck, probe_status, probe_ms, load_id, sent_late)
+         VALUES (COALESCE(FROM_UNIXTIME(?), CURRENT_TIMESTAMP), ?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?)");
     $stmt->bind_param(
-        'isssiiisiisiisiiiisidsssiiiii',
-        $userId, $release, $route, $reason, $entryAt,
+        'i' . 'isssiiisiisiisiiiisidsssiiiii' . 'sssssisi',
+        $at, $userId, $release, $route, $reason, $entryAt,
         $vs, $ve, $vst,
         $cs, $ce, $cst,
         $ls, $le, $lst,
         $rl, $online, $sw, $far,
         $eff, $rtt, $dl, $dev,
-        $verr, $vrt, $tmo, $arr, $aok, $urt, $shell
+        $verr, $vrt, $tmo, $arr, $aok, $urt, $shell,
+        $dmode, $inst, $build, $stuck, $pst, $pms, $loadId, $late
     );
     $stmt->execute();
     $stmt->close();
+}
+
+if ($method === 'POST') {
+    $raw = file_get_contents('php://input');
+    $in = json_decode($raw, true);
+    if (!is_array($in)) {
+        http_response_code(400);
+        echo json_encode(['success' => false]);
+        exit();
+    }
+
+    // Step 4.10: {items: [...]} = rows of earlier loads whose beacon never arrived, re-sent by a
+    // later load in one request (at most 10). Each row carries the token it was recorded with.
+    $late = isset($in['items']) && is_array($in['items']);
+    $rows = $late ? array_slice(array_values(array_filter($in['items'], 'is_array')), 0, 10) : [$in];
+
+    clientPerfEnsureTable($conn);
+    clientPerfEnsureColumns($conn);
+    clientPerfEnsureColumns410($conn);
+
+    // Auth without touching the session (see the file header).
+    $stored = 0;
+    $users = [];
+    foreach ($rows as $row) {
+        $token = isset($row['token']) ? (string) $row['token'] : '';
+        if (!array_key_exists($token, $users)) {
+            $users[$token] = $token === '' ? null : Middleware::findSessionUser($conn, $token);
+        }
+        if (!$users[$token]) { continue; }
+        clientPerfInsert($conn, (int) $users[$token]['id'], $row, $late);
+        $stored++;
+    }
+    if (!$late && $stored === 0) {
+        // Quietly: a beacon has no user to tell, and a noisy 401 here would only add log noise.
+        http_response_code(401);
+        echo json_encode(['success' => false]);
+        exit();
+    }
 
     clientPerfPrune($conn);
 
-    echo json_encode(['success' => true]);
+    // A late row whose session has ended is dropped on purpose: the client may forget it.
+    echo json_encode(['success' => true, 'stored' => $stored]);
     exit();
 }
 
@@ -198,6 +264,7 @@ if ($method === 'POST') {
 Middleware::requireRole($conn, 'admin');
 clientPerfEnsureTable($conn);
 clientPerfEnsureColumns($conn);
+clientPerfEnsureColumns410($conn);
 
 $action = $_GET['action'] ?? 'list';
 if ($action !== 'list') {
@@ -241,8 +308,9 @@ while ($r = $res->fetch_assoc()) {
     foreach (['id', 'user_id', 'entry_at', 'verify_start', 'verify_end', 'chunk_start',
               'chunk_end', 'list_start', 'list_end', 'rate_limited', 'online',
               'sw_controlled', 'first_after_release', 'conn_rtt',
-              'timeouts', 'auto_retries', 'auto_retry_ok', 'user_retries', 'shell_fallback'] as $k) {
-        $r[$k] = $r[$k] === null ? null : (int) $r[$k];
+              'timeouts', 'auto_retries', 'auto_retry_ok', 'user_retries', 'shell_fallback',
+              'probe_ms', 'sent_late'] as $k) {
+        $r[$k] = !isset($r[$k]) ? null : (int) $r[$k];
     }
     $r['conn_downlink'] = $r['conn_downlink'] === null ? null : (float) $r['conn_downlink'];
     $rows[] = $r;

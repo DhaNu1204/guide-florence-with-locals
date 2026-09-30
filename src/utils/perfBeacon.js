@@ -8,7 +8,8 @@
  * be simulated from a datacenter.
  *
  * This module records what his phone really experiences and posts it once per page load.
- * It changes nothing: it starts no request of its own beyond the single beacon at the end,
+ * It changes nothing: it starts no request of its own beyond the single beacon at the end
+ * (step 4.10: plus, after a bad load, one delayed re-send of that row from a later load),
  * it never awaits anything, it never throws into a caller, and every entry point is
  * wrapped so that a fault in here cannot affect the page. If this file were deleted the
  * app would behave identically.
@@ -25,6 +26,12 @@ const ENDPOINT = `${import.meta.env.VITE_API_URL || '/api'}/client_perf.php`;
 const HARD_DEADLINE_MS = 45000;
 const SETTLE_GRACE_MS = 1500;   // let a late request register before we call the load complete
 const RELEASE_KEY = 'fwl:last-build';
+// Step 4.10: rows of bad loads are kept here until a later load confirms the server stored them.
+// On 2026-09-30 the home-screen app's failed loads left no row at all: the beacon of a load whose
+// connection is stalled cannot get out either.
+const OUTBOX_KEY = 'fwl:perf-outbox';
+const OUTBOX_MAX = 10;
+const INSTALL_KEY = 'fwl:install-id';
 
 /**
  * What identifies "this build" for the post-deploy question.
@@ -61,6 +68,9 @@ const state = {
   autoRetries: 0,          // step 4.8: automatic retries of reads, and how many of them worked
   autoRetryOk: 0,
   userRetries: 0,          // step 4.8: presses of a Retry button
+  loadId: null,            // step 4.10: this load's id (the server stores a re-sent row once)
+  stuck: [],               // step 4.10: endpoint file names whose timer fired
+  probe: null,             // step 4.10: { status, ms } of the reachability check after a failure
   firstAfterRelease: null,
   deadlineTimer: null,
   settleTimer: null,
@@ -134,6 +144,38 @@ function shellFallback() {
   }
 }
 
+/** Step 4.10: 'standalone' = started from the home-screen icon, 'browser' = a tab. */
+function displayMode() {
+  try {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return 'standalone';
+    if (navigator.standalone === true) return 'standalone'; // older iOS
+  } catch (e) { /* fall through */ }
+  return 'browser';
+}
+
+/**
+ * Step 4.10: a random id per app install / browser profile (each has its own storage), so the rows
+ * of the home-screen app and of a Safari tab on the same phone can be told apart. Not a device id.
+ */
+function installId() {
+  try {
+    let id = localStorage.getItem(INSTALL_KEY);
+    if (!id) {
+      id = Math.random().toString(16).slice(2, 10) + Date.now().toString(16).slice(-4);
+      localStorage.setItem(INSTALL_KEY, id);
+    }
+    return id.slice(0, 16);
+  } catch (e) {
+    return null;
+  }
+}
+
+/** 'https://x/api/tours.php?page=1' -> 'tours.php'. File names only - never a query string. */
+function endpointName(url) {
+  const m = String(url || '').split('?')[0].match(/([A-Za-z0-9_-]+\.php)/);
+  return m ? m[1] : null;
+}
+
 function currentToken() {
   try { return localStorage.getItem('token'); } catch (e) { return null; }
 }
@@ -160,6 +202,15 @@ function buildPayload(reason) {
     auto_retry_ok: state.autoRetryOk,
     user_retries: state.userRetries,
     shell_fallback: shellFallback(),
+    // Step 4.10
+    display_mode: displayMode(),
+    install_id: installId(),
+    build: buildId(state.release),
+    stuck: state.stuck.length ? state.stuck.join(',') : null,
+    probe_status: state.probe ? state.probe.status : null,
+    probe_ms: state.probe ? state.probe.ms : null,
+    load_id: state.loadId,
+    at_s: Math.round(Date.now() / 1000),
     online: navigator.onLine === false ? 0 : 1,
     sw_controlled: (navigator.serviceWorker && navigator.serviceWorker.controller) ? 1 : 0,
     first_after_release: state.firstAfterRelease ? 1 : 0,
@@ -195,9 +246,71 @@ function send(reason) {
     // never trigger a preflight. A beacon cannot answer a preflight, and a blocked
     // preflight means no measurement at all - which is how this was found while testing.
     const blob = new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=UTF-8' });
-    navigator.sendBeacon(ENDPOINT, blob);
+    const queued = navigator.sendBeacon(ENDPOINT, blob);
+    // Step 4.10: a bad load is exactly the one whose beacon may never arrive - keep a copy for
+    // the next load to deliver. A healthy load relies on its beacon (no second request).
+    if (!queued || isBadLoad(payload)) outboxPush(payload);
   } catch (e) { /* silent by design */ }
 }
+
+function isBadLoad(p) {
+  return p.list_status === 'failed' || p.list_status === 'pending'
+    || p.verify_status === 'failed' || p.verify_status === 'pending'
+    || p.chunk_status === 'failed' || p.chunk_status === 'pending'
+    || p.timeouts > 0 || p.shell_fallback === 1;
+}
+
+function outboxRead() {
+  try {
+    const v = JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function outboxWrite(items) {
+  try {
+    if (items.length) localStorage.setItem(OUTBOX_KEY, JSON.stringify(items.slice(-OUTBOX_MAX)));
+    else localStorage.removeItem(OUTBOX_KEY);
+  } catch (e) { /* storage full or blocked: the row is simply lost, as before */ }
+}
+
+function outboxPush(payload) {
+  const items = outboxRead().filter((x) => x && x.load_id !== payload.load_id);
+  items.push(payload);
+  outboxWrite(items);
+}
+
+let flushing = false;
+
+/**
+ * Step 4.10: deliver the rows of earlier bad loads, in ONE request, once this load has shown that
+ * the server answers (the auth check came back). The server stores each load_id once, so a row
+ * whose beacon did arrive after all is not duplicated. Never throws, never blocks the page.
+ */
+export const flushOutbox = safe(() => {
+  if (flushing || typeof fetch !== 'function') return;
+  const items = outboxRead().filter((x) => x && x.load_id && x.load_id !== state.loadId);
+  if (!items.length) return;
+  flushing = true;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = setTimeout(() => { if (controller) controller.abort(); }, 10000);
+  const sentIds = new Set(items.map((x) => x.load_id));
+  fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+    body: JSON.stringify({ items }),
+    signal: controller ? controller.signal : undefined,
+    keepalive: true,
+  }).then((res) => {
+    // 2xx: stored (or stored before). A 4xx will not change by retrying (e.g. a malformed row).
+    if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) {
+      outboxWrite(outboxRead().filter((x) => !x || !sentIds.has(x.load_id)));
+    }
+  }).catch(() => { /* still stalled: try again on a later load */ })
+    .finally(() => { clearTimeout(timer); flushing = false; });
+});
 
 /** All started phases finished? (A phase that never started does not hold the load open.) */
 function allSettled() {
@@ -228,6 +341,7 @@ export const markEntry = safe((release) => {
   state.route = routeName(location.pathname);
   state.entryAt = now();
   state.entryToken = currentToken();
+  state.loadId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.slice(0, 20);
 
   // "Is this the first load since we deployed?" - the slowest load of all, per Part 1.
   // Step 4.8: only a load that can report itself (a token is present) marks the build as
@@ -251,7 +365,10 @@ export const markEntry = safe((release) => {
 });
 
 export const markVerifyStart = safe(() => startPhase(state.verify));
-export const markVerifyEnd = safe((ok) => endPhase(state.verify, ok));
+export const markVerifyEnd = safe((ok) => {
+  endPhase(state.verify, ok);
+  if (ok) flushOutbox(); // step 4.10: the server answers - deliver what earlier loads could not
+});
 export const markChunkStart = safe(() => startPhase(state.chunk));
 export const markChunkEnd = safe((ok) => endPhase(state.chunk, ok));
 export const markListStart = safe(() => startPhase(state.list));
@@ -265,13 +382,26 @@ export const markVerifyError = safe((reason) => {
 });
 export const markVerifyRetryStart = safe(() => startPhase(state.verifyRetry));
 export const markVerifyRetryEnd = safe((ok) => endPhase(state.verifyRetry, ok));
-export const markTimeout = safe(() => { state.timeouts += 1; });
+export const markTimeout = safe((url) => {
+  state.timeouts += 1;
+  const name = endpointName(url); // step 4.10: which request stalled
+  if (name && !state.stuck.includes(name) && state.stuck.length < 6) state.stuck.push(name);
+});
 export const markAutoRetry = safe((ok) => {
   state.autoRetries += 1;
   if (ok) state.autoRetryOk += 1;
 });
 export const markUserRetry = safe(() => { state.userRetries += 1; });
+/** Step 4.10: the reachability check after a failed load; the first result of the load is kept. */
+export const markProbe = safe((result) => {
+  if (!state.probe && result && result.status) {
+    state.probe = { status: String(result.status).slice(0, 8), ms: Number.isFinite(result.ms) ? Math.round(result.ms) : null };
+  }
+});
 
 // Testing seams only - not used by the app.
 export const __state = state;
-export const __internals = { routeName, deviceLabel, freeze, buildPayload, allSettled, buildId, shellFallback };
+export const __internals = {
+  routeName, deviceLabel, freeze, buildPayload, allSettled, buildId, shellFallback,
+  displayMode, installId, endpointName, isBadLoad, outboxRead, outboxPush, OUTBOX_KEY,
+};

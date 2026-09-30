@@ -3,7 +3,8 @@
  * health.php - unauthenticated deploy / uptime probe (step 0.2).
  *
  * GET only, no auth, no rate limit. Returns
- *   {ok:true|false, db:true|false, env:<APP_ENV>, sha:<git sha>, env_source:<where .env was read>, time:<UTC>}
+ *   {ok:true|false, db:true|false, env:<APP_ENV>, sha:<git sha>, build:<entry hash>, env_source:<where .env was read>, time:<UTC>}
+ * ?probe=1 (step 4.10) answers {ok, build, time} without the database - the app's reachability check.
  * - db  = a "SELECT 1" on the configured database succeeds.
  * - sha = contents of public_html/api/VERSION (written by scripts/deploy.sh at
  *         deploy time, git rev-parse HEAD); "unknown" when the file is missing.
@@ -40,6 +41,25 @@ if (is_readable($versionFile)) {
     }
 }
 
+// Step 4.10: which frontend build the site serves right now = the hash of the entry script named
+// in the deployed index.html (the same id the app reads from its own <script> tag). An installed
+// app compares the two to know that a newer version is live.
+$build = null;
+$indexFile = dirname(__DIR__) . '/index.html';
+if (is_readable($indexFile)) {
+    $html = (string) file_get_contents($indexFile, false, null, 0, 8192);
+    if (preg_match('#/assets/index-([A-Za-z0-9_-]{6,})\.js#', $html, $m)) {
+        $build = $m[1];
+    }
+}
+
+// Step 4.10: ?probe=1 - the app's reachability check after a failed load. Answers without touching
+// the database, so it measures only "can this device reach the server right now, and how fast".
+if (isset($_GET['probe'])) {
+    echo json_encode(['ok' => true, 'build' => $build, 'time' => gmdate('Y-m-d\TH:i:s\Z')]);
+    exit;
+}
+
 $db = false;
 try {
     mysqli_report(MYSQLI_REPORT_OFF);
@@ -64,6 +84,7 @@ echo json_encode([
     'db'   => $db,
     'env'  => $env,
     'sha'  => $sha,
+    'build' => $build, // step 4.10: entry-script hash of the live frontend
     'env_source' => EnvLoader::source(), // step 2.2: outside_webroot | inside_webroot | none (no path)
     'time' => gmdate('Y-m-d\TH:i:s\Z'),
 ]);

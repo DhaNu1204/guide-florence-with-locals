@@ -12,6 +12,8 @@ vi.mock('../../services/mysqlDB', () => {
     getTours: resolved({ data: [] }),
     getAllGuides: resolved([]),
     getRecentGuideResponses: resolved({ data: [] }),
+    getUnassignedReport: resolved({ total: 0, departures: [] }), // step 4.10
+    getUnassignedCount: resolved(0),
     createGuideRequest: resolved({ id: 1, token: 't', status: 'pending', link: 'x', message: 'm' }),
   };
 });

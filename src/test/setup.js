@@ -6,7 +6,11 @@
  */
 
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { vi, afterEach } from 'vitest';
+import { __resetLastGoodForTests } from '../services/lastGood';
+
+// Step 4.10: saved screens live in memory under jsdom (no IndexedDB) - forget them after each test.
+afterEach(() => { __resetLastGoodForTests(); });
 
 // Mock window.matchMedia (required for responsive components)
 Object.defineProperty(window, 'matchMedia', {

@@ -42,7 +42,7 @@ axios.interceptors.response.use(
   (error) => {
     const config = error?.config;
     if (classifyError(error).kind === 'timeout') {
-      try { markTimeout(); } catch (e) { /* never matters */ }
+      try { markTimeout(config && config.url); } catch (e) { /* never matters */ }
     }
     // Step 4.8: a read that timed out, lost the connection or met a 502/503/504 is tried once
     // more. A write never is - a timed-out POST may already have been done by the server.

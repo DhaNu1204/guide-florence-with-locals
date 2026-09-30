@@ -38,6 +38,14 @@ vi.mock('../../services/mysqlDB', () => {
     getTours: vi.fn().mockImplementation(async () => ({ data: mockTours })),
     getAllGuides: resolved([]),
     getRecentGuideResponses: vi.fn().mockImplementation(async () => ({ data: mockResponses })),
+    // Step 4.10: the needs-guide alert lists the report's departures (here: 8 single-tour units)
+    getUnassignedReport: vi.fn().mockImplementation(async () => ({
+      total: mockTours.length,
+      departures: mockTours.map((t) => ({
+        tour_unit: `t${t.id}`, date: t.date, time: t.time, title: t.title, bookings: 1, pax: 2, language: 'English',
+      })),
+    })),
+    getUnassignedCount: vi.fn().mockResolvedValue(8),
     createGuideRequest: resolved({ id: 1, token: 't', status: 'pending', link: 'x', message: 'm' }),
   };
 });
@@ -71,7 +79,7 @@ const renderDashboard = async () => {
       </MemoryRouter>
     </ToastProvider>
   );
-  await screen.findByText(/Tours needing a guide/);
+  await screen.findByText(/needing a guide/);
 };
 
 describe('Dashboard collapsed sections', () => {

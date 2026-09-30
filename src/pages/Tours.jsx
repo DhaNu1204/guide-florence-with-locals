@@ -24,6 +24,7 @@ import { buildUnassignedReportText } from '../utils/unassignedReport';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // step 4.7: measurement only
 import LoadProblem from '../components/UI/LoadProblem';
 import { writeFailureMessage } from '../services/netPolicy';
+import { saveLastGood, loadLastGood } from '../services/lastGood'; // step 4.10
 import { useLocation } from 'react-router-dom';
 import { parseToursParams } from '../utils/deepLinks'; // step 7.4: assistant deep links
 import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
@@ -406,20 +407,25 @@ const Tours = () => {
       setNeedGuideCount(unassignedTotal);
 
       // Handle paginated response
-      if (toursResponse && toursResponse.data) {
-        setTours(toursResponse.data || []);
-        setPagination(toursResponse.pagination);
-      } else {
-        // Fallback for non-paginated response (backward compatibility)
-        setTours(toursResponse || []);
-      }
+      const toursList = toursResponse && toursResponse.data ? (toursResponse.data || []) : (toursResponse || []);
+      setTours(toursList);
+      if (toursResponse && toursResponse.data) setPagination(toursResponse.pagination);
 
       // Handle paginated response - extract data array
-      setGuides(Array.isArray(guidesData) ? guidesData : (guidesData?.data || []));
+      const guidesList = Array.isArray(guidesData) ? guidesData : (guidesData?.data || []);
+      setGuides(guidesList);
 
       // Set tour groups
       setTourGroups(groupsResponse?.data || []);
       markListEnd(true); // step 4.7
+      // Step 4.10: keep this complete list on the phone, for a later load that fails
+      saveLastGood(`tours:${page}:${JSON.stringify(filters)}`, {
+        tours: toursList,
+        pagination: toursResponse && toursResponse.data ? toursResponse.pagination : null,
+        guides: guidesList,
+        groups: groupsResponse?.data || [],
+        needGuideCount: unassignedTotal,
+      });
 
     } catch (err) {
       markListEnd(false); // step 4.7
@@ -435,6 +441,18 @@ const Tours = () => {
         setTours([]);
         setTourGroups([]);
         setNeedGuideCount(null);
+        // Step 4.10: the last complete list saved on this phone for these very filters, with its
+        // time ("Could not refresh — showing data from …"), instead of an empty page.
+        const saved = await loadLastGood(`tours:${page}:${JSON.stringify(filters)}`);
+        if (saved && saved.data) {
+          setTours(saved.data.tours || []);
+          if (saved.data.pagination) setPagination(saved.data.pagination);
+          setGuides(saved.data.guides || []);
+          setTourGroups(saved.data.groups || []);
+          setNeedGuideCount(saved.data.needGuideCount ?? null);
+          setLoadedFor(JSON.stringify(filters));
+          setShownAt(saved.at);
+        }
       }
     } finally {
       setLoading(false);
