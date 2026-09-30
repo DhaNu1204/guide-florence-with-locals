@@ -8,6 +8,7 @@ description: Deploy the current build to staging or production on Hostinger and 
 `$ARGUMENTS` = `staging` (default) or `production`.
 
 ## Guards
+- **Hosting setting, not code:** Hostinger edge Security level for withlocals must stay 'Essentially off'. Medium challenges mobile-carrier IPs and breaks the installed app's API calls. If the phone check fails on mobile data but works on WiFi, look at hPanel → Security for the site before touching code (2026-09-30).
 - `production` only from branch `master` (never `main`) with a clean tree, and only after the same commit passed on staging (check `docs/CHANGELOG.md` or ask). Otherwise refuse.
 - `git status --porcelain` must be empty for either target.
 

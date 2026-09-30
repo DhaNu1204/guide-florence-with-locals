@@ -3,7 +3,7 @@ import { FiAlertTriangle, FiRefreshCw } from 'react-icons/fi';
 import {
   describeLoadError, formatShownAt, classifyError, probeServer, describeProbe,
 } from '../../services/netPolicy';
-import { markUserRetry, markProbe } from '../../utils/perfBeacon';
+import { markUserRetry, markProbe, markProbeStart } from '../../utils/perfBeacon';
 
 /**
  * Step 4.8: the one way a page says its data could not be loaded.
@@ -29,6 +29,7 @@ const LoadProblem = ({ error, what = 'the data', shownAt = null, onRetry, retryi
     if (!shouldProbe) { setProbe(null); return undefined; }
     let alive = true;
     setProbe({ status: 'checking' });
+    markProbeStart(); // step 4.10a: the recorder's row waits for this answer
     probeServer().then((p) => {
       markProbe(p);
       if (alive) setProbe(p);

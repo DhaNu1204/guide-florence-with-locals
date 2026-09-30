@@ -179,7 +179,8 @@ function clientPerfInsert($conn, $userId, array $in, $late) {
     $dmode = in_array($in['display_mode'] ?? '', ['standalone', 'browser'], true) ? $in['display_mode'] : null;
     $inst  = perfStr($in['install_id'] ?? null, 16);
     $build = perfStr($in['build'] ?? null, 24);
-    $stuck = perfStr($in['stuck'] ?? null, 120);
+    // step 4.10a: perfStr() drops commas, so the list is stored space-separated
+    $stuck = perfStr(str_replace(',', ' ', (string) ($in['stuck'] ?? '')), 120);
     $pst   = in_array($in['probe_status'] ?? '', ['ok', 'timeout', 'network', 'http', 'offline'], true) ? $in['probe_status'] : null;
     $pms   = perfInt($in['probe_ms'] ?? null, 0, 600000);
     $loadId = perfStr($in['load_id'] ?? null, 20);

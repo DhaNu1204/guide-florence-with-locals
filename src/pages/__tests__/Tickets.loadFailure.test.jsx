@@ -16,7 +16,7 @@ vi.mock('../../contexts/PageTitleContext', () => {
   return { usePageTitle: () => ({ setPageTitle }) };
 });
 vi.mock('../../utils/perfBeacon', () => ({
-  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(), markProbe: vi.fn(),
+  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(), markProbe: vi.fn(), markProbeStart: vi.fn(),
 }));
 vi.mock('../../services/ticketsService', () => ({
   getTickets: vi.fn(), addTicket: vi.fn(), deleteTicket: vi.fn(), updateTicket: vi.fn(),
