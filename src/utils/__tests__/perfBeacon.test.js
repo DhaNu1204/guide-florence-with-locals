@@ -32,8 +32,9 @@ const loadFresh = async () => {
 
 const payloadOf = (i = 0) => JSON.parse(beacons[i].blob.__text);
 
-beforeEach(() => { vi.useFakeTimers(); });
-afterEach(() => { vi.useRealTimers(); });
+// step 4.10b: a bad load now runs a server check before its row goes; offline here, it fails at once
+beforeEach(() => { vi.useFakeTimers(); global.fetch = vi.fn(() => Promise.reject(new TypeError('Load failed'))); });
+afterEach(() => { vi.useRealTimers(); delete global.fetch; });
 
 describe('perfBeacon (step 4.7)', () => {
   it('a normal load sends exactly one row with sensible timings', async () => {
@@ -44,7 +45,7 @@ describe('perfBeacon (step 4.7)', () => {
     m.markListStart(); m.markListEnd(true);
 
     expect(beacons.length).toBe(0);   // nothing is sent until the load has settled
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     expect(beacons.length).toBe(1);
 
     const p = payloadOf();
@@ -67,9 +68,9 @@ describe('perfBeacon (step 4.7)', () => {
     m.markChunkStart(); m.markChunkEnd(true);
     m.markListStart();                       // and never ends - the bad morning
 
-    vi.advanceTimersByTime(5000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(beacons.length).toBe(0);          // not yet: we wait the full 45s (step 4.8)
-    vi.advanceTimersByTime(40000);
+    await vi.advanceTimersByTimeAsync(40000);
     expect(beacons.length).toBe(1);
 
     const p = payloadOf();
@@ -83,7 +84,7 @@ describe('perfBeacon (step 4.7)', () => {
     const m = await loadFresh();
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart();                     // the white-screen case from Part 1
-    vi.advanceTimersByTime(45000);
+    await vi.advanceTimersByTimeAsync(45000);
 
     const p = payloadOf();
     expect(p.verify_status).toBe('pending');
@@ -107,9 +108,9 @@ describe('perfBeacon (step 4.7)', () => {
     m.markVerifyStart(); m.markVerifyEnd(true);
     m.markChunkStart(); m.markChunkEnd(true);
     m.markListStart(); m.markListEnd(true);
-    vi.advanceTimersByTime(2000);
+    await vi.advanceTimersByTimeAsync(2000);
     window.dispatchEvent(new Event('pagehide'));
-    vi.advanceTimersByTime(60000);
+    await vi.advanceTimersByTimeAsync(60000);
     expect(beacons.length).toBe(1);
   });
 
@@ -118,7 +119,7 @@ describe('perfBeacon (step 4.7)', () => {
     m.markEntry('fwl@0.0.2');
     m.markRateLimited(); m.markRateLimited();
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(45000);
+    await vi.advanceTimersByTimeAsync(45000);
     const p = payloadOf();
     expect(p.rate_limited).toBe(2);
     expect(p).toHaveProperty('effective_type');
@@ -134,7 +135,7 @@ describe('perfBeacon (step 4.7)', () => {
     store['fwl:last-build'] = 'OLDHASH9';
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(45000);
+    await vi.advanceTimersByTimeAsync(45000);
     expect((payloadOf()).first_after_release).toBe(1);
 
     // the next load, same release, same device (the store survives)
@@ -143,7 +144,7 @@ describe('perfBeacon (step 4.7)', () => {
     m = await import('../perfBeacon');
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(45000);
+    await vi.advanceTimersByTimeAsync(45000);
     expect((payloadOf()).first_after_release).toBe(0);
   });
 
@@ -152,7 +153,7 @@ describe('perfBeacon (step 4.7)', () => {
     delete store.token;
     mod.markEntry('fwl@0.0.2');
     mod.markVerifyStart();
-    vi.advanceTimersByTime(45000);
+    await vi.advanceTimersByTimeAsync(45000);
     expect(beacons.length).toBe(0);
   });
 
@@ -189,7 +190,7 @@ describe('perfBeacon (step 4.8 repairs)', () => {
     delete store.token;                       // the old verify catch deleted it here
     m.markVerifyEnd(false);
     m.markVerifyError('network');
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     expect(beacons.length).toBe(1);
     const p = payloadOf();
     expect(p.token).toBe('a'.repeat(64));     // the start-of-load token still identifies the user
@@ -205,10 +206,10 @@ describe('perfBeacon (step 4.8 repairs)', () => {
     m.markAutoRetry(true); m.markAutoRetry(false);
     m.markUserRetry();
     m.markListStart(); m.markListEnd(false);
-    vi.advanceTimersByTime(5000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(beacons.length).toBe(0);           // the re-check is still running
     m.markVerifyRetryEnd(true);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     const p = payloadOf();
     expect(p.verify_error).toBe('timeout');
     expect(p.verify_retry).toBe('ok');
@@ -224,7 +225,7 @@ describe('perfBeacon (step 4.8 repairs)', () => {
     document.head.innerHTML = '<meta name="fwl-shell" content="cached">';
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     expect(payloadOf().shell_fallback).toBe(1);
     document.head.innerHTML = '';
     expect(m.__internals.shellFallback()).toBe(0);
@@ -244,7 +245,7 @@ describe('perfBeacon (step 4.8 repairs)', () => {
     m = await import('../perfBeacon');
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     expect(payloadOf().first_after_release).toBe(1);
     expect(store['fwl:last-build']).toBe('NEWHASH1');
   });

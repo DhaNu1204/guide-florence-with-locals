@@ -89,8 +89,10 @@ function clientPerfEnsureColumns($conn) {
  *   install_id    random id per app install / browser profile (not a person, not a device id)
  *   build         entry-script hash the load ran
  *   stuck         endpoint file names whose timer fired, e.g. "tours.php,guide-payments.php"
- *   probe_status / probe_ms  the reachability check after a failed load
- *   load_id       client id of the load, UNIQUE: a row re-sent later is stored once
+ *   probe_status / probe_ms  the reachability check after a failed load: ok | timeout | network |
+ *                 http | offline; step 4.10b: or why there is none - running (still out when the
+ *                 row had to leave) | notrun (row left before any check was due)
+ *   load_id      client id of the load, UNIQUE: a row re-sent later is stored once
  *   sent_late     1 = delivered by a later load (the beacon of the failed load never arrived)
  */
 function clientPerfEnsureColumns410($conn) {
@@ -181,7 +183,7 @@ function clientPerfInsert($conn, $userId, array $in, $late) {
     $build = perfStr($in['build'] ?? null, 24);
     // step 4.10a: perfStr() drops commas, so the list is stored space-separated
     $stuck = perfStr(str_replace(',', ' ', (string) ($in['stuck'] ?? '')), 120);
-    $pst   = in_array($in['probe_status'] ?? '', ['ok', 'timeout', 'network', 'http', 'offline'], true) ? $in['probe_status'] : null;
+    $pst   = in_array($in['probe_status'] ?? '', ['ok', 'timeout', 'network', 'http', 'offline', 'running', 'notrun'], true) ? $in['probe_status'] : null;
     $pms   = perfInt($in['probe_ms'] ?? null, 0, 600000);
     $loadId = perfStr($in['load_id'] ?? null, 20);
     $late  = $late ? 1 : 0;

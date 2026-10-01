@@ -41,7 +41,7 @@ describe('perfBeacon step 4.10', () => {
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
     m.markListStart(); m.markListEnd(true);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     const p = payloadOf();
     expect(p.display_mode).toBe('standalone');
     expect(p.install_id).toMatch(/^[0-9a-f]{8,16}$/);
@@ -53,12 +53,12 @@ describe('perfBeacon step 4.10', () => {
   it('a tab is "browser"; the install id stays the same across loads', async () => {
     let m = await loadFresh();
     m.markEntry('fwl@0.0.2'); m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     const first = payloadOf();
     expect(first.display_mode).toBe('browser');
     m = await loadFresh();
     m.markEntry('fwl@0.0.2'); m.markVerifyStart(); m.markVerifyEnd(true);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     expect(payloadOf().install_id).toBe(first.install_id);
     expect(payloadOf().load_id).not.toBe(first.load_id);
   });
@@ -73,7 +73,7 @@ describe('perfBeacon step 4.10', () => {
     m.markTimeout('/api/guide-payments.php?action=pending_tours');
     m.markProbe({ status: 'ok', ms: 312.4 });
     m.markListEnd(false);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     const p = payloadOf();
     expect(p.stuck).toBe('tours.php,guide-payments.php');
     expect(p.timeouts).toBe(3);
@@ -86,7 +86,7 @@ describe('perfBeacon step 4.10', () => {
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
     m.markListStart(); m.markTimeout('/api/tours.php'); m.markListEnd(false);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     const failed = payloadOf();
     expect(outbox().map((x) => x.load_id)).toEqual([failed.load_id]);
 
@@ -107,7 +107,7 @@ describe('perfBeacon step 4.10', () => {
     let m = await loadFresh();
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(false);
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     expect(outbox()).toHaveLength(1);
 
     global.fetch = vi.fn(async () => { throw new TypeError('Load failed'); });
@@ -120,15 +120,16 @@ describe('perfBeacon step 4.10', () => {
   });
 
   it('step 4.10a: a running server check holds the row until it answers', async () => {
+    global.fetch = vi.fn(() => new Promise(() => {})); // step 4.10b: the recorder's own check hangs
     const m = await loadFresh();
     m.markEntry('fwl@0.0.2');
     m.markVerifyStart(); m.markVerifyEnd(true);
     m.markListStart(); m.markTimeout('/api/tours.php'); m.markListEnd(false);
     m.markProbeStart();
-    vi.advanceTimersByTime(4000);
+    await vi.advanceTimersByTimeAsync(4000);
     expect(beacons.length).toBe(0);          // still waiting for the check
     m.markProbe({ status: 'timeout', ms: 6000 });
-    vi.advanceTimersByTime(1600);
+    await vi.advanceTimersByTimeAsync(1600);
     expect(beacons.length).toBe(1);
     expect(payloadOf().probe_status).toBe('timeout');
     expect(payloadOf().probe_ms).toBe(6000);

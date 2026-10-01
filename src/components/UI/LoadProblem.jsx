@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { FiAlertTriangle, FiRefreshCw } from 'react-icons/fi';
 import {
-  describeLoadError, formatShownAt, classifyError, probeServer, describeProbe,
+  describeLoadError, formatShownAt, classifyError, describeProbe,
 } from '../../services/netPolicy';
-import { markUserRetry, markProbe, markProbeStart } from '../../utils/perfBeacon';
+import { markUserRetry, serverCheck } from '../../utils/perfBeacon';
 
 /**
  * Step 4.8: the one way a page says its data could not be loaded.
@@ -29,10 +29,10 @@ const LoadProblem = ({ error, what = 'the data', shownAt = null, onRetry, retryi
     if (!shouldProbe) { setProbe(null); return undefined; }
     let alive = true;
     setProbe({ status: 'checking' });
-    markProbeStart(); // step 4.10a: the recorder's row waits for this answer
-    probeServer().then((p) => {
-      markProbe(p);
-      if (alive) setProbe(p);
+    // Step 4.10b: the recorder's own check (shared if it is already running) - the row records it
+    // whether or not this banner is still on screen when the answer comes.
+    Promise.resolve(serverCheck()).then((p) => {
+      if (alive && p) setProbe(p);
     });
     return () => { alive = false; };
   }, [error, shouldProbe]);
