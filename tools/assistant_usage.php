@@ -3,7 +3,9 @@ if (php_sapi_name() !== 'cli') { http_response_code(404); exit; } // CLI-only (s
 /**
  * Step 7.6 - assistant usage per day (Europe/Rome), read-only.
  *
- *   FWL_API_DIR=<api dir> php82 tools/assistant_usage.php [--days=7]
+ *   FWL_API_DIR=<api dir> php82 tools/assistant_usage.php [--days=7] [--end=YYYY-MM-DD]
+ *   (--end: the period is the N days ending on that Rome date - a late weekly review still covers
+ *   the same week, and the review's permission rule can stay one exact command)
  *
  * Per day and user: questions, tokens (uncached in / out / cache read / cache write, and "cap
  * tokens" = what counts toward ASSISTANT_DAILY_TOKEN_CAP: in + out + cache write + cache read / 10),
@@ -20,20 +22,25 @@ require $apiDir . '/config.php';
 require_once $apiDir . '/Middleware.php';
 require_once $apiDir . '/lib/assistant_core.php'; // assistantDailyTokenCap() / assistantEnabled(): the endpoint's own rules
 
-$days = 7;
-foreach (array_slice($argv, 1) as $a) if (preg_match('/^--days=(\d{1,3})$/', $a, $m)) $days = max(1, (int) $m[1]);
+$days = 7; $end = null;
+foreach (array_slice($argv, 1) as $a) {
+    if (preg_match('/^--days=(\d{1,3})$/', $a, $m)) $days = max(1, (int) $m[1]);
+    if (preg_match('/^--end=(\d{4}-\d{2}-\d{2})$/', $a, $m)) $end = $m[1];
+}
 
 $rome = new DateTimeZone('Europe/Rome');
 $utc = new DateTimeZone('UTC');
-$first = (new DateTime('today', $rome))->modify('-' . ($days - 1) . ' days');
+$last = $end ? new DateTime($end . ' 00:00:00', $rome) : new DateTime('today', $rome);
+$first = (clone $last)->modify('-' . ($days - 1) . ' days');
 $fromUtc = (clone $first)->setTimezone($utc)->format('Y-m-d H:i:s');
+$toUtc = (clone $last)->modify('+1 day')->setTimezone($utc)->format('Y-m-d H:i:s');
 $has = function ($t) use ($conn) { $r = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($t) . "'"); return $r && $r->num_rows > 0; };
 // created_at is TIMESTAMP and the DB session is UTC (step 2.1): read it as UTC, group by the Rome day
 $romeDay = function ($ts) use ($rome, $utc) { return (new DateTime($ts, $utc))->setTimezone($rome)->format('Y-m-d D'); };
 
 $env = (string) EnvLoader::get('APP_ENV', '?');
 $cap = assistantDailyTokenCap();
-echo "assistant usage - $env - last $days day(s) from " . $first->format('Y-m-d') . " (Europe/Rome)"
+echo "assistant usage - $env - $days day(s) " . $first->format('Y-m-d') . " .. " . $last->format('Y-m-d') . " (Europe/Rome)"
     . " - enabled=" . (assistantEnabled() ? 'true' : 'false') . " cap=$cap\n\n";
 
 $users = [];
@@ -45,8 +52,8 @@ if (!$has('assistant_logs')) {
 } else {
     $st = $conn->prepare("SELECT user_id, created_at, input_tokens, output_tokens, COALESCE(cache_read_tokens, 0) cr,
                                  COALESCE(cache_write_tokens, 0) cw, ms, error
-                          FROM assistant_logs WHERE created_at >= ? ORDER BY created_at");
-    $st->bind_param('s', $fromUtc); $st->execute(); $res = $st->get_result();
+                          FROM assistant_logs WHERE created_at >= ? AND created_at < ? ORDER BY created_at");
+    $st->bind_param('ss', $fromUtc, $toUtc); $st->execute(); $res = $st->get_result();
     $agg = []; $dayCap = [];
     while ($x = $res->fetch_assoc()) {
         $d = $romeDay($x['created_at']);
@@ -75,8 +82,8 @@ if (!$has('assistant_logs')) {
         $tot['captok'] += $dayCap[$d] ?? 0;
     }
     echo "\ntotal: {$tot['q']} questions, {$tot['captok']} cap tokens, {$tot['err']} errors, {$tot['cap']} cap hits\n";
-    $e = $conn->prepare("SELECT error, COUNT(*) n FROM assistant_logs WHERE created_at >= ? AND error IS NOT NULL AND error <> 'daily_cap_reached' GROUP BY error ORDER BY n DESC LIMIT 5");
-    $e->bind_param('s', $fromUtc); $e->execute(); $er = $e->get_result();
+    $e = $conn->prepare("SELECT error, COUNT(*) n FROM assistant_logs WHERE created_at >= ? AND created_at < ? AND error IS NOT NULL AND error <> 'daily_cap_reached' GROUP BY error ORDER BY n DESC LIMIT 5");
+    $e->bind_param('ss', $fromUtc, $toUtc); $e->execute(); $er = $e->get_result();
     while ($x = $er->fetch_assoc()) echo "  error x{$x['n']}: " . mb_substr($x['error'], 0, 100) . "\n";
     $e->close();
 }
@@ -85,8 +92,8 @@ echo "\n";
 if (!$has('assistant_actions')) {
     echo "no assistant_actions table yet (no assignment confirmed from a card here)\n";
 } else {
-    $st = $conn->prepare("SELECT action, whatsapp_sent, whatsapp_result, created_at FROM assistant_actions WHERE created_at >= ? ORDER BY created_at");
-    $st->bind_param('s', $fromUtc); $st->execute(); $res = $st->get_result();
+    $st = $conn->prepare("SELECT action, whatsapp_sent, whatsapp_result, created_at FROM assistant_actions WHERE created_at >= ? AND created_at < ? ORDER BY created_at");
+    $st->bind_param('ss', $fromUtc, $toUtc); $st->execute(); $res = $st->get_result();
     $act = [];
     while ($x = $res->fetch_assoc()) {
         $d = $romeDay($x['created_at']);
@@ -115,8 +122,8 @@ if (!$has('client_perf')) {
 } else {
     $st = $conn->prepare("SELECT id, user_id, created_at, route, reason, verify_status, chunk_status, list_status, timeouts,
                                  shell_fallback, display_mode, stuck, probe_status, probe_ms, sent_late
-                          FROM client_perf WHERE created_at >= ? ORDER BY created_at");
-    $st->bind_param('s', $fromUtc); $st->execute(); $res = $st->get_result();
+                          FROM client_perf WHERE created_at >= ? AND created_at < ? ORDER BY created_at");
+    $st->bind_param('ss', $fromUtc, $toUtc); $st->execute(); $res = $st->get_result();
     $pwa = []; $tabs = 0; $tabFail = 0;
     while ($x = $res->fetch_assoc()) {
         $x['rome_day'] = $romeDay($x['created_at']);
