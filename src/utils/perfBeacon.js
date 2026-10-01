@@ -9,7 +9,8 @@
  *
  * This module records what his phone really experiences and posts it once per page load.
  * It changes nothing: it starts no request of its own beyond the single beacon at the end
- * (step 4.10: plus, after a bad load, one delayed re-send of that row from a later load),
+ * (step 4.10: plus, after a bad load, one delayed re-send of that row from a later load;
+ * step 4.10b: plus, after a bad load, the ~60-byte server check - shared with the banner's),
  * it never awaits anything, it never throws into a caller, and every entry point is
  * wrapped so that a fault in here cannot affect the page. If this file were deleted the
  * app would behave identically.
@@ -17,6 +18,8 @@
  * Nothing identifying is recorded: no tour data, no customer data, no names, no URLs
  * beyond the route name, no free text. Timings, statuses and connection facts only.
  */
+
+import { probeServer, PROBE_TIMEOUT_MS } from '../services/netPolicy';
 
 // Same base as every other call, so a dev build posts to its own API instead of a 404.
 const ENDPOINT = `${import.meta.env.VITE_API_URL || '/api'}/client_perf.php`;
@@ -72,6 +75,8 @@ const state = {
   stuck: [],               // step 4.10: endpoint file names whose timer fired
   probe: null,             // step 4.10: { status, ms } of the reachability check after a failure
   probePhase: { start: null, end: null, status: 'none' }, // step 4.10a: the row waits for the check
+  probeRun: null,          // step 4.10b: the check now running (one at a time, shared with the banner)
+  probeWaited: false,      // step 4.10b: the row already held once for a check of its own
   firstAfterRelease: null,
   deadlineTimer: null,
   settleTimer: null,
@@ -186,7 +191,7 @@ function buildPayload(reason) {
   const vr = freeze(state.verifyRetry);
   const c = freeze(state.chunk);
   const l = freeze(state.list);
-  return {
+  const p = {
     release: state.release,
     route: state.route || routeName(location.pathname),
     reason,                                   // complete | deadline | hidden | pagehide
@@ -222,6 +227,11 @@ function buildPayload(reason) {
     // itself was still valid, so the start-of-load token still identifies the user.
     token: currentToken() || state.entryToken || null,
   };
+  // Step 4.10b: a bad load's row always says what the server check found - or why it has nothing:
+  // 'running' = the check was still out when the row had to leave (app hidden / closed),
+  // 'notrun'  = the row had to leave before any check was due (hidden while still loading).
+  if (!state.probe && isBadLoad(p)) p.probe_status = state.probePhase.status === 'started' ? 'running' : 'notrun';
+  return p;
 }
 
 /**
@@ -236,6 +246,20 @@ function buildPayload(reason) {
  */
 function send(reason) {
   if (state.sent) return;
+  // Step 4.10b: a bad load that reached 'complete' or the deadline without a server check runs one
+  // now and goes out when it answers (at most PROBE_TIMEOUT_MS later). 'hidden' / 'pagehide' cannot
+  // wait - the page may be gone a moment later - so those rows say 'running' / 'notrun' instead.
+  if ((reason === 'complete' || reason === 'deadline') && !state.probe && !state.probeWaited) {
+    try {
+      if (isBadLoad(buildPayload(reason))) {
+        state.probeWaited = true;
+        const go = () => send(reason);
+        setTimeout(go, PROBE_TIMEOUT_MS + 1000); // never hold the row longer than the check itself
+        startProbe().then(go, go);
+        return;
+      }
+    } catch (e) { /* fall through: send what we have */ }
+  }
   state.sent = true;
   if (state.deadlineTimer) clearTimeout(state.deadlineTimer);
   if (state.settleTimer) clearTimeout(state.settleTimer);
@@ -332,8 +356,29 @@ const endPhase = (p, ok) => {
   if (p.status !== 'started') return;
   p.end = now();
   p.status = ok ? 'ok' : 'failed';
+  // Step 4.10b: a failed phase starts the server check here, in the recorder. Until now only the
+  // on-screen banner started it, so a load whose page had been left (2026-10-01 12:27: Dashboard
+  // failed after the owner had moved on to Tours) went out without a check.
+  if (!ok && p !== state.probePhase && !state.sent) startProbe();
   scheduleSettleCheck();
 };
+
+/**
+ * Step 4.10b: the one server check of this moment. A check already running is shared (the banner
+ * and the recorder never send two); a later failure (e.g. after Retry) gets a fresh one. The first
+ * result of the load is what the row keeps (markProbe).
+ */
+function startProbe() {
+  if (state.probeRun) return state.probeRun;
+  startPhase(state.probePhase);
+  const run = Promise.resolve()
+    .then(() => probeServer())
+    .catch(() => ({ status: 'network', ms: null, code: null })) // probeServer never throws; belt and braces
+    .then((r) => { markProbe(r); return r; });
+  state.probeRun = run;
+  run.then(() => { if (state.probeRun === run) state.probeRun = null; });
+  return run;
+}
 
 // --- public API: every one of these is a no-op if anything goes wrong ---------------------
 
@@ -356,6 +401,9 @@ export const markEntry = safe((release) => {
   } catch (e) {
     state.firstAfterRelease = false; // storage blocked: simply unknown, never a failure
   }
+
+  // Step 4.10b: started from the cached shell = the page itself did not arrive in time; check now.
+  if (shellFallback()) startProbe();
 
   // The three guarantees that a load which never finishes still reports itself.
   state.deadlineTimer = setTimeout(() => send('deadline'), HARD_DEADLINE_MS);
@@ -387,6 +435,9 @@ export const markTimeout = safe((url) => {
   state.timeouts += 1;
   const name = endpointName(url); // step 4.10: which request stalled
   if (name && !state.stuck.includes(name) && state.stuck.length < 6) state.stuck.push(name);
+  // Step 4.10b: check the server while the request is still stuck - the moment that tells a dead
+  // connection ("the check fails too") from one stuck path ("the check gets through").
+  if (!state.sent) startProbe();
 });
 export const markAutoRetry = safe((ok) => {
   state.autoRetries += 1;
@@ -405,6 +456,18 @@ export const markProbe = safe((result) => {
     state.probe = { status: String(result.status).slice(0, 8), ms: Number.isFinite(result.ms) ? Math.round(result.ms) : null };
   }
 });
+
+/**
+ * Step 4.10b: what the load-problem banner calls to show "can the server be reached?". It shares the
+ * recorder's check when one is running, so a failure costs one check, not two. Never rejects.
+ */
+export function serverCheck() {
+  try {
+    return startProbe();
+  } catch (e) {
+    return probeServer();
+  }
+}
 
 // Testing seams only - not used by the app.
 export const __state = state;

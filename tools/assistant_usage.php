@@ -10,6 +10,8 @@ if (php_sapi_name() !== 'cli') { http_response_code(404); exit; } // CLI-only (s
  * errors (upstream / busy / internal, cap hits NOT included), cap hits (429 daily_cap_reached,
  * logged since 7.6), average seconds. Then per day: assignment confirms, undos, WhatsApps
  * really sent, and WhatsApp lines that were dry runs / not sent / failed.
+ * Step 4.10b: then the home-screen app: loads vs failures per day, each failure with what the server
+ * check found, and the CDN-test recommendation (2+ full stalls with the server reachable).
  * Nothing is written - missing tables are reported, never created.
  */
 $apiDir = getenv('FWL_API_DIR') ?: __DIR__ . '/../public_html/api';
@@ -102,4 +104,40 @@ if (!$has('assistant_actions')) {
     printf("%-15s %8s %6s %8s %8s %9s %9s\n", 'day', 'confirms', 'undos', 'WA sent', 'WA dry', 'WA not', 'WA failed');
     if (!$act) echo "(no confirms or undos in this period)\n";
     foreach ($act as $d => $a) printf("%-15s %8d %6d %8d %8d %9d %9d\n", $d, $a['confirm'], $a['undo'], $a['wa_sent'], $a['wa_dry'], $a['wa_not'], $a['wa_fail']);
+}
+
+// Step 4.10b: the home-screen app (installed PWA) - loads vs failures per day, and for each failure
+// what the server check found. Rules in tools/pwa_load_review_lib.php.
+require_once __DIR__ . '/pwa_load_review_lib.php';
+echo "\nHOME-SCREEN APP (client_perf, display_mode=standalone)\n";
+if (!$has('client_perf')) {
+    echo "no client_perf table yet\n";
+} else {
+    $st = $conn->prepare("SELECT id, user_id, created_at, route, reason, verify_status, chunk_status, list_status, timeouts,
+                                 shell_fallback, display_mode, stuck, probe_status, probe_ms, sent_late
+                          FROM client_perf WHERE created_at >= ? ORDER BY created_at");
+    $st->bind_param('s', $fromUtc); $st->execute(); $res = $st->get_result();
+    $pwa = []; $tabs = 0; $tabFail = 0;
+    while ($x = $res->fetch_assoc()) {
+        $x['rome_day'] = $romeDay($x['created_at']);
+        if ($x['display_mode'] === 'standalone') { $pwa[] = $x; continue; }
+        $tabs++;
+        if (pwaIsFailure($x)) $tabFail++;
+    }
+    $st->close();
+    $allDays = [];
+    for ($i = 0; $i < $days; $i++) $allDays[] = (clone $first)->modify("+$i days")->format('Y-m-d D');
+    $rev = pwaReview($pwa, $allDays);
+    printf("%-15s %6s %8s %11s %16s\n", 'day', 'loads', 'failures', 'full stalls', 'server reachable');
+    foreach ($rev['byDay'] as $d => $a) printf("%-15s %6d %8d %11d %16d\n", $d, $a['loads'], $a['failures'], $a['full_stalls'], $a['reachable_stalls']);
+    if (!$rev['failures']) echo "(no failed home-screen app loads in this period)\n";
+    foreach ($rev['failures'] as $f) {
+        $t = (new DateTime($f['created_at'], $utc))->setTimezone($rome)->format('D H:i:s');
+        $u = $users[(int) $f['user_id']] ?? ('#' . $f['user_id']);
+        printf("  %s %-8s %-18s %-22s check: %s%s%s\n", $t, $u, mb_substr((string) $f['route'], 0, 18), pwaFailureKind($f),
+            pwaCheckVerdict($f['probe_status']), $f['probe_ms'] !== null ? " ({$f['probe_ms']} ms)" : '',
+            ($f['stuck'] ? " - stalled: {$f['stuck']}" : '') . ((int) $f['sent_late'] === 1 ? ' - arrived late' : ''));
+    }
+    echo "(browser tabs, for comparison: $tabs loads, $tabFail failures)\n";
+    echo pwaRecommendation($rev), "\n";
 }

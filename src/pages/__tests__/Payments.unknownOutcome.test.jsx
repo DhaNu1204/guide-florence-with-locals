@@ -13,7 +13,7 @@ vi.mock('../../contexts/PageTitleContext', () => {
   return { usePageTitle: () => ({ setPageTitle }) };
 });
 vi.mock('../../utils/perfBeacon', () => ({
-  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(), markProbe: vi.fn(), markProbeStart: vi.fn(),
+  markListStart: vi.fn(), markListEnd: vi.fn(), markUserRetry: vi.fn(), markProbe: vi.fn(), markProbeStart: vi.fn(), serverCheck: vi.fn(() => Promise.resolve(null)),
   markRateLimited: vi.fn(), markTimeout: vi.fn(), markAutoRetry: vi.fn(),
 }));
 
