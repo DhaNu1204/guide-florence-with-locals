@@ -41,7 +41,8 @@ $romeDay = function ($ts) use ($rome, $utc) { return (new DateTime($ts, $utc))->
 $env = (string) EnvLoader::get('APP_ENV', '?');
 $cap = assistantDailyTokenCap();
 echo "assistant usage - $env - $days day(s) " . $first->format('Y-m-d') . " .. " . $last->format('Y-m-d') . " (Europe/Rome)"
-    . " - enabled=" . (assistantEnabled() ? 'true' : 'false') . " cap=$cap\n\n";
+    . " - enabled=" . (assistantEnabled() ? 'true' : 'false') . " cap=$cap\n"
+    . "run at " . (new DateTime('now', $rome))->format('D d M Y H:i') . " Europe/Rome\n\n"; // the review's late-run check reads this
 
 $users = [];
 $r = $conn->query("SELECT id, username FROM users");

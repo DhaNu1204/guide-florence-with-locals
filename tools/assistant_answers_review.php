@@ -44,7 +44,8 @@ $romeTime = function ($utcTs) use ($utc, $rome) { return (new DateTime($utcTs, $
 $has = function ($t) use ($conn) { $r = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($t) . "'"); return $r && $r->num_rows > 0; };
 $cut = function ($s, $n = 300) { $s = trim(preg_replace('/\s+/u', ' ', (string) $s)); return mb_strlen($s) > $n ? mb_substr($s, 0, $n) . '…' : $s; };
 
-echo "assistant answers review - " . $first->format('Y-m-d') . " .. " . $last->format('Y-m-d') . " (Europe/Rome, $days day(s))\n\n";
+echo "assistant answers review - " . $first->format('Y-m-d') . " .. " . $last->format('Y-m-d') . " (Europe/Rome, $days day(s))\n"
+    . "run at " . (new DateTime('now', $rome))->format('D d M Y H:i') . " Europe/Rome\n\n";
 
 $users = [];
 $r = $conn->query("SELECT id, username FROM users");
