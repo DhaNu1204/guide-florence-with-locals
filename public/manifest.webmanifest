@@ -2,7 +2,7 @@
   "name": "Florence with Locals — Tour Management",
   "short_name": "FwL Tours",
   "description": "Tour, guide and daily profit management for Florence with Locals",
-  "start_url": "/",
+  "start_url": "/today",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

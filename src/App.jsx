@@ -13,6 +13,8 @@ import Login from './pages/Login';
 import { PageTitleProvider } from './contexts/PageTitleContext';
 import BokunAutoSyncProvider from './components/BokunAutoSyncProvider';
 import lazyWithRetry from './utils/lazyWithRetry';
+// Step 4.6: /today is the installed app's start page - eager (no extra chunk request on a weak link)
+import Today from './pages/Today';
 import './index.css';
 
 // Step 4.1: every page below is fetched as its own chunk the first time its route
@@ -98,6 +100,35 @@ function WriteUnknownListener() {
   return null;
 }
 
+// Step 4.6: the installed (home-screen) app opens on /today. iOS keeps the start URL it saw at
+// install time, so the manifest alone cannot move an existing install: on the first screen of an
+// app launch at "/" in standalone mode, go to /today once. The Dashboard stays in the menu.
+export function isStandalone() {
+  try {
+    return Boolean(window.navigator.standalone)
+      || (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches);
+  } catch (_) {
+    return false;
+  }
+}
+
+function StandaloneStart() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    let first = false;
+    try {
+      first = !sessionStorage.getItem('fwl_start_done');
+      sessionStorage.setItem('fwl_start_done', '1');
+    } catch (_) {
+      first = false;
+    }
+    if (first && location.pathname === '/' && isStandalone()) navigate('/today', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -131,6 +162,16 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       {/* Public, no-login guide availability response page (secret token link) */}
       <Route path="/respond/:token" element={<GuideRespond />} />
+      <Route
+        path="/today"
+        element={
+          <ProtectedRoute>
+            <ModernLayout>
+              <Today />
+            </ModernLayout>
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/"
         element={
@@ -309,6 +350,7 @@ function App() {
           <ForbiddenListener />
           <WriteUnknownListener />
           <UpdateBanner />
+          <StandaloneStart />
           <AuthProvider>
             <PageTitleProvider>
               <BokunAutoSyncProvider>

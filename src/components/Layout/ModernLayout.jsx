@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   FiHome,
   FiCalendar,
+  FiClock,
   FiUsers,
   FiTag,
   FiSettings,
@@ -65,6 +66,14 @@ const ModernLayout = ({ children }) => {
 
   // Tuscan-themed menu items
   const menuItems = [
+    {
+      title: 'Today', // step 4.6: the light page the installed app opens on
+      icon: FiClock,
+      path: '/today',
+      color: 'text-terracotta-600',
+      bgColor: 'bg-terracotta-50',
+      borderColor: 'border-terracotta-500'
+    },
     {
       title: 'Dashboard',
       icon: FiHome,
