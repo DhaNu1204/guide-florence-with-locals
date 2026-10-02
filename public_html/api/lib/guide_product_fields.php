@@ -40,6 +40,20 @@ if (!function_exists('ensureProductDurationColumn')) {
     }
 }
 
+if (!function_exists('ensureProductMeetingPointColumn')) {
+    /** Step 4.6: where a product's guests meet the guide (filled from Bokun startPoints by
+     *  tools/product_meeting_point_prefill.php; NULL = not known, the /today page shows nothing). */
+    function ensureProductMeetingPointColumn($conn) {
+        static $done = false;
+        if ($done) return;
+        $has = $conn->query("SHOW COLUMNS FROM products LIKE 'meeting_point'");
+        if ($has && $has->num_rows === 0) {
+            $conn->query("ALTER TABLE products ADD COLUMN meeting_point VARCHAR(255) NULL DEFAULT NULL");
+        }
+        $done = true;
+    }
+}
+
 if (!function_exists('guideRowFlags')) {
     /** mysqli returns "1"/"0": the API sends real numbers (0/1) for the two flags. */
     function guideRowFlags(array $row) {

@@ -55,6 +55,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('userRole');
       localStorage.removeItem('userName');
       localStorage.removeItem('pnlAccess');
+      localStorage.removeItem('fwl_today_copy_v1'); // step 4.6: /today's saved copy (Today.jsx TODAY_COPY_KEY)
       setToken(null);
       setUserRole(null);
       setUserName(null);
@@ -212,6 +213,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
     localStorage.removeItem('pnlAccess');
+    localStorage.removeItem('fwl_today_copy_v1'); // step 4.6: /today's saved copy (Today.jsx TODAY_COPY_KEY)
     setToken(null);
     setUserRole(null);
     setUserName(null);
