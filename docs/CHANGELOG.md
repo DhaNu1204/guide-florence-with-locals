@@ -1051,3 +1051,4 @@ Fixed all production application failures
 - **RESTful API Endpoints**: Proper HTTP methods and status codes
 - **Database Integrity**: All foreign keys and relationships verified
 - **Performance Optimization**: Efficient queries with proper indexing
+2026-10-04 step 6.15 — Guide Tour Report: a mixed departure counts once as its highest type (Combo > Uffizi = Accademia = Pitti > Other), no separate Mixed count, Type "Combo (mixed: 1 Combo + 1 Uffizi booking)", title from a booking of that type; rule in DOMAIN_RULES — verified: Claudia Durante Sep 2026 Combo 4→5, Mixed gone, total 16, row 10 combo title (staging + production); Caterina unchanged; 0 undecided mixes; smoke 12/12 both
