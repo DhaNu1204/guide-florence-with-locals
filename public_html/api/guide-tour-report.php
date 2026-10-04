@@ -19,6 +19,7 @@
 
 require_once 'config.php';
 require_once 'Middleware.php';
+require_once __DIR__ . '/lib/guide_report_core.php';
 
 // Require authentication for all report operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -89,7 +90,7 @@ function resolveDateRange($period, $start, $end) {
 /**
  * Month overview across all guides — group-aware unit count + category breakdown per guide.
  * Collapses each tour-group to one unit and classifies it by its MEMBER bookings'
- * titles (a group mixing categories counts as "Mixed"), via buildComposition().
+ * titles (a group mixing categories counts as its effective type), via buildComposition().
  */
 function getAllGuidesOverview($conn, $range, $period) {
     $sql = "SELECT
@@ -130,8 +131,7 @@ function getAllGuidesOverview($conn, $range, $period) {
                     'Uffizi'    => 0,
                     'Pitti'     => 0,
                     'Accademia' => 0,
-                    'Other'     => 0,
-                    'Mixed'     => 0
+                    'Other'     => 0
                 ],
                 '_groups'     => [] // group_id => list of member titles (this guide's)
             ];
@@ -147,12 +147,14 @@ function getAllGuidesOverview($conn, $range, $period) {
         }
     }
 
-    // Resolve each group to one unit: single member category, or "Mixed" when
-    // the members span more than one category. Then drop internal bookkeeping.
+    // Resolve each group to one unit: single member category, or its effective
+    // (highest) type when the members span more than one (step 6.15; "Mixed" only
+    // when the highest rank is shared). Then drop internal bookkeeping.
     $guides = [];
     foreach ($byGuide as $g) {
         foreach ($g['_groups'] as $memberTitles) {
-            list($category, , ) = buildComposition($memberTitles);
+            list($category) = buildComposition($memberTitles);
+            if (!isset($g['by_category'][$category])) { $g['by_category'][$category] = 0; }
             $g['by_category'][$category]++;
             $g['total_tours']++;
         }
@@ -248,11 +250,16 @@ function getGuideReport($conn, $guide_id, $range, $period) {
         $groupStmt->execute();
         $groupInfo = $groupStmt->get_result()->fetch_assoc();
 
-        list($category, $composition, $label) = buildComposition($accum['titles']);
+        list($category, $composition, $label, $titleIndex) = buildComposition($accum['titles']);
+        $title = $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $accum['title'];
+        if ($titleIndex !== null) {
+            // Mixed unit (step 6.15): show a booking of the effective type, not the group name
+            $title = $accum['titles'][$titleIndex];
+        }
         $tours[] = [
             'date'              => $groupInfo && $groupInfo['group_date'] ? $groupInfo['group_date'] : $accum['date'],
             'time'              => $groupInfo && $groupInfo['group_time'] ? $groupInfo['group_time'] : $accum['time'],
-            'title'             => $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $accum['title'],
+            'title'             => $title,
             'category'          => $category,
             'composition'       => $composition,
             'composition_label' => $label,
@@ -268,17 +275,18 @@ function getGuideReport($conn, $guide_id, $range, $period) {
     });
 
     // Category breakdown — always include all keys in this fixed order.
-    // A Mixed group increments ONLY "Mixed" (not its member categories),
-    // so the bucket sum still equals total_tours.
+    // A mixed group counts once, under its effective type (step 6.15), so the
+    // bucket sum still equals total_tours. "Mixed" appears only for an undecided
+    // mix (highest rank shared, e.g. Uffizi + Accademia with no Combo).
     $summary_by_category = [
         'Combo'     => 0,
         'Uffizi'    => 0,
         'Pitti'     => 0,
         'Accademia' => 0,
-        'Other'     => 0,
-        'Mixed'     => 0
+        'Other'     => 0
     ];
     foreach ($tours as $t) {
+        if (!isset($summary_by_category[$t['category']])) { $summary_by_category[$t['category']] = 0; }
         $summary_by_category[$t['category']]++;
     }
 
@@ -293,82 +301,6 @@ function getGuideReport($conn, $guide_id, $range, $period) {
             'tours'               => $tours
         ]
     ]);
-}
-
-/**
- * Classify a set of member titles into one unit category + composition.
- *
- * Returns [category, composition, composition_label]:
- *   - composition: ordered list of ['category' => ..., 'count' => ...] entries
- *     (fixed order Combo, Uffizi, Pitti, Accademia, Other; only present categories)
- *   - category: the single category when all members agree, else 'Mixed'
- *   - composition_label: 'Combo ×2, Uffizi ×1' for Mixed units, '' otherwise
- */
-function buildComposition($titles) {
-    $counts = [];
-    foreach ($titles as $title) {
-        $c = classifyTourCategory($title);
-        $counts[$c] = isset($counts[$c]) ? $counts[$c] + 1 : 1;
-    }
-
-    $composition = [];
-    foreach (['Combo', 'Uffizi', 'Pitti', 'Accademia', 'Other'] as $cat) {
-        if (isset($counts[$cat])) {
-            $composition[] = ['category' => $cat, 'count' => $counts[$cat]];
-        }
-    }
-
-    if (count($composition) === 0) {
-        return ['Other', [['category' => 'Other', 'count' => 0]], ''];
-    }
-    if (count($composition) === 1) {
-        return [$composition[0]['category'], $composition, ''];
-    }
-
-    $parts = [];
-    foreach ($composition as $entry) {
-        $parts[] = $entry['category'] . ' ×' . $entry['count'];
-    }
-    return ['Mixed', $composition, implode(', ', $parts)];
-}
-
-/**
- * Classify a tour by its title (case-insensitive).
- *
- * Keyword rules (tweak here):
- *   uffizi    = title contains "uffizi"
- *   accademia = title contains "accademia" OR "david"
- *   pitti     = title contains "pitti" OR "boboli" OR "palatina" OR "palatine"
- *
- * Category:
- *   2+ of {uffizi, accademia, pitti} present -> "Combo"
- *   else uffizi    -> "Uffizi"
- *   else pitti     -> "Pitti"
- *   else accademia -> "Accademia"
- *   else           -> "Other"
- */
-function classifyTourCategory($title) {
-    $t = mb_strtolower($title ?? '');
-
-    $uffizi    = (strpos($t, 'uffizi') !== false);
-    $accademia = (strpos($t, 'accademia') !== false) || (strpos($t, 'david') !== false);
-    $pitti     = (strpos($t, 'pitti') !== false)
-                 || (strpos($t, 'boboli') !== false)
-                 || (strpos($t, 'palatina') !== false)
-                 || (strpos($t, 'palatine') !== false);
-
-    $count = ($uffizi ? 1 : 0) + ($accademia ? 1 : 0) + ($pitti ? 1 : 0);
-
-    if ($count >= 2) {
-        return 'Combo';
-    } elseif ($uffizi) {
-        return 'Uffizi';
-    } elseif ($pitti) {
-        return 'Pitti';
-    } elseif ($accademia) {
-        return 'Accademia';
-    }
-    return 'Other';
 }
 
 $conn->close();
