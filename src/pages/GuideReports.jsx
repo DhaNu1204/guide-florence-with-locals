@@ -31,8 +31,10 @@ const PDF_COLORS = {
   white: [255, 255, 255]
 };
 
-// Tour category display order (matches backend classifyTourCategory;
-// "Mixed" = a merged group whose member bookings span more than one category)
+// Tour category display order (matches backend classifyTourCategory).
+// A merged group whose bookings span more than one type counts under its
+// effective (highest) type (step 6.15); "Mixed" is only sent for an undecided
+// mix (e.g. Uffizi + Accademia with no Combo), so it is listed only when present.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Pitti', 'Accademia', 'Other', 'Mixed'];
 
 // All-guides overview columns: always the 4 museums; include "Other"/"Mixed"
@@ -44,11 +46,12 @@ const overviewCategoryColumns = (guides = []) => {
 };
 
 // Export label for a tour's category: mixed rows carry their composition,
-// e.g. 'Mixed (Combo ×2, Uffizi ×1)'.
-const categoryExportLabel = (t) =>
-  t.category === 'Mixed' && t.composition_label
-    ? `Mixed (${t.composition_label})`
-    : (t.category || 'Other');
+// e.g. 'Combo (mixed: 1 Combo + 1 Uffizi booking)'.
+export const categoryExportLabel = (t) => {
+  if (!t.composition_label) return t.category || 'Other';
+  if (t.category === 'Mixed') return `Mixed (${t.composition_label})`;
+  return `${t.category} (mixed: ${t.composition_label})`;
+};
 
 // Default to LAST month (invoices arrive at month-end) — returns 'YYYY-MM'
 const getLastMonth = () => {
@@ -302,10 +305,12 @@ const GuideReports = () => {
     rows.push([]);
 
     if (report.mode === 'single') {
-      // Category summary block (all categories incl. Mixed, in order)
+      // Category summary block (all categories in order; Mixed only when present)
       const summary = report.summary_by_category || {};
       rows.push(['Category', 'Count']);
-      CATEGORY_ORDER.forEach((cat) => rows.push([cat, summary[cat] || 0]));
+      CATEGORY_ORDER
+        .filter((cat) => cat !== 'Mixed' || (summary[cat] || 0) > 0)
+        .forEach((cat) => rows.push([cat, summary[cat] || 0]));
       rows.push([]);
 
       rows.push(['#', 'Date', 'Time', 'Tour', 'Type']);
@@ -486,7 +491,7 @@ const GuideReports = () => {
                     const chipTitle = cat === 'Other'
                       ? 'Tours that did not match a known museum type'
                       : cat === 'Mixed'
-                        ? 'Merged groups whose bookings span more than one tour type'
+                        ? 'Merged groups mixing museums of the same rank (e.g. Uffizi + Accademia) - type not decided yet'
                         : undefined;
                     return (
                       <span
@@ -536,14 +541,14 @@ const GuideReports = () => {
                       <td className="px-3 py-2 text-stone-800">{t.title || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                          t.category === 'Other' || t.category === 'Mixed'
+                          t.category === 'Other' || t.category === 'Mixed' || t.composition_label
                             ? 'bg-gold-100 text-gold-800'
                             : 'bg-stone-100 text-stone-700'
                         }`}>
                           {t.category || 'Other'}
                         </span>
-                        {t.category === 'Mixed' && t.composition_label && (
-                          <span className="ml-1.5 text-xs text-stone-500">{t.composition_label}</span>
+                        {t.composition_label && (
+                          <span className="ml-1.5 text-xs text-stone-500">mixed: {t.composition_label}</span>
                         )}
                       </td>
                     </tr>
