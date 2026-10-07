@@ -182,7 +182,7 @@ function collectDigestDepartures($conn, $date) {
     $sql = "SELECT
                 IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS unit,
                 MAX(COALESCE(tg.guide_id, t.guide_id)) AS guide_id,
-                LEFT(COALESCE(MAX(tg.group_time), MIN(t.time)), 5) AS start_time,
+                LEFT(COALESCE(MAX(tg.departure_time), MAX(tg.group_time), MIN(t.time)), 5) AS start_time,
                 COALESCE(MAX(tg.display_name), MIN(t.title)) AS title,
                 SUM(COALESCE(t.participants, 0)) AS pax,
                 MAX(COALESCE(t.is_private, 0)) AS is_private,

@@ -263,7 +263,7 @@ function assistantTourCategory($title) {
  * Pure: no database, `$now` injected - tools/assistant_check.php runs it on fixtures.
  *
  * @param array $rows Each: id, group_id, title, time, participants, cancelled, language, is_private,
- *                    bokun_data, group_time, group_display_name
+ *                    bokun_data, group_time, group_display_name, group_departure_time (step 6.16, optional)
  */
 function assistantDaySummarize(array $rows, $date, DateTime $now) {
     $units = [];
@@ -280,6 +280,8 @@ function assistantDaySummarize(array $rows, $date, DateTime $now) {
 
         if (!empty($r['group_id'])) {
             $key = 'g' . (int) $r['group_id'];
+            // Step 6.16: a manual merge with a chosen time leaves at that time, whatever its members booked.
+            if (!empty($r['group_departure_time'])) { $start = substr((string) $r['group_departure_time'], 0, 5); }
             if (!isset($units[$key])) {
                 $units[$key] = [
                     'group' => true,
@@ -372,7 +374,7 @@ function assistantToolDaySummary($conn, array $input, array $ctx) {
     }
     $stmt = $conn->prepare("
         SELECT t.id, t.group_id, t.title, t.time, t.participants, t.cancelled, t.language, t.is_private,
-               t.bokun_data, tg.group_time, tg.display_name AS group_display_name
+               t.bokun_data, tg.group_time, tg.display_name AS group_display_name, tg.departure_time AS group_departure_time
         FROM tours t
         LEFT JOIN tour_groups tg ON t.group_id = tg.id
         LEFT JOIN products pr ON t.product_id = pr.bokun_product_id

@@ -755,11 +755,14 @@ export const tourGroupsAPI = {
     return response.data;
   },
 
-  async manualMerge(tourIds, displayName = null, notes = null) {
+  // Step 6.16: departureTime ("HH:MM") = the time the group leaves at, asked when the bookings'
+  // own times differ; omitted otherwise (the group then behaves exactly as before).
+  async manualMerge(tourIds, displayName = null, notes = null, departureTime = null) {
     const response = await axios.post(`${API_BASE_URL}/tour-groups.php?action=manual-merge`, {
       tour_ids: tourIds,
       display_name: displayName,
-      notes
+      notes,
+      ...(departureTime ? { departure_time: departureTime } : {})
     });
     clearTourCache();
     return response.data;

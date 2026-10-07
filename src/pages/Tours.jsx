@@ -29,6 +29,8 @@ import { useLocation } from 'react-router-dom';
 import { parseToursParams } from '../utils/deepLinks'; // step 7.4: assistant deep links
 import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive guides take no new work
 import { useAssistantState } from '../components/assistant/assistantStore';
+import MergeTimeDialog from '../components/MergeTimeDialog';
+import { mergeTimes, defaultMergeTime } from '../utils/groupTime'; // step 6.16
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -604,7 +606,10 @@ const Tours = () => {
 
     filtered.forEach(tour => {
       const tourDate = getBookingDate(tour);
-      const tourTime = getBookingTime(tour);
+      // Step 6.16: a group with a chosen departure time is placed and sorted by it; otherwise
+      // (as before) by the first of its bookings in the list.
+      const tourGroup = tour.group_id ? groupById[tour.group_id] : null;
+      const tourTime = tourGroup && tourGroup.departure_time ? tourGroup.departure_time.substring(0, 5) : getBookingTime(tour);
       const timePeriod = getTimePeriod(tourTime);
 
       if (!grouped[tourDate]) {
@@ -962,6 +967,26 @@ const Tours = () => {
     return null;
   };
 
+  // Step 6.16: bookings booked at different times -> ask which time the group leaves at.
+  // Resolves with "HH:MM", null when there is nothing to ask, or false when the user cancels.
+  const [mergeTimeAsk, setMergeTimeAsk] = useState(null);
+  const askMergeTime = (mergeTours, target) => {
+    const live = mergeTours.filter(t => !t.cancelled);
+    const times = mergeTimes(live.length ? live : mergeTours);
+    if (times.length < 2) return Promise.resolve(null);
+    const options = times.map(time => {
+      const at = live.filter(t => String(t.time || '').substring(0, 5) === time);
+      return { time, bookings: at.length, pax: at.reduce((s, t) => s + (parseInt(t.participants) || 0), 0) };
+    });
+    return new Promise(resolve => {
+      setMergeTimeAsk({ options, defaultTime: defaultMergeTime(target, times), resolve });
+    });
+  };
+  const closeMergeTimeAsk = (answer) => {
+    if (mergeTimeAsk) mergeTimeAsk.resolve(answer);
+    setMergeTimeAsk(null);
+  };
+
   // === Drag-and-Drop Handlers ===
   const handleDragStart = (e, id, type) => {
     // type: 'tour' or 'group'
@@ -1051,8 +1076,15 @@ const Tours = () => {
       return;
     }
 
+    // Step 6.16: the departure being merged INTO is the drop target.
+    const dropTarget = targetType === 'group'
+      ? { type: 'group', group: tourGroups.find(g => g.id === targetId) }
+      : { type: 'tour', tour: findTourById(targetId) };
+    const departureTime = await askMergeTime(mergeTours, dropTarget);
+    if (departureTime === false) return;
+
     try {
-      await tourGroupsAPI.manualMerge(tourIdsToMerge);
+      await tourGroupsAPI.manualMerge(tourIdsToMerge, null, null, departureTime);
       setSuccess('Tours merged successfully');
       setTimeout(() => setSuccess(null), 4000);
       await loadData(true, currentPage, getCurrentFilters());
@@ -1149,8 +1181,16 @@ const Tours = () => {
       return;
     }
 
+    // Step 6.16: on the phone the departure being merged into is the first one selected.
+    const first = selectedItems[0];
+    const selTarget = first && first.type === 'group'
+      ? { type: 'group', group: tourGroups.find(g => g.id === first.id) }
+      : { type: 'tour', tour: first ? findTourById(first.id) : null };
+    const departureTime = await askMergeTime(mergeTours, selTarget);
+    if (departureTime === false) return;
+
     try {
-      await tourGroupsAPI.manualMerge(tourIdsToMerge);
+      await tourGroupsAPI.manualMerge(tourIdsToMerge, null, null, departureTime);
       setSuccess('Tours merged successfully');
       setTimeout(() => setSuccess(null), 4000);
       setSelectionMode(false);
@@ -1986,6 +2026,16 @@ const Tours = () => {
         tour={manualEditTour}
         saving={manualSaving}
       />
+
+      {/* Step 6.16: merging bookings booked at different times */}
+      {mergeTimeAsk && (
+        <MergeTimeDialog
+          options={mergeTimeAsk.options}
+          defaultTime={mergeTimeAsk.defaultTime}
+          onConfirm={(time) => closeMergeTimeAsk(time)}
+          onCancel={() => closeMergeTimeAsk(false)}
+        />
+      )}
 
       {/* Booking Details Modal */}
       <BookingDetailsModal

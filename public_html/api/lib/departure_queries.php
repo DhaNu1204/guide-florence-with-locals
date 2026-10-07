@@ -23,7 +23,7 @@ if (!function_exists('fwlUnassignedReport')) {
 
         $reportSql = "SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit,
                              COALESCE(MAX(tg.group_date), MIN(t.date)) AS unit_date,
-                             LEFT(COALESCE(MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
+                             LEFT(COALESCE(MAX(tg.departure_time), MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
                              COALESCE(MAX(tg.display_name), MIN(t.title)) AS unit_title,
                              COUNT(*) AS bookings,
                              SUM(COALESCE(t.participants, 0)) AS pax,
@@ -81,7 +81,7 @@ if (!function_exists('fwlDepartureUnits')) {
         $sql = "SELECT u.*, g.name AS guide_name FROM (
                     SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit,
                            COALESCE(MAX(tg.group_date), MIN(t.date)) AS unit_date,
-                           LEFT(COALESCE(MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
+                           LEFT(COALESCE(MAX(tg.departure_time), MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
                            COALESCE(MAX(tg.display_name), MIN(t.title)) AS unit_title,
                            COUNT(*) AS bookings,
                            SUM(COALESCE(t.participants, 0)) AS pax,

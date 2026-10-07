@@ -245,7 +245,7 @@ function getGuideReport($conn, $guide_id, $range, $period) {
     // Second pass: one representative row per group, classified by its members.
     foreach ($groupAccum as $gid => $accum) {
         // Prefer the group's canonical date/time/title when available
-        $groupStmt = $conn->prepare("SELECT display_name, group_date, group_time FROM tour_groups WHERE id = ?");
+        $groupStmt = $conn->prepare("SELECT display_name, group_date, COALESCE(departure_time, group_time) AS group_time FROM tour_groups WHERE id = ?");
         $groupStmt->bind_param("i", $gid);
         $groupStmt->execute();
         $groupInfo = $groupStmt->get_result()->fetch_assoc();

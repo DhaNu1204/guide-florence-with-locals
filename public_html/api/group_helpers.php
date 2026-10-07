@@ -338,6 +338,50 @@ if (!function_exists('ensureGroupNotesColumn')) {
     }
 }
 
+if (!function_exists('ensureGroupDepartureTimeColumn')) {
+    /**
+     * Step 6.16: the time a MANUAL merge really leaves at, chosen by the owner when the members'
+     * own times differ. NULL = old behaviour (tour_groups.group_time). Only a manual merge writes
+     * it; the sync never does. Self-provision (also database/migrations/20261007_tour_groups_departure_time.sql).
+     */
+    function ensureGroupDepartureTimeColumn($conn) {
+        static $done = false;
+        if ($done) { return; }
+        $done = true;
+        $c = $conn->query("SHOW COLUMNS FROM tour_groups LIKE 'departure_time'");
+        if ($c && $c->num_rows === 0) {
+            $conn->query("ALTER TABLE tour_groups ADD COLUMN `departure_time` TIME NULL DEFAULT NULL AFTER `group_time`");
+            error_log("Step 6.16: added tour_groups.departure_time");
+        }
+    }
+}
+
+if (!function_exists('groupDepartureTimeInput')) {
+    /**
+     * Step 6.16: the departure_time a manual merge was asked to use. Returns 'HH:MM:00',
+     * null when none was given, or false when the value is not a valid 24-hour time.
+     */
+    function groupDepartureTimeInput($value) {
+        if ($value === null || $value === '') { return null; }
+        if (!is_string($value) || !preg_match('/^([01]\d|2[0-3]):([0-5]\d)(:00)?$/', trim($value), $m)) { return false; }
+        return $m[1] . ':' . $m[2] . ':00';
+    }
+}
+
+if (!function_exists('groupDepartureTimeFor')) {
+    /**
+     * Step 6.16: what a manual merge stores in departure_time. A time is kept only when the
+     * members' own times really differ - when they all leave at the same time there is nothing
+     * to choose and the column stays NULL (old behaviour).
+     */
+    function groupDepartureTimeFor(array $memberTimes, $chosen) {
+        if ($chosen === null) { return null; }
+        $distinct = [];
+        foreach ($memberTimes as $t) { $distinct[normalizeGroupTime($t)] = true; }
+        return count($distinct) > 1 ? $chosen : null;
+    }
+}
+
 if (!function_exists('groupNoteOf')) {
     function groupNoteOf($conn, $groupId) {
         $stmt = $conn->prepare("SELECT notes FROM tour_groups WHERE id = ?");

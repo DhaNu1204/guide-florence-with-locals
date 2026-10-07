@@ -5,6 +5,8 @@ import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
 import GroupNote from './GroupNote';
 import VasariChip, { VasariGroupChip } from './VasariChip';
+import BookedTimeChip from './BookedTimeChip';
+import { groupDepartureTime } from '../utils/groupTime';
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 
@@ -137,7 +139,7 @@ const TourGroup = ({
     }
   };
 
-  const groupTime = group.group_time ? group.group_time.substring(0, 5) : '';
+  const groupTime = groupDepartureTime(group); // step 6.16: the chosen time of a manual merge, else group_time
 
   return (
     <div
@@ -327,6 +329,7 @@ const TourGroup = ({
                         </span>
                       )}
                       <VasariChip tour={tour} />
+                      <BookedTimeChip tour={tour} group={group} />
                     </div>
                     <GroupTourNames tour={tour} />
                   </td>

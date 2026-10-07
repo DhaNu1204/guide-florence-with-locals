@@ -147,5 +147,14 @@ check('6.13 merging two noted groups keeps both, one per line',
     joinGroupNotes(['Meet at Loggia 9:15', 'One guest uses a wheelchair']) === "Meet at Loggia 9:15\nOne guest uses a wheelchair");
 check('6.13 ... no repeats, blanks ignored', joinGroupNotes(['A', null, ' ', 'A', 'B']) === "A\nB" && joinGroupNotes([null, '']) === null);
 
+// ---- step 6.16: the time a manual merge leaves at ---------------------------------------
+check('6.16 input "12:30" -> 12:30:00, "12:30:00" accepted', groupDepartureTimeInput('12:30') === '12:30:00' && groupDepartureTimeInput('12:30:00') === '12:30:00');
+check('6.16 no input -> null (old behaviour)', groupDepartureTimeInput(null) === null && groupDepartureTimeInput('') === null);
+check('6.16 bad input -> false', groupDepartureTimeInput('25:00') === false && groupDepartureTimeInput('12.30') === false
+    && groupDepartureTimeInput('9:30') === false && groupDepartureTimeInput(['12:30']) === false && groupDepartureTimeInput('12:30; DROP') === false);
+check('6.16 differing member times keep the chosen time', groupDepartureTimeFor(['14:30:00', '12:30:00'], '12:30:00') === '12:30:00');
+check('6.16 same member times store nothing (NULL)', groupDepartureTimeFor(['12:30:00', '12:30'], '12:30:00') === null);
+check('6.16 nothing chosen stores nothing', groupDepartureTimeFor(['14:30:00', '12:30:00'], null) === null);
+
 echo $failures === 0 ? "\nall checks passed\n" : "\n$failures check(s) FAILED\n";
 exit($failures === 0 ? 0 : 1);

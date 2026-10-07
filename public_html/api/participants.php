@@ -85,7 +85,7 @@ if ($unit === null) {
 // ---------------------------------------------------------------------------------------
 if ($unit['type'] === 'g') {
     $sql = "SELECT t.*, g.name AS guide_name, g.phone AS guide_phone,
-                   tg.display_name AS group_display_name, tg.group_time, tg.notes AS group_notes
+                   tg.display_name AS group_display_name, COALESCE(tg.departure_time, tg.group_time) AS group_time, tg.notes AS group_notes
               FROM tours t
               LEFT JOIN guides g ON g.id = COALESCE((SELECT tg2.guide_id FROM tour_groups tg2 WHERE tg2.id = t.group_id), t.guide_id)
               LEFT JOIN tour_groups tg ON tg.id = t.group_id
@@ -153,6 +153,9 @@ foreach ($all as $r) {
         'agency'    => participantsAgency($bokun),
         'manual'    => (isset($r['source']) && $r['source'] === 'manual'),
         'vasari'    => $vasari,
+        // Step 6.16: a booking whose own time differs from the departure's says when it booked.
+        'booked'    => ($unit['type'] === 'g' && substr((string) $r['time'], 0, 5) !== $departureTime)
+                         ? substr((string) $r['time'], 0, 5) : '',
     ];
 }
 $language = implode(', ', array_keys($languages));

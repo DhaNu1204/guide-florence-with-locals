@@ -33,7 +33,7 @@ if (!function_exists('fwlDepartureById')) {
         $where = $isGroup ? 't.group_id = ?' : 't.id = ? AND t.group_id IS NULL';
         $stmt = $conn->prepare("
             SELECT MIN(t.date) AS d,
-                   LEFT(COALESCE(MAX(tg.group_time), MIN(t.time)), 5) AS tm,
+                   LEFT(COALESCE(MAX(tg.departure_time), MAX(tg.group_time), MIN(t.time)), 5) AS tm,
                    COALESCE(MAX(tg.display_name), MIN(t.title)) AS title,
                    SUM(CASE WHEN t.cancelled = 0 THEN 1 ELSE 0 END) AS active_bookings,
                    SUM(CASE WHEN t.cancelled = 0 THEN COALESCE(t.participants, 0) ELSE 0 END) AS guests,

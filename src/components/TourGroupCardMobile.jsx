@@ -7,6 +7,8 @@ import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
 import GroupNote from './GroupNote';
 import VasariChip, { VasariGroupChip } from './VasariChip';
+import BookedTimeChip from './BookedTimeChip';
+import { groupDepartureTime } from '../utils/groupTime';
 
 // Small per-booking category badge; Combo gets the gold treatment so a
 // higher-pay booking hiding inside a group is easy to spot.
@@ -54,7 +56,7 @@ const TourGroupCardMobile = ({
   const bookingCount = group.tours ? countActiveBookings(group.tours) : (group.booking_count || 0);
   const guideName = group.assigned_guide_name || group.guide_name || guides.find(g => g.id == group.guide_id)?.name || null;
   const maxPax = getMaxPax(group.display_name);
-  const groupTime = group.group_time ? group.group_time.substring(0, 5) : '';
+  const groupTime = groupDepartureTime(group); // step 6.16: the chosen time of a manual merge, else group_time
 
   const languages = [...new Set(
     (group.tours || []).map(t => t.language).filter(Boolean)
@@ -301,6 +303,7 @@ const TourGroupCardMobile = ({
                   </span>
                   <CategoryBadge title={tour.title} className="mt-0.5" />
                   <VasariChip tour={tour} className="mt-0.5 ml-1" />
+                  <BookedTimeChip tour={tour} group={group} className="mt-0.5 ml-1" />
                 </div>
 
                 {/* PAX */}

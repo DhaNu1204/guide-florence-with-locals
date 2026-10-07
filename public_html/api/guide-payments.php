@@ -386,7 +386,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
         }
 
         // Get group info
-        $groupStmt = $conn->prepare("SELECT id, display_name, group_date, group_time, total_pax FROM tour_groups WHERE id = ?");
+        $groupStmt = $conn->prepare("SELECT id, display_name, group_date, COALESCE(departure_time, group_time) AS group_time, total_pax FROM tour_groups WHERE id = ?");
         $groupStmt->bind_param("i", $gid);
         $groupStmt->execute();
         $groupInfo = $groupStmt->get_result()->fetch_assoc();
@@ -737,7 +737,7 @@ function getPendingTours($conn) {
             }
 
             // Get group info
-            $groupStmt = $conn->prepare("SELECT id, display_name, group_date, group_time, total_pax FROM tour_groups WHERE id = ?");
+            $groupStmt = $conn->prepare("SELECT id, display_name, group_date, COALESCE(departure_time, group_time) AS group_time, total_pax FROM tour_groups WHERE id = ?");
             $groupStmt->bind_param("i", $gid);
             $groupStmt->execute();
             $groupInfo = $groupStmt->get_result()->fetch_assoc();

@@ -426,7 +426,8 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                    t.cancelled, t.booking_channel, t.viator_account, t.total_amount_paid, t.bokun_data,
                    t.source, t.manual_revenue, t.manual_currency,
                    t.is_private, t.guide_id, g.name AS guide_name,
-                   tg.display_name AS group_display_name, tg.group_time, tg.bucket_key AS group_bucket_key,
+                   tg.display_name AS group_display_name, tg.group_time, tg.departure_time AS group_departure_time,
+                   tg.bucket_key AS group_bucket_key,
                    (CASE WHEN pr.product_type = 'ticket' THEN 1 ELSE 0 END) AS is_ticket_product
             FROM tours t
             LEFT JOIN guides g  ON g.id = t.guide_id
@@ -453,7 +454,10 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                                         : ($row['product_id'] ? groupBucketKey($row['product_id'], $row['date'],
                                         ($row['group_id'] && $row['group_time']) ? $row['group_time'] : $row['time']) : null),
                 'date'            => $row['date'],
-                'time'            => $row['group_id'] && $row['group_time'] ? $row['group_time'] : $row['time'],
+                // Step 6.16: the time a manual merge leaves at; the bucket key above stays on group_time
+                // (it is the identity P&L overrides are stored under, not a displayed time).
+                'time'            => $row['group_id'] && $row['group_departure_time'] ? $row['group_departure_time']
+                                     : ($row['group_id'] && $row['group_time'] ? $row['group_time'] : $row['time']),
                 'title'           => $row['group_id'] && $row['group_display_name'] ? $row['group_display_name'] : $row['title'],
                 'is_group'        => $row['group_id'] ? true : false,
                 'is_ticket'       => intval($row['is_ticket_product']) === 1,
