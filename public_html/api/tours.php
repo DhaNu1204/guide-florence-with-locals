@@ -8,6 +8,7 @@ require_once __DIR__ . '/manual_helpers.php';      // pure helpers: hand-entered
 require_once __DIR__ . '/viator_helpers.php';      // pure helpers: the old-Viator-account label (step 6.9)
 require_once __DIR__ . '/rate_helpers.php';        // step 6.14: tours.rate_title + the Vasari rule
 require_once __DIR__ . '/lib/departure_queries.php'; // step 7.2: the unassigned report query (shared with the assistant)
+require_once __DIR__ . '/group_helpers.php';        // step 6.16: ensureGroupDepartureTimeColumn()
 
 // Require authentication for all tour operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -154,6 +155,7 @@ if ($checkIsPrivateCol && $checkIsPrivateCol->num_rows === 0) {
 ensureManualColumns($conn);
 ensureViatorAccountColumn($conn);   // step 6.9: the old-Viator-account label
 ensureRateTitleColumn($conn);       // step 6.14: the Bokun rate the booking was sold on
+ensureGroupDepartureTimeColumn($conn); // step 6.16: the time a manual merge leaves at (read by the reports)
 
 // Known ticket products (runs after the products table is guaranteed to exist).
 // Step 7.2b: seed only. The type is now set on the /products page (products.php); forcing

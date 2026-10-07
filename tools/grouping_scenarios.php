@@ -382,6 +382,39 @@ $gS2 = groupOf($conn, $s3);
 check('6.13 language split: the group keeping the id keeps the note', groupOf($conn, $s1) === $gS && $noteOf('tour_groups', $gS) === 'Meet at the Loggia');
 check('... the new group gets a copy', $gS2 !== null && $gS2 !== $gS && $noteOf('tour_groups', $gS2) === 'Meet at the Loggia');
 check('... and the bookings that moved do not get a second copy on their own note', $noteOf('tours', $s3) === null);
+
+// --- 24. step 6.16: a manual merge's chosen time - the sync never writes or changes it -------
+// The 7 Oct case: the 14:30 booking has the LOWER id, so the old merge took 14:30 as group_time.
+require_once $apiDir . '/lib/departure_queries.php';
+$t1430 = addTour($conn, 'dt1430', 2, '14:30:00', $D3);
+$t1230 = addTour($conn, 'dt1230', 4, '12:30:00', $D3);
+$tAlone = addTour($conn, 'dtalone', 2, '14:30:00', $D3); // a booking outside the group, same slot
+$chosen = groupDepartureTimeFor(['14:30:00', '12:30:00'], groupDepartureTimeInput('12:30'));
+$st = $conn->prepare("INSERT INTO tour_groups (group_date, group_time, departure_time, display_name, total_pax, is_manual_merge, guide_id)
+                      VALUES (?, '14:30:00', ?, 'Uffizi Gallery Test Tour', 6, 1, ?)");
+$st->bind_param('ssi', $D3, $chosen, $enGuide); $st->execute(); $gT = (int) $conn->insert_id; $st->close();
+$conn->query("UPDATE tours SET group_id = $gT, guide_id = $enGuide WHERE id IN ($t1430, $t1230)");
+$before = groupRow($conn, $gT);
+$r24a = $regroup3();
+$r24b = $regroup3();
+$after = groupRow($conn, $gT);
+check('6.16 two syncs: departure_time still 12:30:00', ($after['departure_time'] ?? null) === '12:30:00', var_export($after['departure_time'] ?? null, true));
+check('... group_time, members and updated_at untouched',
+    $after['group_time'] === '14:30:00' && $after['updated_at'] === $before['updated_at']
+    && groupOf($conn, $t1430) === $gT && groupOf($conn, $t1230) === $gT && groupOf($conn, $tAlone) !== $gT);
+check('... the second sync writes nothing', (int) $r24b['rows_written'] === 0, 'rows_written=' . $r24b['rows_written']);
+$dig = collectDigestDepartures($conn, $D3);
+$digTimes = [];
+foreach ($dig[$enGuide]['departures'] ?? [] as $dep) { $digTimes[$dep['unit']] = $dep['start_time']; }
+check('6.16 the guide digest says 12:30 for the group', ($digTimes["g$gT"] ?? null) === '12:30', json_encode($digTimes));
+$unitTime = null;
+foreach (fwlDepartureUnits($conn, $D3, $D3) as $u) { if ($u['departure_id'] === "g$gT") { $unitTime = $u['time']; } }
+check('6.16 departure units (/today, assistant) say 12:30', $unitTime === '12:30', var_export($unitTime, true));
+$conn->query("UPDATE tour_groups SET departure_time = NULL WHERE id = $gT");
+$dig = collectDigestDepartures($conn, $D3);
+$old = null;
+foreach ($dig[$enGuide]['departures'] ?? [] as $dep) { if ($dep['unit'] === "g$gT") { $old = $dep['start_time']; } }
+check('6.16 departure_time NULL = old behaviour (group_time 14:30)', $old === '14:30', var_export($old, true));
 $conn->query("DELETE FROM products WHERE bokun_product_id = " . TEST_PRODUCT);
 
 } catch (Throwable $e) {

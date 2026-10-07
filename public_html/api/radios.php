@@ -58,7 +58,7 @@ function radioDefaultDate() {
 function radioLoadDepartures($conn, $date) {
     $sql = "SELECT
                 IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS unit,
-                COALESCE(tg.group_time, MIN(t.time))  AS time,
+                COALESCE(tg.departure_time, tg.group_time, MIN(t.time)) AS time, -- step 6.16
                 SUM(t.participants)                   AS pax,
                 COUNT(*)                              AS bookings,
                 MIN(t.product_id)                     AS product_id,
@@ -72,7 +72,7 @@ function radioLoadDepartures($conn, $date) {
               AND t.cancelled = 0
               AND NOT EXISTS (SELECT 1 FROM products pr
                                WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
-            GROUP BY unit, tg.group_time, tg.guide_id
+            GROUP BY unit, tg.departure_time, tg.group_time, tg.guide_id
             ORDER BY time, unit";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("s", $date);

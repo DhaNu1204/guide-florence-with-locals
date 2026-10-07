@@ -144,6 +144,7 @@ function ensureTourGroupsTable($conn) {
 
     ensureGroupNotesColumn($conn); // step 6.13
     ensureRateTitleColumn($conn);  // step 6.14
+    ensureGroupDepartureTimeColumn($conn); // step 6.16
 }
 
 /**
@@ -241,7 +242,7 @@ function listGroups($conn) {
             FROM tour_groups tg
             LEFT JOIN guides g ON tg.guide_id = g.id
             $whereClause
-            ORDER BY tg.group_date ASC, tg.group_time ASC
+            ORDER BY tg.group_date ASC, COALESCE(tg.departure_time, tg.group_time) ASC
             LIMIT ? OFFSET ?";
 
     $allParams = array_merge($params, [$perPage, $offset]);
@@ -564,11 +565,19 @@ function autoGroupTours($conn, $data) {
  *   tour_ids (required): array of tour IDs to merge
  *   display_name (optional): custom name for the group
  *   notes (optional): notes for the group
+ *   departure_time (optional, step 6.16): "HH:MM" the group leaves at; kept only when the
+ *                  members' own times differ (otherwise the group behaves exactly as before)
  */
 function manualMergeTours($conn, $data) {
     $tourIds = $data['tour_ids'] ?? [];
     $displayName = $data['display_name'] ?? null;
     $notes = $data['notes'] ?? null;
+    $chosenTime = groupDepartureTimeInput($data['departure_time'] ?? null);
+    if ($chosenTime === false) {
+        http_response_code(400);
+        echo json_encode(['error' => 'departure_time must be a time like 12:30']);
+        return;
+    }
 
     if (!is_array($tourIds) || count($tourIds) < 2) {
         http_response_code(400);
@@ -635,13 +644,15 @@ function manualMergeTours($conn, $data) {
         if (!$displayName) {
             $displayName = $firstTour['title'];
         }
+        // Step 6.16: the time the owner chose, when the members' own times differ (else NULL).
+        $departureTime = groupDepartureTimeFor(array_column($tours, 'time'), $chosenTime);
 
         // Create the group as manual merge
         $stmt = $conn->prepare("
-            INSERT INTO tour_groups (group_date, group_time, display_name, notes, total_pax, is_manual_merge)
-            VALUES (?, ?, ?, ?, ?, 1)
+            INSERT INTO tour_groups (group_date, group_time, departure_time, display_name, notes, total_pax, is_manual_merge)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
         ");
-        $stmt->bind_param('ssssi', $groupDate, $groupTime, $displayName, $notes, $totalPax);
+        $stmt->bind_param('sssssi', $groupDate, $groupTime, $departureTime, $displayName, $notes, $totalPax);
 
         if (!$stmt->execute()) {
             throw new Exception('Failed to create group: ' . $stmt->error);

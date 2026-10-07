@@ -116,6 +116,10 @@ class ParticipantSheet extends FPDF
             $rest = count($b['names']) > 1 ? participantsText(implode(', ', array_slice($b['names'], 1))) : '';
             $namesTxt = $lead . ' VASARI' . ($rest !== '' ? ', ' . $rest : '');
         }
+        // Step 6.16: booked at another time than the departure leaves.
+        if (!empty($b['booked'])) {
+            $namesTxt .= ' (booked ' . $b['booked'] . ')';
+        }
         $lines = max(1, count($this->splitLines($namesTxt, $this->colw[2] - 2)));
         $h = 5 * $lines;
 
