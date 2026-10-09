@@ -53,5 +53,29 @@ check('missing key fails', webhookKeyMatches(null, 'abc123') === false);
 check('empty secret never matches (even an empty key)', webhookKeyMatches('', '') === false);
 check('array key (?key[]=) fails instead of throwing', webhookKeyMatches(['x'], 'abc123') === false);
 
+// --- step 4.11: delayed re-check of a booking the webhook's sync did not store ---
+check('confirmed, sync ok, not stored -> recheck', webhookNeedsRecheck('CONFIRMED', '106159471', true, false) === true);
+check('already stored -> no recheck', webhookNeedsRecheck('CONFIRMED', '106159471', true, true) === false);
+check('cancelled -> no recheck', webhookNeedsRecheck('CANCELLED', '106159471', true, false) === false);
+check('sync disabled/failed -> no recheck', webhookNeedsRecheck('CONFIRMED', '106159471', false, false) === false);
+check('no booking id -> no recheck', webhookNeedsRecheck('CONFIRMED', null, true, false) === false && webhookNeedsRecheck('CONFIRMED', '', true, false) === false);
+check('unknown status (e.g. PENDING) -> recheck', webhookNeedsRecheck('PENDING', 7, true, false) === true);
+
+$slept = []; $syncs = 0;
+$visibleAfter = 2; // Bokun's search returns the booking from the 2nd re-sync on
+$out = webhookRecheckUntilStored(
+    function () use (&$syncs, $visibleAfter) { return $syncs >= $visibleAfter; },
+    function () use (&$syncs) { $syncs++; },
+    function ($s) use (&$slept) { $slept[] = $s; }
+);
+check('found on the 2nd try', $out === ['result' => 'found', 'tries' => 2, 'waited' => 45], json_encode($out));
+check('... slept 15 then 30, no further wait', $slept === [15, 30], json_encode($slept));
+check('... label', webhookRecheckLabel($out, 'ls') === 'found_after_45s/ls');
+
+$slept = []; $syncs = 0;
+$out = webhookRecheckUntilStored(function () { return false; }, function () use (&$syncs) { $syncs++; }, function ($s) use (&$slept) { $slept[] = $s; });
+check('never found -> 4 tries, 150 s, 4 syncs', $out === ['result' => 'not_found', 'tries' => 4, 'waited' => 150] && $syncs === 4, json_encode($out));
+check('... label fits VARCHAR(40)', strlen(webhookRecheckLabel($out, 'flush')) <= 40, webhookRecheckLabel($out, 'flush'));
+
 echo $failures === 0 ? "ALL OK\n" : "$failures FAILED\n";
 exit($failures === 0 ? 0 : 1);

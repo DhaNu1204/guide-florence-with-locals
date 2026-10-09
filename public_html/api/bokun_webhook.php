@@ -45,6 +45,11 @@ function ensureWebhookLogTable() {
         if ($col && $col->num_rows === 0) {
             $conn->query("ALTER TABLE bokun_webhook_logs ADD COLUMN dates_found INT NULL, ADD COLUMN dates_processed INT NULL");
         }
+        // Step 4.11: outcome of the delayed re-check (database/migrations/20261009_webhook_recheck_result.sql)
+        $col = $conn->query("SHOW COLUMNS FROM bokun_webhook_logs LIKE 'recheck_result'");
+        if ($col && $col->num_rows === 0) {
+            $conn->query("ALTER TABLE bokun_webhook_logs ADD COLUMN recheck_result VARCHAR(40) NULL");
+        }
     } catch (Throwable $e) {
         error_log("bokun_webhook: failed to ensure bokun_webhook_logs table: " . $e->getMessage());
     }
@@ -167,6 +172,7 @@ $logId = logWebhook($topic, $data, null, $storedPayload, $datesFound, $datesProc
 
 $syncError = null;
 $skipped = false;
+$syncOk = false; // step 4.11: every date sync answered success (false when skipped / disabled / failed)
 
 if (empty($uniqueDates)) {
     // No usable booking date in the body — this is non-booking noise (or an
@@ -182,14 +188,19 @@ if (empty($uniqueDates)) {
     require_once __DIR__ . '/bokun_sync.php';
 
     try {
+        $syncOk = true;
         foreach ($uniqueDates as $d) {
             // Targeted 1-day sync per affected date through the proven path.
-            syncBookings($d, $d, 'webhook', (string)$bookingId);
+            $syncResult = syncBookings($d, $d, 'webhook', (string)$bookingId);
+            if (!is_array($syncResult) || empty($syncResult['success'])) {
+                $syncOk = false;
+            }
         }
     } catch (Throwable $e) {
         // Never fatal: record the error and still return 200 so Bokun does not
         // enter a retry storm. The raw payload is already captured above.
         $syncError = $e->getMessage();
+        $syncOk = false;
         error_log("bokun_webhook: sync failed for booking " . ($bookingId ?? 'unknown') . ": " . $syncError);
         logWebhook($topic, $data, "sync failed: " . $syncError, $storedPayload, $datesFound, $datesProcessed);
     }
@@ -209,8 +220,7 @@ if ($syncError === null && $logId) {
     }
 }
 
-http_response_code(200);
-echo json_encode([
+$responseBody = json_encode([
     'status' => $syncError === null ? 'success' : 'received',
     'message' => $skipped
         ? 'Webhook received (no booking date — sync skipped)'
@@ -219,4 +229,81 @@ echo json_encode([
     'dates_found' => $datesFound,
     'dates_processed' => $datesProcessed
 ]);
+
+// Step 4.11: is the booking's tour row there now? (idx_tours_bokun_booking_id)
+function webhookBookingStored($bookingId) {
+    global $conn;
+    try {
+        $stmt = $conn->prepare("SELECT 1 FROM tours WHERE bokun_booking_id = ? LIMIT 1");
+        $id = (string) $bookingId;
+        $stmt->bind_param("s", $id);
+        $stmt->execute();
+        $found = $stmt->get_result()->fetch_row() !== null;
+        $stmt->close();
+        return $found;
+    } catch (Throwable $e) {
+        error_log("bokun_webhook: stored check failed for booking $bookingId: " . $e->getMessage());
+        return true; // unknown -> do not loop
+    }
+}
+
+// Step 4.11: answer Bokun now and keep running. Returns how the connection was closed.
+function webhookRespondAndDetach($body) {
+    ignore_user_abort(true);
+    @set_time_limit(300);
+    http_response_code(200);
+    echo $body;
+    if (function_exists('litespeed_finish_request')) {
+        litespeed_finish_request();
+        return 'ls';
+    }
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+        return 'fpm';
+    }
+    while (ob_get_level() > 0) {
+        @ob_end_flush();
+    }
+    flush();
+    return 'flush';
+}
+
+// Step 4.11: Bokun calls us before its booking-search returns a new GYG / website booking, so
+// the sync above usually missed it (it then waited for the next cron). Re-check after answering.
+$needsRecheck = !$skipped
+    && webhookNeedsRecheck($topic, $bookingId, $syncOk, webhookBookingStored($bookingId));
+
+if (!$needsRecheck) {
+    http_response_code(200);
+    echo $responseBody;
+    exit();
+}
+
+$closedBy = webhookRespondAndDetach($responseBody);
+$outcome = ['result' => 'error', 'tries' => 0, 'waited' => 0];
+try {
+    $outcome = webhookRecheckUntilStored(
+        function () use ($bookingId) { return webhookBookingStored($bookingId); },
+        function () use ($uniqueDates, $bookingId) {
+            foreach ($uniqueDates as $d) {
+                syncBookings($d, $d, 'webhook', 'recheck:' . $bookingId);
+            }
+        },
+        function ($seconds) { sleep($seconds); }
+    );
+} catch (Throwable $e) {
+    error_log("bokun_webhook: recheck failed for booking $bookingId: " . $e->getMessage());
+}
+$label = webhookRecheckLabel($outcome, $closedBy);
+error_log("bokun_webhook: booking $bookingId recheck $label");
+if ($logId) {
+    try {
+        $stmt = $conn->prepare("UPDATE bokun_webhook_logs SET recheck_result = ? WHERE id = ?");
+        $stmt->bind_param("si", $label, $logId);
+        $stmt->execute();
+        $stmt->close();
+    } catch (Throwable $e) {
+        error_log("bokun_webhook: failed to store recheck result for log $logId: " . $e->getMessage());
+    }
+}
 ?>
