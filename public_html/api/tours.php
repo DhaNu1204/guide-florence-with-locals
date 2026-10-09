@@ -16,6 +16,14 @@ Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins writ
 // Apply rate limiting based on HTTP method
 autoRateLimit('tours');
 
+// Step 4.11: the auto-refresh poll (1 request/min per open Tours / Dashboard / Today tab).
+// Answered here, before the column self-provisioning below, so it costs 3 small queries.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'changes') {
+    require_once __DIR__ . '/lib/change_token.php';
+    changeTokenRespond($conn, $_GET['since'] ?? null);
+    exit();
+}
+
 // First, check if the cancelled column exists and add it if it doesn't
 $checkColumnQuery = "SHOW COLUMNS FROM tours LIKE 'cancelled'";
 $columnResult = $conn->query($checkColumnQuery);

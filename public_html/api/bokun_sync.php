@@ -6,6 +6,7 @@ require_once __DIR__ . '/group_helpers.php';
 require_once __DIR__ . '/manual_helpers.php';   // step 6.4: manual rows are invisible to the sync // step 3.5: fillMissingGroupGuide()
 require_once __DIR__ . '/viator_helpers.php';   // step 6.9: the old/new Viator account label
 require_once __DIR__ . '/rate_helpers.php';     // step 6.14: tours.rate_title
+require_once __DIR__ . '/lib/change_token.php'; // step 4.11: ensureCancelledAtColumn()
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -437,8 +438,51 @@ function bokunSyncEnabledByEnv() {
     return EnvLoader::getBool('BOKUN_SYNC_ENABLED', true);
 }
 
-// Sync bookings from Bokun
+/**
+ * Step 4.11: seconds a sync waits for another one to finish. Syncs take 1-15 s (step 3.4), so
+ * this only gives up when something is really stuck.
+ */
+define('BOKUN_SYNC_LOCK_WAIT', 30);
+
+/**
+ * Step 4.11: one MySQL named lock for every sync path (cron, 5-min near cron, webhook and its
+ * re-checks, manual Sync Now), so two syncs never run at the same time. Named locks are
+ * server-wide and staging shares the server with production, so the name carries the database.
+ */
+function bokunSyncLockName($conn) {
+    $r = $conn->query("SELECT DATABASE() AS db");
+    $db = $r ? (string) ($r->fetch_assoc()['db'] ?? '') : '';
+    return substr('fwl_bokun_sync:' . $db, 0, 64);
+}
+
+// Sync bookings from Bokun. Step 4.11: waits for the shared sync lock first; when another sync
+// still holds it after BOKUN_SYNC_LOCK_WAIT seconds this run is logged as 'busy' and skipped.
 function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $triggeredBy = null) {
+    global $conn;
+
+    $lockName = bokunSyncLockName($conn);
+    $stmt = $conn->prepare("SELECT GET_LOCK(?, ?) AS got");
+    $wait = BOKUN_SYNC_LOCK_WAIT;
+    $stmt->bind_param("si", $lockName, $wait);
+    $stmt->execute();
+    $got = (int) ($stmt->get_result()->fetch_assoc()['got'] ?? 0);
+    $stmt->close();
+    if ($got !== 1) {
+        error_log("Bokun Sync [$syncType]: another sync held the lock for {$wait}s - skipped");
+        logSyncOperation($syncType, $startDate, $endDate, 'busy', [], "another sync held the lock for {$wait}s", $triggeredBy);
+        return ['success' => false, 'error' => 'sync_busy'];
+    }
+    try {
+        return syncBookingsRun($startDate, $endDate, $syncType, $triggeredBy);
+    } finally {
+        $stmt = $conn->prepare("SELECT RELEASE_LOCK(?)");
+        $stmt->bind_param("s", $lockName);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto', $triggeredBy = null) {
     global $conn;
 
     $startTime = microtime(true);
@@ -473,6 +517,8 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
     ensureViatorAccountColumn($conn);
     // Step 6.14: tours.rate_title - written after every insert/update, next to is_private.
     ensureRateTitleColumn($conn);
+    // Step 4.11: tours.cancelled_at - stamped by the UPDATE below, read by tours.php?action=changes.
+    ensureCancelledAtColumn($conn);
     // Read once per run, not once per booking. Null until he connects the new Viator account,
     // which is what keeps a booking arriving on the OLD account today labelled 'legacy'.
     $viatorCutoverAt = viatorCutoverAt($conn);
@@ -593,6 +639,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         customer_name = ?, customer_email = ?, customer_phone = ?,
                         participants = ?, participant_names = ?, booking_channel = ?,
                         bokun_total_price = ?, bokun_currency = ?,
+                        cancelled_at = IF(? = 1 AND cancelled = 0, NOW(), IF(? = 1, cancelled_at, NULL)),
                         cancelled = ?, bokun_data = ?, last_sync = ?,
                         rescheduled = ?, original_date = ?, original_time = ?,
                         product_id = ?,
@@ -601,11 +648,16 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
                         WHERE id = ?
                     ");
                     $rescheduledFlag = ($isRescheduled || $existing['rescheduled']) ? 1 : 0;
-                    $stmt->bind_param("ssssssssissdsississii",
+                    // Step 4.11: cancelled_at is assigned BEFORE cancelled (MySQL evaluates SET left to
+                    // right), so `cancelled = 0` above still reads the stored value: it is stamped once,
+                    // when the sync first sees the cancellation, and cleared if Bokun un-cancels.
+                    $cancelledFlag = $tourData['cancelled'] ? 1 : 0;
+                    $stmt->bind_param("ssssssssissdsiiississii",
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'],
                         $tourData['bokun_total_price'], $tourData['bokun_currency'],
+                        $cancelledFlag, $cancelledFlag,
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'],
                         $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $existing['id']
                     );
@@ -773,6 +825,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
             'end_date' => $endDate,
             'sync_type' => $syncType,
             'duration_seconds' => $duration,
+            'bokun_requests' => $apiStats['bokun_requests'], // step 4.11: logged by bokun_cron_near.php
             'errors' => $errors,
             'grouping' => $groupingResult
         ];
