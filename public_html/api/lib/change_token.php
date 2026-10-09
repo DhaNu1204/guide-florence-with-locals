@@ -66,15 +66,19 @@ function changeTokenHash($conn, $from, $to) {
     return substr(md5("{$t['n']}:{$t['s']}:{$g['n']}:{$g['s']}"), 0, 10);
 }
 
-/** New bookings and cancellations after unix time $since (tickets excluded, like the Tours page). */
+/**
+ * New bookings and cancellations at or after unix time $since (tickets excluded, like the Tours
+ * page). ">=": times are whole seconds, so a write in the same second as the previous check must
+ * still be reported; the app shows each event once.
+ */
 function changeTokenEvents($conn, $since, $from, $to) {
     $events = [];
     $base = "SELECT t.id, t.date, TIME_FORMAT(t.time, '%H:%i') AS time, t.title, t.participants
                FROM tours t LEFT JOIN products pr ON pr.bokun_product_id = t.product_id
               WHERE t.date BETWEEN ? AND ? AND (pr.product_type IS NULL OR pr.product_type <> 'ticket')";
     $kinds = [
-        'new'    => "$base AND t.cancelled = 0 AND t.created_at > FROM_UNIXTIME(?) ORDER BY t.created_at, t.id LIMIT " . CHANGE_TOKEN_MAX_EVENTS,
-        'cancel' => "$base AND t.cancelled = 1 AND t.cancelled_at > FROM_UNIXTIME(?) ORDER BY t.cancelled_at, t.id LIMIT " . CHANGE_TOKEN_MAX_EVENTS,
+        'new'    => "$base AND t.cancelled = 0 AND t.created_at >= FROM_UNIXTIME(?) ORDER BY t.created_at, t.id LIMIT " . CHANGE_TOKEN_MAX_EVENTS,
+        'cancel' => "$base AND t.cancelled = 1 AND t.cancelled_at >= FROM_UNIXTIME(?) ORDER BY t.cancelled_at, t.id LIMIT " . CHANGE_TOKEN_MAX_EVENTS,
     ];
     foreach ($kinds as $kind => $sql) {
         try {
