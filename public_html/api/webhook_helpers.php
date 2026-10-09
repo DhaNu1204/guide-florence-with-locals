@@ -56,6 +56,72 @@ function webhookStorablePayload($rawBody, $decoded, $limit = WEBHOOK_MAX_PAYLOAD
 }
 
 /**
+ * Step 4.11: seconds to wait before each re-sync of a booking the webhook's own sync did not
+ * store. Bokun calls the webhook before its booking-search returns a new GYG / website booking
+ * (2 of 410 GYG bookings since 2026-09-20 were stored by the webhook's sync; later syncs found
+ * them, some 1-40 s after the webhook). Checks land at +15, +45, +90 and +150 s.
+ */
+const WEBHOOK_RECHECK_DELAYS = [15, 30, 45, 60];
+
+/**
+ * Step 4.11: does this event need the delayed re-check? Only when the date sync really ran
+ * (so not with sync disabled or failed), the booking is not a cancellation, and its tour row
+ * is still missing.
+ *
+ * @param mixed $topic booking status from the body (CONFIRMED / CANCELLED / ...)
+ * @param mixed $bookingId Bokun booking id from the body
+ * @param bool $syncOk every date sync answered success
+ * @param bool $alreadyStored a tours row with this bokun_booking_id exists
+ * @return bool
+ */
+function webhookNeedsRecheck($topic, $bookingId, $syncOk, $alreadyStored) {
+    if (!$syncOk || $alreadyStored) {
+        return false;
+    }
+    if ($bookingId === null || $bookingId === '' || !is_scalar($bookingId)) {
+        return false;
+    }
+    return strtoupper((string) $topic) !== 'CANCELLED';
+}
+
+/**
+ * Step 4.11: wait, re-sync, look again - until the booking is stored or the delays run out.
+ * Every side effect is injected so the CLI check can run it without a database or Bokun.
+ *
+ * @param callable $isStored fn(): bool
+ * @param callable $resync fn(): void   the same 1-day sync the webhook ran
+ * @param callable $sleep fn(int $seconds): void
+ * @param int[] $delays
+ * @return array{result:string, tries:int, waited:int}
+ */
+function webhookRecheckUntilStored(callable $isStored, callable $resync, callable $sleep, array $delays = WEBHOOK_RECHECK_DELAYS) {
+    $waited = 0;
+    $tries = 0;
+    foreach ($delays as $delay) {
+        $sleep((int) $delay);
+        $waited += (int) $delay;
+        $tries++;
+        $resync();
+        if ($isStored()) {
+            return ['result' => 'found', 'tries' => $tries, 'waited' => $waited];
+        }
+    }
+    return ['result' => 'not_found', 'tries' => $tries, 'waited' => $waited];
+}
+
+/**
+ * Step 4.11: the value stored in bokun_webhook_logs.recheck_result (VARCHAR(40)),
+ * e.g. "found_after_45s/ls" (ls = LiteSpeed closed the connection first).
+ *
+ * @param array{result:string, waited:int} $outcome
+ * @param string $closedBy how the response was closed before waiting
+ * @return string
+ */
+function webhookRecheckLabel(array $outcome, $closedBy) {
+    return substr($outcome['result'] . '_after_' . (int) $outcome['waited'] . 's/' . $closedBy, 0, 40);
+}
+
+/**
  * Constant-time comparison of the presented key with the configured secret.
  *
  * @param mixed $presented $_GET['key']
