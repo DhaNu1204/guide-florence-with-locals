@@ -15,6 +15,7 @@
  */
 
 const WEBHOOK_RECHECK_MAX_RUN_SECONDS = 240;   // one runner never outlives set_time_limit(300)
+const WEBHOOK_RECHECK_GRACE_SECONDS = 10;      // bookings due within 10 s share one sync
 
 function ensureWebhookRecheckTable($conn) {
     // Also database/migrations/20261009_webhook_recheck_queue.sql
@@ -108,7 +109,7 @@ function webhookRecheckRun($conn, $closedBy, callable $isStored, callable $resyn
                 $rows = webhookRecheckPending($conn);
                 if (!$rows) { break; }
                 $now = (int) reset($rows)['now'];
-                $plan = webhookRecheckPlan(array_values($rows), $now);
+                $plan = webhookRecheckPlan(array_values($rows), $now, WEBHOOK_RECHECK_DELAYS, WEBHOOK_RECHECK_GRACE_SECONDS);
                 foreach ($plan['expired'] as $k) {
                     if (isset($rows[$k])) {
                         webhookRecheckFinish($conn, $rows[$k], webhookRecheckLabel(

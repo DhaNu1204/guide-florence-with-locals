@@ -79,6 +79,12 @@ $p = webhookRecheckPlan($rows, 1015);
 check('at 1015: A and C due, next = B at 1025', $p['due'] === ['A|2026-10-09', 'C|2026-10-10'] && $p['next'] === 1025, json_encode($p));
 $p = webhookRecheckPlan([['key' => 'A', 'added' => 0, 'tries' => 3]], 149);
 check('4th check at +150 s', $p['due'] === [] && $p['next'] === 150);
+$five = [];
+for ($i = 0; $i < 5; $i++) { $five[] = ['key' => "B$i", 'added' => 1000 + 2 * $i, 'tries' => 0]; } // 5 webhooks in 10 s
+$p = webhookRecheckPlan($five, 1015, WEBHOOK_RECHECK_DELAYS, 10);
+check('grace 10 s: 5 bookings 2 s apart are all checked by ONE sync at +15 s', count($p['due']) === 5, json_encode($p));
+$p = webhookRecheckPlan($five, 1015);
+check('... without grace only the first is due', $p['due'] === ['B0']);
 check('empty queue', webhookRecheckPlan([], 5) === ['due' => [], 'expired' => [], 'next' => null]);
 
 echo $failures === 0 ? "ALL OK\n" : "$failures FAILED\n";

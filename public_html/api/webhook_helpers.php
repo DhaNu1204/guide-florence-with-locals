@@ -103,10 +103,12 @@ function webhookRecheckLabel(array $outcome, $closedBy) {
  * @param array $rows each ['key' => string, 'added' => int unix, 'tries' => int]
  * @param int $now unix
  * @param int[] $delays
+ * @param int $grace a row due within this many seconds is checked now too, so bookings that
+ *        arrived close together share one sync instead of one sync each
  * @return array{due:string[], expired:string[], next:?int} keys due now, keys out of tries,
  *         and when the earliest not-yet-due row becomes due (null = nothing waiting)
  */
-function webhookRecheckPlan(array $rows, $now, array $delays = WEBHOOK_RECHECK_DELAYS) {
+function webhookRecheckPlan(array $rows, $now, array $delays = WEBHOOK_RECHECK_DELAYS, $grace = 0) {
     $offsets = [];
     $sum = 0;
     foreach ($delays as $d) { $sum += (int) $d; $offsets[] = $sum; }
@@ -117,7 +119,7 @@ function webhookRecheckPlan(array $rows, $now, array $delays = WEBHOOK_RECHECK_D
         $tries = (int) $r['tries'];
         if ($tries >= count($offsets)) { $expired[] = $r['key']; continue; }
         $at = (int) $r['added'] + $offsets[$tries];
-        if ($now >= $at) { $due[] = $r['key']; continue; }
+        if ($now + (int) $grace >= $at) { $due[] = $r['key']; continue; }
         $next = $next === null ? $at : min($next, $at);
     }
     return ['due' => $due, 'expired' => $expired, 'next' => $next];
