@@ -1,9 +1,13 @@
 <?php
 /**
  * bokun_cron_near.php — step 4.11 safety net: CLI-only sync of TODAY + TOMORROW (Europe/Rome),
- * run by hPanel cron every 5 minutes, offset from the 15-minute bokun_cron.php:
+ * run by hPanel cron every 5 minutes (job set up by the owner 2026-10-09 as star-slash-5,
+ * written out here because that form would close this docblock):
  *
- *     2,7,12,17,22,27,32,37,42,47,52,57 * * * * /opt/alt/php82/usr/bin/php /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron_near.php >> /home/u803853690/logs/bokun_cron_near.log 2>&1
+ *     0,5,10,15,20,25,30,35,40,45,50,55 * * * * /opt/alt/php82/usr/bin/php /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron_near.php
+ *
+ * hPanel ignores a `>> file` redirect: it keeps only the LAST run's output in ~/.logs/cronjob_<id>.
+ * So (step 4.11d) the script appends its own line to <FWL_LOG_DIR>/bokun_cron_near[-<env>].log (~/logs).
  *
  * Why: Bokun calls the webhook before its booking-search returns a new GYG / website booking
  * (triage 2026-10-09), and the 15-minute cron then left a last-minute booking off the Tours page
@@ -46,5 +50,10 @@ $line = sprintf(
     $result['updated_count'] ?? '-'
 );
 fwrite($ok ? STDOUT : STDERR, $line . "\n");
+// step 4.11d: the run history (see the docblock - hPanel keeps only the last run)
+if (!empty($GLOBALS['fwlLogDir'])) {
+    @file_put_contents($GLOBALS['fwlLogDir'] . '/bokun_cron_near' . ($GLOBALS['environment'] === 'production' ? '' : '-' . $GLOBALS['environment']) . '.log',
+        $line . "\n", FILE_APPEND | LOCK_EX);
+}
 
 exit($ok ? 0 : 1);

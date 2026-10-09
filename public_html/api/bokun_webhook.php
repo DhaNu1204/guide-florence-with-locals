@@ -279,31 +279,29 @@ if (!$needsRecheck) {
     exit();
 }
 
-$closedBy = webhookRespondAndDetach($responseBody);
-$outcome = ['result' => 'error', 'tries' => 0, 'waited' => 0];
+// Step 4.11d: queue the booking first, then answer Bokun, then run the re-checks ONLY if no
+// other webhook process is already running them (lib/webhook_recheck.php). At most one PHP
+// process sleeps for re-checks, however many bookings arrive together.
+require_once __DIR__ . '/lib/webhook_recheck.php';
 try {
-    $outcome = webhookRecheckUntilStored(
-        function () use ($bookingId) { return webhookBookingStored($bookingId); },
-        function () use ($uniqueDates, $bookingId) {
-            foreach ($uniqueDates as $d) {
-                syncBookings($d, $d, 'webhook', 'recheck:' . $bookingId);
-            }
-        },
+    ensureWebhookRecheckTable($conn);
+    webhookRecheckQueue($conn, $bookingId, $uniqueDates, $logId ? (int) $logId : null);
+} catch (Throwable $e) {
+    error_log("bokun_webhook: could not queue recheck for booking $bookingId: " . $e->getMessage());
+    http_response_code(200);
+    echo $responseBody;
+    exit();
+}
+$closedBy = webhookRespondAndDetach($responseBody);
+try {
+    webhookRecheckRun(
+        $conn,
+        $closedBy,
+        function ($id) { return webhookBookingStored($id); },
+        function ($date, array $ids) { syncBookings($date, $date, 'webhook', substr('recheck:' . implode(',', $ids), 0, 100)); },
         function ($seconds) { sleep($seconds); }
     );
 } catch (Throwable $e) {
-    error_log("bokun_webhook: recheck failed for booking $bookingId: " . $e->getMessage());
-}
-$label = webhookRecheckLabel($outcome, $closedBy);
-error_log("bokun_webhook: booking $bookingId recheck $label");
-if ($logId) {
-    try {
-        $stmt = $conn->prepare("UPDATE bokun_webhook_logs SET recheck_result = ? WHERE id = ?");
-        $stmt->bind_param("si", $label, $logId);
-        $stmt->execute();
-        $stmt->close();
-    } catch (Throwable $e) {
-        error_log("bokun_webhook: failed to store recheck result for log $logId: " . $e->getMessage());
-    }
+    error_log("bokun_webhook: recheck run failed: " . $e->getMessage());
 }
 ?>

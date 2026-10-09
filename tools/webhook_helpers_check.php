@@ -61,21 +61,25 @@ check('sync disabled/failed -> no recheck', webhookNeedsRecheck('CONFIRMED', '10
 check('no booking id -> no recheck', webhookNeedsRecheck('CONFIRMED', null, true, false) === false && webhookNeedsRecheck('CONFIRMED', '', true, false) === false);
 check('unknown status (e.g. PENDING) -> recheck', webhookNeedsRecheck('PENDING', 7, true, false) === true);
 
-$slept = []; $syncs = 0;
-$visibleAfter = 2; // Bokun's search returns the booking from the 2nd re-sync on
-$out = webhookRecheckUntilStored(
-    function () use (&$syncs, $visibleAfter) { return $syncs >= $visibleAfter; },
-    function () use (&$syncs) { $syncs++; },
-    function ($s) use (&$slept) { $slept[] = $s; }
-);
-check('found on the 2nd try', $out === ['result' => 'found', 'tries' => 2, 'waited' => 45], json_encode($out));
-check('... slept 15 then 30, no further wait', $slept === [15, 30], json_encode($slept));
-check('... label', webhookRecheckLabel($out, 'ls') === 'found_after_45s/ls');
+check('label', webhookRecheckLabel(['result' => 'found', 'waited' => 45], 'ls') === 'found_after_45s/ls');
+check('label fits VARCHAR(40)', strlen(webhookRecheckLabel(['result' => 'not_found', 'waited' => 99999], 'flush')) <= 40);
 
-$slept = []; $syncs = 0;
-$out = webhookRecheckUntilStored(function () { return false; }, function () use (&$syncs) { $syncs++; }, function ($s) use (&$slept) { $slept[] = $s; });
-check('never found -> 4 tries, 150 s, 4 syncs', $out === ['result' => 'not_found', 'tries' => 4, 'waited' => 150] && $syncs === 4, json_encode($out));
-check('... label fits VARCHAR(40)', strlen(webhookRecheckLabel($out, 'flush')) <= 40, webhookRecheckLabel($out, 'flush'));
+// --- step 4.11d: one shared runner - what is due when ---
+$rows = [
+    ['key' => 'A|2026-10-09', 'added' => 1000, 'tries' => 0],  // due at 1015
+    ['key' => 'B|2026-10-09', 'added' => 1010, 'tries' => 0],  // due at 1025
+    ['key' => 'C|2026-10-10', 'added' => 900,  'tries' => 1],  // 2nd check at 945
+    ['key' => 'D|2026-10-09', 'added' => 500,  'tries' => 4],  // out of tries
+];
+$p = webhookRecheckPlan($rows, 1014);
+check('nothing due before +15 s except an overdue 2nd check', $p['due'] === ['C|2026-10-10'], json_encode($p));
+check('... D expired', $p['expired'] === ['D|2026-10-09']);
+check('... next wake = A at 1015', $p['next'] === 1015);
+$p = webhookRecheckPlan($rows, 1015);
+check('at 1015: A and C due, next = B at 1025', $p['due'] === ['A|2026-10-09', 'C|2026-10-10'] && $p['next'] === 1025, json_encode($p));
+$p = webhookRecheckPlan([['key' => 'A', 'added' => 0, 'tries' => 3]], 149);
+check('4th check at +150 s', $p['due'] === [] && $p['next'] === 150);
+check('empty queue', webhookRecheckPlan([], 5) === ['due' => [], 'expired' => [], 'next' => null]);
 
 echo $failures === 0 ? "ALL OK\n" : "$failures FAILED\n";
 exit($failures === 0 ? 0 : 1);
