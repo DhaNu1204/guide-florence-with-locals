@@ -5,7 +5,11 @@
  * Purpose (IMPROVEMENT_TASKS Task 2): keep bookings in sync even when nobody
  * has the web app open. Hostinger cron runs this every 15 minutes:
  *
- *     0,15,30,45 * * * * /usr/bin/php /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron.php >> /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron.log 2>&1
+ *     0,15,30,45 * * * * /opt/alt/php82/usr/bin/php /home/u803853690/domains/deetech.cc/public_html/withlocals/api/bokun_cron.php
+ *
+ * hPanel ignores a `>> file` redirect (it keeps only the last run's output in ~/.logs/cronjob_<id>),
+ * so since step 4.11d the script appends its own line to <FWL_LOG_DIR>/bokun_cron[-<env>].log
+ * (~/logs, outside the web root).
  *
  * (Schedule above = every 15 minutes. Written as 0,15,30,45 rather than the
  *  usual star-slash-15 form, because that form contains the block-comment
@@ -39,9 +43,12 @@ if (!function_exists('syncBookings')) {
 $result = syncBookings(null, null, 'auto', 'cron');
 
 $ok = is_array($result) && !isset($result['error']);
-fwrite(
-    $ok ? STDOUT : STDERR,
-    '[' . date('c') . '] bokun_cron: ' . json_encode($result) . "\n"
-);
+$line = '[' . date('c') . '] bokun_cron: ' . json_encode($result);
+fwrite($ok ? STDOUT : STDERR, $line . "\n");
+// step 4.11d: the run history outside the web root (see the docblock)
+if (!empty($GLOBALS['fwlLogDir'])) {
+    @file_put_contents($GLOBALS['fwlLogDir'] . '/bokun_cron' . ($GLOBALS['environment'] === 'production' ? '' : '-' . $GLOBALS['environment']) . '.log',
+        $line . "\n", FILE_APPEND | LOCK_EX);
+}
 
 exit($ok ? 0 : 1);

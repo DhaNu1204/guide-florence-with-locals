@@ -85,31 +85,6 @@ function webhookNeedsRecheck($topic, $bookingId, $syncOk, $alreadyStored) {
 }
 
 /**
- * Step 4.11: wait, re-sync, look again - until the booking is stored or the delays run out.
- * Every side effect is injected so the CLI check can run it without a database or Bokun.
- *
- * @param callable $isStored fn(): bool
- * @param callable $resync fn(): void   the same 1-day sync the webhook ran
- * @param callable $sleep fn(int $seconds): void
- * @param int[] $delays
- * @return array{result:string, tries:int, waited:int}
- */
-function webhookRecheckUntilStored(callable $isStored, callable $resync, callable $sleep, array $delays = WEBHOOK_RECHECK_DELAYS) {
-    $waited = 0;
-    $tries = 0;
-    foreach ($delays as $delay) {
-        $sleep((int) $delay);
-        $waited += (int) $delay;
-        $tries++;
-        $resync();
-        if ($isStored()) {
-            return ['result' => 'found', 'tries' => $tries, 'waited' => $waited];
-        }
-    }
-    return ['result' => 'not_found', 'tries' => $tries, 'waited' => $waited];
-}
-
-/**
  * Step 4.11: the value stored in bokun_webhook_logs.recheck_result (VARCHAR(40)),
  * e.g. "found_after_45s/ls" (ls = LiteSpeed closed the connection first).
  *
@@ -119,6 +94,35 @@ function webhookRecheckUntilStored(callable $isStored, callable $resync, callabl
  */
 function webhookRecheckLabel(array $outcome, $closedBy) {
     return substr($outcome['result'] . '_after_' . (int) $outcome['waited'] . 's/' . $closedBy, 0, 40);
+}
+
+/**
+ * Step 4.11d: what the ONE shared re-check run does next. Each pending booking is re-checked
+ * WEBHOOK_RECHECK_DELAYS after it was queued (cumulative: +15, +45, +90, +150 s).
+ *
+ * @param array $rows each ['key' => string, 'added' => int unix, 'tries' => int]
+ * @param int $now unix
+ * @param int[] $delays
+ * @param int $grace a row due within this many seconds is checked now too, so bookings that
+ *        arrived close together share one sync instead of one sync each
+ * @return array{due:string[], expired:string[], next:?int} keys due now, keys out of tries,
+ *         and when the earliest not-yet-due row becomes due (null = nothing waiting)
+ */
+function webhookRecheckPlan(array $rows, $now, array $delays = WEBHOOK_RECHECK_DELAYS, $grace = 0) {
+    $offsets = [];
+    $sum = 0;
+    foreach ($delays as $d) { $sum += (int) $d; $offsets[] = $sum; }
+    $due = [];
+    $expired = [];
+    $next = null;
+    foreach ($rows as $r) {
+        $tries = (int) $r['tries'];
+        if ($tries >= count($offsets)) { $expired[] = $r['key']; continue; }
+        $at = (int) $r['added'] + $offsets[$tries];
+        if ($now + (int) $grace >= $at) { $due[] = $r['key']; continue; }
+        $next = $next === null ? $at : min($next, $at);
+    }
+    return ['due' => $due, 'expired' => $expired, 'next' => $next];
 }
 
 /**
