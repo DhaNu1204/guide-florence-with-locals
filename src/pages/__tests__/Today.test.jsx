@@ -46,7 +46,7 @@ describe('Today page', () => {
     expect(await screen.findByText('Uffizi Small Group')).toBeInTheDocument();
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0][0]).toMatch(/\/today\.php$/);
-    expect(mockFetch.mock.calls[0][1]).toEqual({ timeoutMs: 10000 });
+    expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({ timeoutMs: 10000 })); // + step 4.11 abort signal
     expect(screen.getByText('Anna Rossi')).toBeInTheDocument();
     expect(screen.getByText('No guide')).toBeInTheDocument();
     expect(screen.getByText('English · 9 guests')).toBeInTheDocument();

@@ -31,6 +31,8 @@ import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive gu
 import { useAssistantState } from '../components/assistant/assistantStore';
 import MergeTimeDialog from '../components/MergeTimeDialog';
 import { mergeTimes, defaultMergeTime } from '../utils/groupTime'; // step 6.16
+import { useLiveRefresh } from '../hooks/useLiveRefresh'; // step 4.11: auto-refresh while open
+import UpdatedStamp from '../components/UpdatedStamp';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -364,10 +366,21 @@ const Tours = () => {
     setOnlyUnassigned(dl.unassigned);
   }, [location.search]);
 
+  // Step 4.11: the load in flight ({ ctl, silent }). A newer load aborts an older one, and an
+  // aborted load never touches state, so an old answer can never overwrite a newer one.
+  const loadCtlRef = useRef(null);
+
   // Load data function with server-side filtering
-  const loadData = async (forceRefresh = false, page = 1, filters = {}) => {
+  // Step 4.11: { silent: true } = the auto-refresh. No "Loading tours..." (the list stays mounted,
+  // so scroll, focus, open notes and selects survive), no measurement, and a failure keeps what is
+  // on screen - the next change check tries again. It never interrupts a real load.
+  const loadData = async (forceRefresh = false, page = 1, filters = {}, { silent = false } = {}) => {
+    if (silent && loadCtlRef.current) return;
+    if (loadCtlRef.current) loadCtlRef.current.ctl.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = { ctl, silent };
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
 
       // Build filters for the API
@@ -394,7 +407,7 @@ const Tours = () => {
       // Step 4.7: the field beacon's "list" phase covers exactly what the user waits for -
       // the whole fan-out this Promise.all resolves. Only the first load of a page is
       // recorded; a later filter change is ignored. Measurement only.
-      markListStart();
+      if (!silent) markListStart();
       const [toursResponse, guidesData, groupsResponse, unassignedTotal] = await Promise.all([
         mysqlDB.fetchTours(forceRefresh, page, toursPerPage, apiFilters),
         mysqlDB.getAllGuides(),
@@ -402,6 +415,7 @@ const Tours = () => {
         // the banner number: the unassigned report's own total (null = do not show a number)
         filters.guide_id ? Promise.resolve(null) : mysqlDB.getUnassignedCount(countFilters).catch(() => null)
       ]);
+      if (ctl.signal.aborted) return; // step 4.11: a newer load owns the screen
       setLoadError(null);
       setShownAt(null);
       setLoadedAt(Date.now());
@@ -419,7 +433,7 @@ const Tours = () => {
 
       // Set tour groups
       setTourGroups(groupsResponse?.data || []);
-      markListEnd(true); // step 4.7
+      if (!silent) markListEnd(true); // step 4.7
       // Step 4.10: keep this complete list on the phone, for a later load that fails
       saveLastGood(`tours:${page}:${JSON.stringify(filters)}`, {
         tours: toursList,
@@ -430,6 +444,12 @@ const Tours = () => {
       });
 
     } catch (err) {
+      if (ctl.signal.aborted) return; // step 4.11
+      if (silent) {
+        // step 4.11: keep the list on screen; the next change check retries
+        console.warn('[Tours] auto-refresh failed:', err?.message || err);
+        return;
+      }
       markListEnd(false); // step 4.7
       console.error('Load error:', err);
       setLoadError(err);
@@ -457,7 +477,10 @@ const Tours = () => {
         }
       }
     } finally {
-      setLoading(false);
+      if (loadCtlRef.current && loadCtlRef.current.ctl === ctl) {
+        loadCtlRef.current = null;
+        if (!silent) setLoading(false);
+      }
     }
   };
 
@@ -560,11 +583,18 @@ const Tours = () => {
     const onBookingsUpdated = () => {
       if (showDateRange && (!rangeStartDate || !rangeEndDate)) return;
       console.log('[Tours] Bookings updated by Bokun sync — reloading tour list');
-      loadData(true, currentPage, getCurrentFilters());
+      loadData(true, currentPage, getCurrentFilters(), { silent: true }); // step 4.11: in place
     };
     window.addEventListener('florence:bookings-updated', onBookingsUpdated);
     return () => window.removeEventListener('florence:bookings-updated', onBookingsUpdated);
   }, [filterDate, showUpcoming, showPast, showDateRange, rangeStartDate, rangeEndDate, selectedGuideId, currentPage]);
+
+  // Step 4.11: something changed on the server (new booking, cancellation, guide, PAX ...) -
+  // refetch in place. The toast itself comes from the shared poller.
+  useLiveRefresh(() => {
+    if (showDateRange && (!rangeStartDate || !rangeEndDate)) return;
+    loadData(true, currentPage, getCurrentFilters(), { silent: true });
+  });
 
   // Build a Set of tour IDs that belong to groups (for filtering ungrouped tours)
   const groupedTourIds = useMemo(() => {
@@ -1270,7 +1300,10 @@ const Tours = () => {
         <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-stone-900">Tours Management</h1>
-            <p className="text-sm text-stone-600">Manage your Florence tours and bookings</p>
+            <p className="text-sm text-stone-600">
+              Manage your Florence tours and bookings
+              <UpdatedStamp loadedAt={loadedAt} className="ml-2" />
+            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* Mobile: selection mode toggle */}

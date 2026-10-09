@@ -30,6 +30,8 @@ import { isGuidePaid, guidePaymentState } from '../utils/paymentBadges';
 import { useBokunSync } from '../hooks/useBokunAutoSync';
 import { useToast } from './Toast/ToastProvider';
 import AskGuideModal from './AskGuideModal';
+import { useLiveRefresh } from '../hooks/useLiveRefresh'; // step 4.11: auto-refresh while open
+import UpdatedStamp from './UpdatedStamp';
 
 // Format a tour date to YYYY-MM-DD for the Tours deep-link.
 // Prefer the literal date part (tour.date is already 'YYYY-MM-DD') to avoid timezone shifts.
@@ -156,7 +158,7 @@ const Dashboard = () => {
     // Reload dashboard when a Bokun sync brings in new/changed bookings
     const onBookingsUpdated = () => {
       console.log('[Dashboard] Bookings updated by Bokun sync — reloading');
-      loadDashboardData(true);
+      loadDashboardData(true, { silent: true }); // step 4.11: in place
     };
     window.addEventListener('florence:bookings-updated', onBookingsUpdated);
     return () => {
@@ -165,9 +167,21 @@ const Dashboard = () => {
     };
   }, []);
 
-  const loadDashboardData = async (forceRefresh = false) => {
-    setLoading(true);
-    markListStart(); // step 4.8: the page's own data fetch, for the field recorder
+  // Step 4.11: { silent: true } = the auto-refresh - no measurement, and a failure keeps what is
+  // on screen (the next change check retries). A newer load aborts an older one; an aborted load
+  // never writes state. A silent refresh never interrupts a real load.
+  const loadCtlRef = useRef(null);
+  useLiveRefresh(() => loadDashboardData(true, { silent: true }));
+
+  const loadDashboardData = async (forceRefresh = false, { silent = false } = {}) => {
+    if (silent && loadCtlRef.current) return;
+    if (loadCtlRef.current) loadCtlRef.current.ctl.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = { ctl, silent };
+    if (!silent) {
+      setLoading(true);
+      markListStart(); // step 4.8: the page's own data fetch, for the field recorder
+    }
     try {
       const today = new Date();
       const inAWeek = new Date(today);
@@ -208,6 +222,7 @@ const Dashboard = () => {
           recentResponsesReq,
           pendingReq,
         ]);
+      if (ctl.signal.aborted) return; // step 4.11: a newer load owns the screen
       const guidesList = Array.isArray(guidesData) ? guidesData : (guidesData?.data || []);
 
       const upcomingData = upcomingResponse && upcomingResponse.data ? upcomingResponse.data : upcomingResponse;
@@ -274,15 +289,23 @@ const Dashboard = () => {
       setShownAt(null);
       setSavedAt(null);
       setLoadedAt(loadedAtRef.current);
-      markListEnd(true);
+      if (!silent) markListEnd(true);
     } catch (error) {
+      if (ctl.signal.aborted) return; // step 4.11
+      if (silent) {
+        console.warn('[Dashboard] auto-refresh failed:', error?.message || error);
+        return;
+      }
       markListEnd(false);
       console.error('Error loading dashboard data:', error);
       setLoadError(error);
       // keep what is on screen with its time: this session's data, else the saved copy - or nothing
       setShownAt(loadedAtRef.current || savedAtRef.current || null);
     } finally {
-      setLoading(false);
+      if (loadCtlRef.current && loadCtlRef.current.ctl === ctl) {
+        loadCtlRef.current = null;
+        if (!silent) setLoading(false);
+      }
     }
   };
 
@@ -345,7 +368,10 @@ const Dashboard = () => {
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-xl md:text-3xl font-bold text-stone-900">Dashboard</h1>
-          <p className="text-stone-500 text-xs md:text-sm mt-1">Welcome to Florence with Locals</p>
+          <p className="text-stone-500 text-xs md:text-sm mt-1">
+            Welcome to Florence with Locals
+            <UpdatedStamp loadedAt={loadedAt} className="ml-2" />
+          </p>
         </div>
         <div className="flex items-center space-x-2 flex-shrink-0">
           <span className="hidden sm:inline text-sm text-stone-500">

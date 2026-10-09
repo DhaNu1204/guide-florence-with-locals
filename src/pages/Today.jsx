@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { authFetch } from '../services/authFetch';
 import { describeLoadError, formatShownAt } from '../services/netPolicy';
 import { markListStart, markListEnd } from '../utils/perfBeacon'; // measurement only
+import { useLiveRefresh, useLastCheckAt } from '../hooks/useLiveRefresh'; // step 4.11
 
 // Step 4.6 (moved forward 2026-10-02): the page the installed app opens on.
 // ONE small request (today.php, today + tomorrow, a few KB), a plain list, no heavy components.
@@ -68,12 +69,22 @@ export default function Today() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    markListStart();
+  // Step 4.11: { silent: true } = the auto-refresh (no "Loading…", no measurement, a failure keeps
+  // the list). A newer load aborts an older one; an aborted load never writes state.
+  const loadCtlRef = useRef(null);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (silent && loadCtlRef.current) return;
+    if (loadCtlRef.current) loadCtlRef.current.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+      markListStart();
+    }
     try {
-      const res = await authFetch(`${API_BASE_URL}/today.php`, { timeoutMs: TIMEOUT_MS });
+      const res = await authFetch(`${API_BASE_URL}/today.php`, { timeoutMs: TIMEOUT_MS, signal: ctl.signal });
+      if (ctl.signal.aborted) return;
       if (res.status === 401) return; // authFetch already started the session-expired flow
       if (!res.ok) {
         const e = new Error(`HTTP ${res.status}`);
@@ -84,19 +95,33 @@ export default function Today() {
       if (!body || !body.success || !body.data || !Array.isArray(body.data.days)) {
         throw new Error('The server sent an unexpected answer.');
       }
+      if (ctl.signal.aborted) return;
       writeTodayCopy(body.data);
       setCopy({ savedAt: Date.now(), data: body.data });
       setFresh(true);
-      markListEnd(true);
+      setError(null);
+      if (!silent) markListEnd(true);
     } catch (e) {
+      if (ctl.signal.aborted) return;
+      if (silent) {
+        console.warn('[Today] auto-refresh failed:', e?.message || e);
+        return;
+      }
       markListEnd(false);
       setError(e);
     } finally {
-      setLoading(false);
+      if (loadCtlRef.current === ctl) {
+        loadCtlRef.current = null;
+        if (!silent) setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(() => load({ silent: true }));
+  // "Updated HH:MM": an unchanged change check means the list was still current at that time
+  const checkedAt = useLastCheckAt();
+  const stampAt = fresh && copy ? Math.max(copy.savedAt, checkedAt || 0) : copy?.savedAt;
 
   const days = copy ? copy.data.days : [];
 
@@ -106,7 +131,7 @@ export default function Today() {
         <h1 className="text-xl font-semibold text-stone-900">Today &amp; tomorrow</h1>
         <button
           type="button"
-          onClick={load}
+          onClick={() => load()}
           disabled={loading}
           className="min-h-[44px] px-4 rounded-lg bg-terracotta-600 text-white font-medium disabled:opacity-60"
         >
@@ -116,7 +141,7 @@ export default function Today() {
 
       {copy && (
         <p className="text-sm text-stone-500 mb-2" data-testid="today-stamp">
-          {fresh ? 'Updated' : 'Saved copy from'} {formatShownAt(copy.savedAt)}
+          {fresh ? 'Updated' : 'Saved copy from'} {formatShownAt(stampAt)}
           {!fresh && loading ? ' · refreshing…' : ''}
         </p>
       )}
