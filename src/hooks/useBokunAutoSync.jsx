@@ -111,7 +111,11 @@ export const useBokunAutoSync = () => {
     };
 
     refresh();
-    const infoInterval = setInterval(refresh, SYNC_INFO_INTERVAL_MS);
+    // Step 4.11: a hidden tab / backgrounded app makes no requests
+    const infoInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      refresh();
+    }, SYNC_INFO_INTERVAL_MS);
 
     return () => {
       cancelled = true;
