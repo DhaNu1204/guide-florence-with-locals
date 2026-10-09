@@ -437,8 +437,51 @@ function bokunSyncEnabledByEnv() {
     return EnvLoader::getBool('BOKUN_SYNC_ENABLED', true);
 }
 
-// Sync bookings from Bokun
+/**
+ * Step 4.11: seconds a sync waits for another one to finish. Syncs take 1-15 s (step 3.4), so
+ * this only gives up when something is really stuck.
+ */
+define('BOKUN_SYNC_LOCK_WAIT', 30);
+
+/**
+ * Step 4.11: one MySQL named lock for every sync path (cron, 5-min near cron, webhook and its
+ * re-checks, manual Sync Now), so two syncs never run at the same time. Named locks are
+ * server-wide and staging shares the server with production, so the name carries the database.
+ */
+function bokunSyncLockName($conn) {
+    $r = $conn->query("SELECT DATABASE() AS db");
+    $db = $r ? (string) ($r->fetch_assoc()['db'] ?? '') : '';
+    return substr('fwl_bokun_sync:' . $db, 0, 64);
+}
+
+// Sync bookings from Bokun. Step 4.11: waits for the shared sync lock first; when another sync
+// still holds it after BOKUN_SYNC_LOCK_WAIT seconds this run is logged as 'busy' and skipped.
 function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $triggeredBy = null) {
+    global $conn;
+
+    $lockName = bokunSyncLockName($conn);
+    $stmt = $conn->prepare("SELECT GET_LOCK(?, ?) AS got");
+    $wait = BOKUN_SYNC_LOCK_WAIT;
+    $stmt->bind_param("si", $lockName, $wait);
+    $stmt->execute();
+    $got = (int) ($stmt->get_result()->fetch_assoc()['got'] ?? 0);
+    $stmt->close();
+    if ($got !== 1) {
+        error_log("Bokun Sync [$syncType]: another sync held the lock for {$wait}s - skipped");
+        logSyncOperation($syncType, $startDate, $endDate, 'busy', [], "another sync held the lock for {$wait}s", $triggeredBy);
+        return ['success' => false, 'error' => 'sync_busy'];
+    }
+    try {
+        return syncBookingsRun($startDate, $endDate, $syncType, $triggeredBy);
+    } finally {
+        $stmt = $conn->prepare("SELECT RELEASE_LOCK(?)");
+        $stmt->bind_param("s", $lockName);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto', $triggeredBy = null) {
     global $conn;
 
     $startTime = microtime(true);
@@ -773,6 +816,7 @@ function syncBookings($startDate = null, $endDate = null, $syncType = 'auto', $t
             'end_date' => $endDate,
             'sync_type' => $syncType,
             'duration_seconds' => $duration,
+            'bokun_requests' => $apiStats['bokun_requests'], // step 4.11: logged by bokun_cron_near.php
             'errors' => $errors,
             'grouping' => $groupingResult
         ];
