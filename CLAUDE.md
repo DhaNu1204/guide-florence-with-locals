@@ -51,7 +51,7 @@ Full detail with the reasoning in **`docs/DOMAIN_RULES.md`** — read the sectio
 - Guide reminders: one WhatsApp per departure, ~60 min before start, Europe/Rome; WANTED decides retention, CREATABLE (≥ now+15 min) gates creation; failures are swallowed and retried on the next reconcile.
 - Guide phones must be international (`+`/`00` + 8–15 digits); the backend never guesses a country code.
 - Time from Bokun = `startTimeStr` (local), never the UTC timestamp. `rateId` = `productBookings[0].fields.rateId`.
-- P&L: unit overrides live in `pnl_tour_costs`; guide cost precedence outsourced > ticket > private rate > mixed (highest) > category rate; Uffizi ≥ 16:00 uses PM ticket rates.
+- P&L: unit overrides live in `pnl_tour_costs`; guide cost precedence outsourced > ticket > private rate > mixed (highest) > category rate, where a mixed manual merge's category is its billing product's (`tour_groups.billing_product_id`, step 6.17); Uffizi ≥ 16:00 uses PM ticket rates.
 - Vite `base` must stay `'/'` (deep routes like `/respond/:token` break with `'./'`).
 
 ## 6. Conventions
