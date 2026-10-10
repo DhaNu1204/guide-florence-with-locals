@@ -11,6 +11,7 @@
  * POST   /api/tour-groups.php?action=auto-group      - Auto-group tours by product+date+time
  * POST   /api/tour-groups.php?action=manual-merge    - Manually merge specific tours
  * POST   /api/tour-groups.php?action=unmerge         - Remove a tour from its group
+ * POST   /api/tour-groups.php?action=billing-product - "Counts as" of a mixed manual merge (P&L owner only, step 6.17)
  * PUT    /api/tour-groups.php/{id}                   - Update group details
  * DELETE /api/tour-groups.php/{id}                   - Dissolve a group
  */
@@ -21,6 +22,7 @@ require_once __DIR__ . '/tour_classification.php'; // pure helper: computePaxBre
 require_once __DIR__ . '/rate_helpers.php';  // step 6.14: tours.rate_title + the Vasari rule
 require_once __DIR__ . '/group_helpers.php'; // step 3.5: propagateGuideToTours() lives there (shared with bokun_sync.php)
 require_once __DIR__ . '/lib/assistant_assign.php'; // step 7.5: fwlDepartureById() for the stale-card guard (no side effects)
+require_once __DIR__ . '/lib/billing_product.php';   // step 6.17: the product a mixed manual merge counts as
 
 // Require authentication for all tour group operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -65,6 +67,9 @@ switch ($method) {
                 break;
             case 'unmerge':
                 unmergeTour($conn, $data);
+                break;
+            case 'billing-product':
+                setGroupBillingProduct($conn, $data);
                 break;
             default:
                 http_response_code(400);
@@ -145,6 +150,7 @@ function ensureTourGroupsTable($conn) {
     ensureGroupNotesColumn($conn); // step 6.13
     ensureRateTitleColumn($conn);  // step 6.14
     ensureGroupDepartureTimeColumn($conn); // step 6.16
+    ensureGroupBillingProductColumn($conn); // step 6.17
 }
 
 /**
@@ -260,6 +266,7 @@ function listGroups($conn) {
         $row['total_pax'] = intval($row['total_pax']);
         $row['is_manual_merge'] = (bool)$row['is_manual_merge'];
         if ($row['guide_id']) $row['guide_id'] = intval($row['guide_id']);
+        $row['billing_product_id'] = isset($row['billing_product_id']) ? intval($row['billing_product_id']) : null; // step 6.17
         // Fetch tours belonging to this group
         $row['tours'] = getGroupTours($conn, $row['id']);
         $row['booking_count'] = count($row['tours']);
@@ -321,6 +328,7 @@ function getGroupById($conn, $groupId) {
     $group['total_pax'] = intval($group['total_pax']);
     $group['is_manual_merge'] = (bool)$group['is_manual_merge'];
     if ($group['guide_id']) $group['guide_id'] = intval($group['guide_id']);
+    $group['billing_product_id'] = isset($group['billing_product_id']) ? intval($group['billing_product_id']) : null; // step 6.17
 
     // Fetch tours in this group
     $group['tours'] = getGroupTours($conn, $groupId);
@@ -336,7 +344,7 @@ function getGroupTours($conn, $groupId) {
     $stmt = $conn->prepare("
         SELECT t.id, t.title, t.date, t.time, t.customer_name, t.customer_email,
                t.participants, t.booking_channel, t.bokun_confirmation_code, t.language,
-               t.cancelled, t.payment_status, t.guide_id, t.bokun_data, t.rate_title, g.name as guide_name
+               t.cancelled, t.payment_status, t.guide_id, t.bokun_data, t.rate_title, t.product_id, g.name as guide_name
         FROM tours t
         LEFT JOIN guides g ON t.guide_id = g.id
         WHERE t.group_id = ?
@@ -352,6 +360,7 @@ function getGroupTours($conn, $groupId) {
         $row['participants'] = intval($row['participants']);
         $row['cancelled'] = (bool)$row['cancelled'];
         if ($row['guide_id']) $row['guide_id'] = intval($row['guide_id']);
+        $row['product_id'] = $row['product_id'] !== null ? intval($row['product_id']) : null; // step 6.17
 
         // Server-computed participant breakdown so grouped member rows show adults/children/
         // infants (bokun_data is parsed here, then dropped to keep the payload small).
@@ -667,6 +676,10 @@ function manualMergeTours($conn, $data) {
         // Sync guide from tours
         syncGroupGuideFromTours($conn, $newGroupId);
 
+        // Step 6.17: a merge that mixes categories counts as its highest-rate member product
+        // (Combo + Uffizi = Combo), whatever the booking ids; its title becomes the group title.
+        groupBillingApplyDefault($conn, $newGroupId);
+
         $conn->commit();
     } catch (Exception $e) {
         $conn->rollback();
@@ -684,6 +697,48 @@ function manualMergeTours($conn, $data) {
         'message' => 'Tours merged successfully',
         'group' => $group
     ]);
+}
+
+/**
+ * POST action=billing-product - Step 6.17: "Counts as" on a manual merge that mixes categories.
+ * Body: {group_id, product_id}. The product must be one of the group's live member products; it
+ * becomes the group title and sets the guide rate. The P&L owner only (the money decision) -
+ * viewers are already stopped by requireAdminForWrites, a second admin gets 403 here.
+ */
+function setGroupBillingProduct($conn, $data) {
+    Middleware::requirePnlOwner($conn);
+    $groupId = isset($data['group_id']) ? intval($data['group_id']) : 0;
+    $productId = isset($data['product_id']) ? intval($data['product_id']) : 0;
+    if ($groupId <= 0 || $productId <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'group_id and product_id are required']);
+        return;
+    }
+    $stmt = $conn->prepare("SELECT id, is_manual_merge FROM tour_groups WHERE id = ?");
+    $stmt->bind_param('i', $groupId);
+    $stmt->execute();
+    $group = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$group) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Group not found']);
+        return;
+    }
+    $members = groupBillingMembers($conn, $groupId);
+    if ((int) $group['is_manual_merge'] !== 1 || billingDistinctCategories($members) < 2) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Only a merged group that mixes tour types can count as another product']);
+        return;
+    }
+    $ok = false;
+    foreach ($members as $m) { if ((int) $m['product_id'] === $productId) { $ok = true; break; } }
+    if (!$ok) {
+        http_response_code(400);
+        echo json_encode(['error' => 'The product must be one of the group bookings']);
+        return;
+    }
+    groupBillingWrite($conn, $groupId, $productId, $members);
+    echo json_encode(['success' => true, 'group' => fetchGroupWithTours($conn, $groupId)]);
 }
 
 /**
@@ -725,6 +780,7 @@ function unmergeTour($conn, $data) {
     $conn->begin_transaction();
     try {
         removeTourFromGroup($conn, $tourId, $groupId, true); // step 6.13: it takes a copy of the group note
+        groupBillingRefresh($conn, $groupId); // step 6.17: no-op unless the group still exists with a billing product
         $conn->commit();
     } catch (Exception $e) {
         $conn->rollback();
@@ -1124,6 +1180,7 @@ function fetchGroupWithTours($conn, $groupId) {
     $group['total_pax'] = intval($group['total_pax']);
     $group['is_manual_merge'] = (bool)$group['is_manual_merge'];
     if ($group['guide_id']) $group['guide_id'] = intval($group['guide_id']);
+    $group['billing_product_id'] = isset($group['billing_product_id']) ? intval($group['billing_product_id']) : null; // step 6.17
 
     $group['tours'] = getGroupTours($conn, $groupId);
     $group['booking_count'] = count($group['tours']);

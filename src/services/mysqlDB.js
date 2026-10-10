@@ -776,6 +776,16 @@ export const tourGroupsAPI = {
     return response.data;
   },
 
+  // Step 6.17: "Counts as" of a mixed manual merge (P&L owner only; the server answers 403 otherwise)
+  async setBillingProduct(groupId, productId) {
+    const response = await axios.post(`${API_BASE_URL}/tour-groups.php?action=billing-product`, {
+      group_id: groupId,
+      product_id: productId
+    });
+    clearTourCache();
+    return response.data;
+  },
+
   async update(groupId, data) {
     const response = await axios.put(`${API_BASE_URL}/tour-groups.php/${groupId}`, data);
     clearTourCache();

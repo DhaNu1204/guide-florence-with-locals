@@ -20,12 +20,14 @@
 require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/lib/guide_report_core.php';
+require_once __DIR__ . '/lib/billing_product.php'; // step 6.17: a mixed merge's "Counts as" product
 
 // Require authentication for all report operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
 
 // Apply rate limiting (read operations)
 applyRateLimit('read');
+ensureGroupBillingProductColumn($conn); // step 6.17: read below
 
 $guide_id = isset($_GET['guide_id']) ? intval($_GET['guide_id']) : null;
 $period   = isset($_GET['period']) ? trim($_GET['period']) : null;
@@ -99,7 +101,9 @@ function getAllGuidesOverview($conn, $range, $period) {
                 t.id,
                 t.group_id,
                 t.title,
-                tg.display_name AS group_display_name
+                t.product_id,
+                tg.display_name AS group_display_name,
+                tg.billing_product_id
             FROM tours t
             JOIN guides g ON g.id = t.guide_id
             LEFT JOIN tour_groups tg ON tg.id = t.group_id
@@ -140,6 +144,9 @@ function getAllGuidesOverview($conn, $range, $period) {
         if ($row['group_id']) {
             // Accumulate member titles; each group becomes exactly ONE unit below.
             $byGuide[$gid]['_groups'][intval($row['group_id'])][] = $row['title'];
+            // Step 6.17: member products + the group's billing product, same order as the titles
+            $byGuide[$gid]['_products'][intval($row['group_id'])][] = $row['product_id'];
+            $byGuide[$gid]['_billing'][intval($row['group_id'])] = $row['billing_product_id'];
         } else {
             $category = classifyTourCategory($row['title']);
             $byGuide[$gid]['by_category'][$category]++;
@@ -152,13 +159,14 @@ function getAllGuidesOverview($conn, $range, $period) {
     // when the highest rank is shared). Then drop internal bookkeeping.
     $guides = [];
     foreach ($byGuide as $g) {
-        foreach ($g['_groups'] as $memberTitles) {
-            list($category) = buildComposition($memberTitles);
+        foreach ($g['_groups'] as $groupId => $memberTitles) {
+            list($category) = billingApplyToComposition(buildComposition($memberTitles), $memberTitles,
+                $g['_products'][$groupId], $g['_billing'][$groupId]); // step 6.17
             if (!isset($g['by_category'][$category])) { $g['by_category'][$category] = 0; }
             $g['by_category'][$category]++;
             $g['total_tours']++;
         }
-        unset($g['_groups']);
+        unset($g['_groups'], $g['_products'], $g['_billing']);
         $guides[] = $g;
     }
     usort($guides, function ($a, $b) {
@@ -197,7 +205,8 @@ function getGuideReport($conn, $guide_id, $range, $period) {
                                 t.title,
                                 t.date,
                                 t.time,
-                                t.group_id
+                                t.group_id,
+                                t.product_id
                             FROM tours t
                             WHERE t.guide_id = ?
                               AND t.date >= ? AND t.date <= ?
@@ -222,12 +231,14 @@ function getGuideReport($conn, $guide_id, $range, $period) {
             if (!isset($groupAccum[$gid])) {
                 $groupAccum[$gid] = [
                     'titles' => [],
+                    'products' => [], // step 6.17
                     'date'   => $row['date'],
                     'time'   => $row['time'],
                     'title'  => $row['title']
                 ];
             }
             $groupAccum[$gid]['titles'][] = $row['title'];
+            $groupAccum[$gid]['products'][] = $row['product_id'];
         } else {
             list($category, $composition, $label) = buildComposition([$row['title']]);
             $tours[] = [
@@ -245,12 +256,13 @@ function getGuideReport($conn, $guide_id, $range, $period) {
     // Second pass: one representative row per group, classified by its members.
     foreach ($groupAccum as $gid => $accum) {
         // Prefer the group's canonical date/time/title when available
-        $groupStmt = $conn->prepare("SELECT display_name, group_date, COALESCE(departure_time, group_time) AS group_time FROM tour_groups WHERE id = ?");
+        $groupStmt = $conn->prepare("SELECT display_name, group_date, COALESCE(departure_time, group_time) AS group_time, billing_product_id FROM tour_groups WHERE id = ?");
         $groupStmt->bind_param("i", $gid);
         $groupStmt->execute();
         $groupInfo = $groupStmt->get_result()->fetch_assoc();
 
-        list($category, $composition, $label, $titleIndex) = buildComposition($accum['titles']);
+        list($category, $composition, $label, $titleIndex) = billingApplyToComposition(buildComposition($accum['titles']),
+            $accum['titles'], $accum['products'], $groupInfo ? $groupInfo['billing_product_id'] : null); // step 6.17
         $title = $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $accum['title'];
         if ($titleIndex !== null) {
             // Mixed unit (step 6.15): show a booking of the effective type, not the group name

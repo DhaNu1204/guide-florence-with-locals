@@ -4,6 +4,7 @@ import { FiChevronDown, FiChevronRight, FiUsers, FiUser, FiSave, FiX, FiScissors
 import ParticipantsButton from './ParticipantsButton';
 import { groupMemberLanguages } from '../utils/groupLanguages';
 import GroupNote from './GroupNote';
+import GroupCountsAs from './GroupCountsAs'; // step 6.17
 import VasariChip, { VasariGroupChip } from './VasariChip';
 import BookedTimeChip from './BookedTimeChip';
 import { groupDepartureTime } from '../utils/groupTime';
@@ -296,6 +297,9 @@ const TourGroup = ({
       {/* Expanded: individual bookings */}
       {expanded && (
         <div className="border-t border-renaissance-200 bg-white">
+          {/* Step 6.17: what a mixed merge counts as (P&L owner only) */}
+          <GroupCountsAs group={group} onRefresh={onRefresh} onSuccess={onSuccess} onError={onError}
+            className="px-4 py-2 border-b border-stone-100 bg-gold-50/40" />
           <table className="min-w-full divide-y divide-stone-100">
             <thead className="bg-stone-50">
               <tr>
