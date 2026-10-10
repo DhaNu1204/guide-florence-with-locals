@@ -11,6 +11,7 @@ require_once __DIR__ . '/../group_helpers.php'; // step 3.7: groupBucketKey()
 require_once __DIR__ . '/../pnl_links.php';     // step 6.2: merged costing units
 require_once __DIR__ . '/../manual_helpers.php'; // step 6.4: hand-entered departures
 require_once __DIR__ . '/../viator_helpers.php'; // step 6.9: the old-Viator-account label
+require_once __DIR__ . '/billing_product.php';     // step 6.17: what a mixed manual merge counts as
 
 if (!function_exists('pnlBuildRows')) {
 
@@ -422,12 +423,13 @@ function pnlExtractRevenue($bokunDataRaw, $channel, $fallbackAmount, $settings) 
 function pnlBuildRows($conn, $start, $end, $settings) {
     ensureManualColumns($conn); // step 6.4
     ensureViatorAccountColumn($conn); // step 6.9
+    ensureGroupBillingProductColumn($conn); // step 6.17
     $sql = "SELECT t.id, t.group_id, t.product_id, t.title, t.date, t.time, t.participants,
                    t.cancelled, t.booking_channel, t.viator_account, t.total_amount_paid, t.bokun_data,
                    t.source, t.manual_revenue, t.manual_currency,
                    t.is_private, t.guide_id, g.name AS guide_name,
                    tg.display_name AS group_display_name, tg.group_time, tg.departure_time AS group_departure_time,
-                   tg.bucket_key AS group_bucket_key,
+                   tg.bucket_key AS group_bucket_key, tg.billing_product_id AS group_billing_product_id,
                    (CASE WHEN pr.product_type = 'ticket' THEN 1 ELSE 0 END) AS is_ticket_product
             FROM tours t
             LEFT JOIN guides g  ON g.id = t.guide_id
@@ -481,7 +483,10 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 // UNKNOWN, not zero - the UI must not print a confident 0.00.
                 'has_manual'      => false,
                 'ticket_known'    => true,
-                'has_gelato'      => false
+                'has_gelato'      => false,
+                // Step 6.17: the product a mixed manual merge counts as, and its live bookings.
+                'billing_product_id' => $row['group_id'] ? $row['group_billing_product_id'] : null,
+                'members'         => []
             ];
         }
         $u = &$units[$key];
@@ -497,6 +502,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
 
         $u['bookings']++;
         $u['titles'][] = $row['title'];
+        $u['members'][] = ['product_id' => $row['product_id'], 'title' => $row['title']]; // step 6.17
 
         // Step 6.9: a booking on the retiring Viator account gets its own line here, so a day
         // that mixes the two accounts shows both. The commission below still reads
@@ -609,6 +615,12 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             $category = array_key_first($cats);
         } else {
             $category = 'Mixed';
+        }
+        // Step 6.17: a mixed manual merge with a billing product ("Counts as") is that product's
+        // category - its guide rate, its Profit-by-product line. Tickets/radios/gelato stay per booking.
+        $billingIdx = $u['is_group'] ? billingMemberIndex($u['members'], $u['billing_product_id']) : null;
+        if ($billingIdx !== null) {
+            $category = pnlCategory($u['members'][$billingIdx]['title']);
         }
 
         // Overrides row (needed early: the outsourced flag changes auto costs)
