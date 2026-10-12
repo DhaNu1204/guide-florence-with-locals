@@ -513,15 +513,13 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
     // departure is never matched, updated, regrouped or backfilled by a sync.
     ensureManualColumns($conn);
 
-    // Step 6.9: tours.viator_account - the INSERT below writes it, the UPDATE must not.
+    // Step 6.9: tours.viator_account. Step 6.18: worked out from the product code on insert AND
+    // update (it is a Bokun fact); a payload without a code never overwrites the stored label.
     ensureViatorAccountColumn($conn);
     // Step 6.14: tours.rate_title - written after every insert/update, next to is_private.
     ensureRateTitleColumn($conn);
     // Step 4.11: tours.cancelled_at - stamped by the UPDATE below, read by tours.php?action=changes.
     ensureCancelledAtColumn($conn);
-    // Read once per run, not once per booking. Null until he connects the new Viator account,
-    // which is what keeps a booking arriving on the OLD account today labelled 'legacy'.
-    $viatorCutoverAt = viatorCutoverAt($conn);
 
     // Default to past 7 days and next 4 MONTHS (120 days) to catch advance bookings
     // This allows guide assignment for tours booked months in advance
@@ -605,6 +603,10 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
 
                 $isUpdate = false;
 
+                // Step 6.18: which Viator account, from the supplier number in the product code.
+                // Null = not Viator, or no code in this payload (then the stored label is kept).
+                $viatorAccount = viatorAccountFromPayload($tourData['booking_channel'], $tourData['bokun_data']);
+
                 if ($existing) {
                     $isUpdate = true;
                     // Check if this is a rescheduling (date or time changed)
@@ -631,8 +633,9 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
                     // Update existing tour with rescheduling information.
                     // Step 3.1: paid, payment_status, total_amount_paid and expected_amount are LOCAL
                     // state - they are deliberately NOT in this column list (INSERT only, below).
-                    // Step 6.9: viator_account joins them. A legacy row must be incapable of being
-                    // relabelled or adopted by the new Viator channel, not merely unlikely to be.
+                    // Step 6.18: viator_account is NOT local state - it is read from Bokun's product
+                    // code, so it is refreshed here; COALESCE keeps the stored label when this
+                    // payload carries no code.
                     $stmt = $conn->prepare("
                         UPDATE tours SET
                         title = ?, date = ?, time = ?, duration = ?, language = ?,
@@ -643,6 +646,7 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
                         cancelled = ?, bokun_data = ?, last_sync = ?,
                         rescheduled = ?, original_date = ?, original_time = ?,
                         product_id = ?,
+                        viator_account = COALESCE(?, viator_account),
                         rescheduled_at = " . ($isRescheduled ? "NOW()" : "rescheduled_at") . ",
                         updated_at = NOW()
                         WHERE id = ?
@@ -652,25 +656,21 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
                     // right), so `cancelled = 0` above still reads the stored value: it is stamped once,
                     // when the sync first sees the cancellation, and cleared if Bokun un-cancels.
                     $cancelledFlag = $tourData['cancelled'] ? 1 : 0;
-                    $stmt->bind_param("ssssssssissdsiiississii",
+                    $stmt->bind_param("ssssssssissdsiiississisi",
                         $tourData['title'], $tourData['date'], $tourData['time'], $tourData['duration'], $tourData['language'],
                         $tourData['customer_name'], $tourData['customer_email'], $tourData['customer_phone'],
                         $tourData['participants'], $tourData['participant_names'], $tourData['booking_channel'],
                         $tourData['bokun_total_price'], $tourData['bokun_currency'],
                         $cancelledFlag, $cancelledFlag,
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'],
-                        $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $existing['id']
+                        $rescheduledFlag, $originalDate, $originalTime, $tourData['product_id'], $viatorAccount, $existing['id']
                     );
                 } else {
-                    // Step 6.9: the old/new Viator account label, written on INSERT ONLY. It is
-                    // absent from the UPDATE above and from this statement's ON DUPLICATE KEY
-                    // UPDATE clause for the same reason paid/payment_status are (step 3.1): once
-                    // a booking has been stamped 'legacy' nothing must be able to relabel it,
-                    // because after he disconnects the old account the information needed to
-                    // work the label out again does not exist anywhere.
-                    $viatorAccount = viatorAccountForInsert(
-                        $tourData['booking_channel'], $tourData['bokun_data'], $viatorCutoverAt
-                    );
+                    // Step 6.18: a new Viator booking with no product code is stored as 'unknown'
+                    // ("Viator ?"), never defaulted to old. On the race path below a payload
+                    // without a usable code keeps whatever label the row already has.
+                    $insertViatorAccount = $viatorAccount !== null ? $viatorAccount
+                        : (viatorIsViatorChannel($tourData['booking_channel']) ? VIATOR_ACCOUNT_UNKNOWN : null);
 
                     // Insert new tour. ON DUPLICATE KEY UPDATE (backed by uniq_tours_external_id)
                     // makes this race-safe: if a concurrent sync inserted the same booking after
@@ -690,6 +690,7 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
                             bokun_total_price = VALUES(bokun_total_price),
                             bokun_currency = VALUES(bokun_currency),
                             bokun_data = VALUES(bokun_data),
+                            viator_account = IF(VALUES(viator_account) IN ('legacy', 'current'), VALUES(viator_account), viator_account),
                             last_sync = VALUES(last_sync),
                             updated_at = NOW()
                     ");
@@ -702,7 +703,7 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
                         $tourData['bokun_total_price'], $tourData['bokun_currency'],
                         $tourData['external_source'], $tourData['needs_guide_assignment'], $tourData['guide_id'],
                         $tourData['cancelled'], $tourData['bokun_data'], $tourData['last_sync'], $tourData['product_id'],
-                        $viatorAccount
+                        $insertViatorAccount
                     );
                 }
 
