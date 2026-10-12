@@ -32,4 +32,18 @@ describe('ViatorLegacyChip (step 6.9)', () => {
     render(<ViatorLegacyChip account="LEGACY" />);
     expect(screen.queryByTestId('viator-legacy-chip')).toBeNull();
   });
+
+  // Step 6.18: the account comes from the product code; when it cannot be told, say so.
+  it('shows "Viator ?" when the account cannot be told', () => {
+    render(<ViatorLegacyChip account="unknown" />);
+    const chip = screen.getByTestId('viator-unknown-chip');
+    expect(chip).toHaveTextContent('Viator ?');
+    expect(screen.queryByTestId('viator-legacy-chip')).toBeNull();
+  });
+
+  it('a new-account booking carries no chip of either kind', () => {
+    render(<ViatorLegacyChip account="current" />);
+    expect(screen.queryByTestId('viator-legacy-chip')).toBeNull();
+    expect(screen.queryByTestId('viator-unknown-chip')).toBeNull();
+  });
 });

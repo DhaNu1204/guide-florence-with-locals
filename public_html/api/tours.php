@@ -503,6 +503,9 @@ switch ($method) {
                 $row['pax_infants'] = $pax['infants'];
                 // Step 6.14: the rule lives in rateIsVasari() only; the page just reads the flag.
                 $row['vasari'] = rateIsVasari($row['rate_title'] ?? null);
+                // Step 6.18: 'legacy' | 'current' | 'unknown' for a Viator booking, null otherwise -
+                // the same viatorAccountForDisplay() value the P&L line is named from.
+                $row['viator_account'] = viatorAccountForDisplay($row['booking_channel'] ?? null, $row['viator_account'] ?? null);
 
                 if ($listView) {
                     // Step 4.2: only what the list renders; everything the browser used to
@@ -1005,6 +1008,8 @@ switch ($method) {
                 $result = $selectStmt->get_result();
                 
                 if ($tour = $result->fetch_assoc()) {
+                    // Step 6.18: same Viator account value as the list (a row merged into the page keeps its chip).
+                    $tour['viator_account'] = viatorAccountForDisplay($tour['booking_channel'] ?? null, $tour['viator_account'] ?? null);
                     // Convert paid to boolean for frontend (backward compatibility)
                     if (isset($tour['paid'])) {
                         $tour['paid'] = (bool)$tour['paid'];

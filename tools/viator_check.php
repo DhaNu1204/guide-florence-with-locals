@@ -21,38 +21,46 @@ foreach (['GetYourGuide', 'Airbnb', 'www.florencewithlocals.com', 'Headout Inc',
     check('not Viator: ' . var_export($other, true), !viatorIsViatorChannel($other));
 }
 
-// --- the label a newly inserted booking gets ------------------------------------------------
-$created = function ($iso) { return ['creationDate' => strtotime($iso) * 1000]; };
+// --- step 6.18: the account comes from the Viator supplier number in the product code -------
+$pb = function (...$codes) {
+    return ['productBookings' => array_map(function ($c) { return ['productExternalId' => $c]; }, $codes)];
+};
+check('the two supplier numbers are configured in one place',
+    VIATOR_SUPPLIER_ACCOUNTS === ['426324' => VIATOR_ACCOUNT_LEGACY, '5686765' => VIATOR_ACCOUNT_CURRENT]);
+check('old account product code -> legacy', viatorAccountFromCode('426324P2') === VIATOR_ACCOUNT_LEGACY);
+check('old account, two-digit option -> legacy', viatorAccountFromCode('426324P14') === VIATOR_ACCOUNT_LEGACY);
+check('new account product code (BR-1456081981) -> current', viatorAccountFromCode('5686765P3') === VIATOR_ACCOUNT_CURRENT);
+check('lower-case p still parses', viatorAccountFromCode('5686765p4') === VIATOR_ACCOUNT_CURRENT);
+check('a supplier number we do not know -> unknown', viatorAccountFromCode('999999P1') === VIATOR_ACCOUNT_UNKNOWN);
+check('a prefix of a known number is not that number', viatorAccountFromCode('42632P1') === VIATOR_ACCOUNT_UNKNOWN);
+check('a code without the P shape -> unknown', viatorAccountFromCode('5686765') === VIATOR_ACCOUNT_UNKNOWN);
 
-check('a GetYourGuide booking gets no label at all',
-    viatorAccountForInsert('GetYourGuide', $created('2026-09-21 10:00'), '2026-09-25 00:00:00') === null);
+check('payload: GetYourGuide -> null, whatever the code',
+    viatorAccountFromPayload('GetYourGuide', $pb('5686765P3')) === null);
+check('payload: old code -> legacy', viatorAccountFromPayload('Viator.com', $pb('426324P2')) === VIATOR_ACCOUNT_LEGACY);
+check('payload: new code -> current', viatorAccountFromPayload('Viator.com', $pb('5686765P3')) === VIATOR_ACCOUNT_CURRENT);
+check('payload as a JSON string, as the sync stores it',
+    viatorAccountFromPayload('Viator.com', json_encode($pb('5686765P3'))) === VIATOR_ACCOUNT_CURRENT);
+check('payload with no product code -> null (keep what is stored, never default to old)',
+    viatorAccountFromPayload('Viator.com', ['productBookings' => [['productExternalId' => '']]]) === null);
+check('no payload at all (hand-entered) -> null', viatorAccountFromPayload('Viator', null) === null);
+check('two products on one supplier -> that account',
+    viatorAccountFromPayload('Viator.com', $pb('426324P2', '426324P14')) === VIATOR_ACCOUNT_LEGACY);
+check('two suppliers mixed in one booking -> unknown',
+    viatorAccountFromPayload('Viator.com', $pb('426324P2', '5686765P3')) === VIATOR_ACCOUNT_UNKNOWN);
 
-// Before he switches there is no cutover, and the old account is still the only one.
-check('no cutover yet -> a Viator booking arriving today is still legacy',
-    viatorAccountForInsert('Viator.com', $created('2026-09-21 10:00'), null) === VIATOR_ACCOUNT_LEGACY);
-check('no cutover yet -> even with no creationDate it is legacy',
-    viatorAccountForInsert('Viator.com', null, null) === VIATOR_ACCOUNT_LEGACY);
-
-// After he switches, the booking's OWN creation time decides - a booking made on the old
-// account last March must not be adopted by the new channel just because we synced it late.
-$cut = '2026-09-25 12:00:00';
-check('made before the cutover -> legacy',
-    viatorAccountForInsert('Viator.com', $created('2026-03-14 09:00'), $cut) === VIATOR_ACCOUNT_LEGACY);
-check('made one minute before the cutover -> legacy',
-    viatorAccountForInsert('Viator.com', $created('2026-09-25 11:59'), $cut) === VIATOR_ACCOUNT_LEGACY);
-check('made after the cutover -> current',
-    viatorAccountForInsert('Viator.com', $created('2026-09-25 12:01'), $cut) === VIATOR_ACCOUNT_CURRENT);
-check('no creationDate after a cutover -> current, the safe way round',
-    viatorAccountForInsert('Viator.com', null, $cut, strtotime('2026-09-26 08:00')) === VIATOR_ACCOUNT_CURRENT,
-    'a new-account booking wrongly called legacy would join the hand-check list and be trusted');
-check('an unparseable cutover falls back to legacy rather than relabelling',
-    viatorAccountForInsert('Viator.com', $created('2026-09-26 08:00'), 'not a date') === VIATOR_ACCOUNT_LEGACY);
+check('display: a stored label is shown as is', viatorAccountForDisplay('Viator.com', 'current') === VIATOR_ACCOUNT_CURRENT);
+check('display: a Viator row with no label -> unknown', viatorAccountForDisplay('Viator', null) === VIATOR_ACCOUNT_UNKNOWN);
+check('display: a non-Viator row -> null even with a stray label', viatorAccountForDisplay('GetYourGuide', 'legacy') === null);
+check('display: garbage in the column -> unknown', viatorAccountForDisplay('Viator.com', 'xyz') === VIATOR_ACCOUNT_UNKNOWN);
 
 // --- what is shown, and what is not changed --------------------------------------------------
 check('a legacy Viator booking reads as the old account',
     viatorChannelLabel('Viator.com', VIATOR_ACCOUNT_LEGACY) === 'Viator (old account)');
-check('a new-account Viator booking reads as it always did',
-    viatorChannelLabel('Viator.com', VIATOR_ACCOUNT_CURRENT) === 'Viator.com');
+check('a new-account Viator booking reads as the new account (step 6.18)',
+    viatorChannelLabel('Viator.com', VIATOR_ACCOUNT_CURRENT) === 'Viator (new account)');
+check('a Viator booking we cannot place reads "Viator ?" (step 6.18)',
+    viatorChannelLabel('Viator', null) === 'Viator ?');
 check('every other channel is untouched',
     viatorChannelLabel('GetYourGuide', null) === 'GetYourGuide');
 check('a stray label on a non-Viator row cannot rename it',
