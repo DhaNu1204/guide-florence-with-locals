@@ -53,7 +53,7 @@ export const buildUnassignedReportText = (departures, { filterLabel, now = new D
     if (!byDate.has(key)) byDate.set(key, []);
     byDate.get(key).push({
       time: (d.time || '00:00').substring(0, 5),
-      location: getLocation(d.title),
+      location: getLocation(d.rule_title || d.title), // step 6.22: a linked product = its original
       // Step 6.1: the guide needs to know which language the departure is in. A mixed group
       // arrives as "English, Spanish"; a departure with no language reads "Unknown".
       language: d.language || 'Unknown',

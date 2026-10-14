@@ -17,6 +17,7 @@
  */
 
 require_once __DIR__ . '/twilio_helpers.php'; // normalizeWhatsapp(), twilioPost(), twilioDryRun()
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: the effective product (type, duration, meeting point)
 
 if (!function_exists('digestConfig')) {
 
@@ -189,7 +190,7 @@ function collectDigestDepartures($conn, $date) {
                 COUNT(*) AS bookings
             FROM tours t
             LEFT JOIN tour_groups tg ON tg.id = t.group_id
-            LEFT JOIN products pr ON pr.bokun_product_id = t.product_id
+            " . fwlProductJoinSql('t', 'pr') . "
             WHERE t.date = ?
               AND t.cancelled = 0
               AND (pr.product_type = 'tour' OR t.product_id IS NULL)

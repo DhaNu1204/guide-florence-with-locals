@@ -11,7 +11,7 @@ export const billingOptions = (group) => {
   for (const t of liveTours(group)) {
     const pid = Number(t.product_id);
     if (!pid || seen.has(pid)) continue;
-    seen.set(pid, { product_id: pid, title: t.title, category: tourCategory(t.title) });
+    seen.set(pid, { product_id: pid, title: t.title, category: tourCategory(t.rule_title || t.title) }); // step 6.22
   }
   return [...seen.values()];
 };
@@ -19,7 +19,7 @@ export const billingOptions = (group) => {
 /** The dropdown appears only on a manual merge whose live bookings span more than one type. */
 export const showCountsAs = (group) => {
   if (!group?.is_manual_merge) return false;
-  const cats = new Set(liveTours(group).map((t) => tourCategory(t.title)));
+  const cats = new Set(liveTours(group).map((t) => tourCategory(t.rule_title || t.title))); // step 6.22
   return cats.size > 1 && billingOptions(group).length > 1;
 };
 

@@ -15,6 +15,7 @@ require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/lib/departure_queries.php';
 require_once __DIR__ . '/lib/guide_product_fields.php';
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: the effective product (type, duration, meeting point)
 
 Middleware::requireAuth($conn);
 autoRateLimit('today');
@@ -38,7 +39,7 @@ try {
     $st = $conn->prepare("SELECT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id)) AS tour_unit,
                                  MAX(pr.meeting_point) AS meeting_point
                           FROM tours t
-                          LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+                          " . fwlProductJoinSql('t', 'pr') . "
                           WHERE t.date >= ? AND t.date <= ? AND t.cancelled = 0
                           GROUP BY tour_unit");
     $st->bind_param('ss', $today, $tomorrow);

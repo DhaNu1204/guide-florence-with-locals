@@ -4,7 +4,14 @@
  *
  *   GET  products.php            -> [{bokun_product_id, title, product_type, duration_minutes,
  *                                     upcoming_bookings, last_date}]
- *   PUT  products.php/{id}       {title?, product_type?, duration_minutes?}  (field omitted = untouched)
+ *   PUT  products.php/{id}       {title?, product_type?, duration_minutes?, groups_as_product_id?}
+ *                                (field omitted = untouched; groups_as_product_id null = no link)
+ *
+ * Step 6.22: groups_as_product_id = the original product this one COUNTS AS everywhere (grouping,
+ * type, category, tickets, gelato, radios, duration, meeting point, reports, P&L) - see
+ * lib/effective_product.php. One hop only: the target must exist, must not be this product and
+ * must not be linked itself, and a product that others count as cannot get a link. GET also sends
+ * effective_type (what Tours/Tickets use) and groups_as_title. Nothing is ever linked automatically.
  *
  * product_type decides Tours vs Tickets everywhere (the products table has been the only rule since
  * step 3.8). duration_minutes: null = unknown (5..1440 otherwise); used by the assistant's
@@ -13,10 +20,12 @@
 require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/lib/guide_product_fields.php';
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22
 
 Middleware::requireRole($conn, 'admin'); // settings: admins only, for reading too
 autoRateLimit('products');
 ensureProductDurationColumn($conn);
+ensureProductGroupsAsColumn($conn); // step 6.22
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -25,7 +34,10 @@ $last = end($segments);
 $productId = ctype_digit((string) $last) ? (int) $last : null;
 
 function productsRow($conn, $id) {
-    $s = $conn->prepare("SELECT bokun_product_id, title, product_type, duration_minutes FROM products WHERE bokun_product_id = ?");
+    $s = $conn->prepare("SELECT p.bokun_product_id, p.title, p.product_type, p.duration_minutes, p.groups_as_product_id,
+                                o.title AS groups_as_title, COALESCE(o.product_type, p.product_type) AS effective_type
+                           FROM products p LEFT JOIN products o ON o.bokun_product_id = p.groups_as_product_id
+                          WHERE p.bokun_product_id = ?");
     $s->bind_param('i', $id);
     $s->execute();
     $r = $s->get_result()->fetch_assoc();
@@ -33,6 +45,7 @@ function productsRow($conn, $id) {
     if (!$r) return null;
     $r['bokun_product_id'] = (int) $r['bokun_product_id'];
     $r['duration_minutes'] = $r['duration_minutes'] !== null ? (int) $r['duration_minutes'] : null;
+    $r['groups_as_product_id'] = $r['groups_as_product_id'] !== null ? (int) $r['groups_as_product_id'] : null;
     return $r;
 }
 
@@ -40,11 +53,14 @@ try {
     if ($method === 'GET' && $productId === null) {
         $today = date('Y-m-d'); // Europe/Rome (PHP), not the DB's UTC CURDATE()
         $stmt = $conn->prepare("
-            SELECT p.bokun_product_id, p.title, p.product_type, p.duration_minutes,
+            SELECT p.bokun_product_id, p.title, p.product_type, p.duration_minutes, p.groups_as_product_id,
+                   MAX(o.title) AS groups_as_title, MAX(o.product_type) AS groups_as_type,
+                   (SELECT COUNT(*) FROM products l WHERE l.groups_as_product_id = p.bokun_product_id) AS linked_from,
                    SUM(CASE WHEN t.date >= ? AND t.cancelled = 0 THEN 1 ELSE 0 END) AS upcoming_bookings,
                    MAX(t.date) AS last_date,
                    MAX(t.title) AS booking_title
             FROM products p
+            LEFT JOIN products o ON o.bokun_product_id = p.groups_as_product_id
             LEFT JOIN tours t ON t.product_id = p.bokun_product_id
             GROUP BY p.bokun_product_id
             ORDER BY p.product_type ASC, upcoming_bookings DESC, p.title ASC");
@@ -59,6 +75,11 @@ try {
                 'title' => trim((string) $r['title']) !== '' ? $r['title'] : (string) $r['booking_title'],
                 'product_type' => $r['product_type'],
                 'duration_minutes' => $r['duration_minutes'] !== null ? (int) $r['duration_minutes'] : null,
+                // Step 6.22: the link, and what Tours/Tickets actually use for this product
+                'groups_as_product_id' => $r['groups_as_product_id'] !== null ? (int) $r['groups_as_product_id'] : null,
+                'groups_as_title' => $r['groups_as_title'],
+                'effective_type' => $r['groups_as_product_id'] !== null && $r['groups_as_type'] ? $r['groups_as_type'] : $r['product_type'],
+                'linked_from' => (int) $r['linked_from'],
                 'upcoming_bookings' => (int) $r['upcoming_bookings'],
                 'last_date' => $r['last_date'],
             ];
@@ -106,6 +127,37 @@ try {
             }
             $d = ($data['duration_minutes'] === null || $data['duration_minutes'] === '') ? null : (int) $data['duration_minutes'];
             $sets[] = 'duration_minutes = ?'; $types .= 'i'; $vals[] = $d;
+        }
+        if (array_key_exists('groups_as_product_id', $data)) {
+            $target = $data['groups_as_product_id'];
+            if ($target === null || $target === '' || $target === 0 || $target === '0') {
+                $target = null;
+            } else {
+                if (!ctype_digit((string) $target)) {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'error' => 'Choose a product from the list']);
+                    exit();
+                }
+                $target = (int) $target;
+                $t = productsRow($conn, $target);
+                $err = null;
+                if ($target === $productId)                  { $err = 'A product cannot count as itself'; }
+                elseif ($t === null)                         { $err = 'That product does not exist'; }
+                elseif ($t['groups_as_product_id'] !== null) { $err = 'That product counts as another product itself - choose the original'; }
+                else {
+                    $c = $conn->prepare("SELECT COUNT(*) n FROM products WHERE groups_as_product_id = ?");
+                    $c->bind_param('i', $productId);
+                    $c->execute();
+                    if ((int) $c->get_result()->fetch_assoc()['n'] > 0) { $err = 'Other products count as this one - it cannot count as another'; }
+                    $c->close();
+                }
+                if ($err !== null) {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'error' => $err]);
+                    exit();
+                }
+            }
+            $sets[] = 'groups_as_product_id = ?'; $types .= 'i'; $vals[] = $target;
         }
         if (!$sets) {
             http_response_code(400);

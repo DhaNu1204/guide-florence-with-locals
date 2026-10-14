@@ -9,6 +9,7 @@ require_once __DIR__ . '/viator_helpers.php';      // pure helpers: the old-Viat
 require_once __DIR__ . '/rate_helpers.php';        // step 6.14: tours.rate_title + the Vasari rule
 require_once __DIR__ . '/lib/departure_queries.php'; // step 7.2: the unassigned report query (shared with the assistant)
 require_once __DIR__ . '/group_helpers.php';        // step 6.16: ensureGroupDepartureTimeColumn()
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: the effective product (type, duration, meeting point)
 
 // Require authentication for all tour operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -333,7 +334,7 @@ switch ($method) {
                                COUNT(DISTINCT IF(t.group_id IS NOT NULL, CONCAT('g', t.group_id), CONCAT('t', t.id))) AS departures,
                                COUNT(*) AS bookings
                         FROM tours t
-                        LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+                        " . fwlProductJoinSql('t', 'pr') . "
                         $langWhere
                         GROUP BY COALESCE(NULLIF(TRIM(t.language), ''), 'Unknown')
                         ORDER BY departures DESC, language ASC";
@@ -388,7 +389,7 @@ switch ($method) {
         }
 
         // Get total count for pagination metadata (with filters)
-        $countSql = "SELECT COUNT(*) as total FROM tours t LEFT JOIN products pr ON t.product_id = pr.bokun_product_id $whereClause";
+        $countSql = "SELECT COUNT(*) as total FROM tours t " . fwlProductJoinSql('t', 'pr') . " $whereClause";
         if (count($whereParams) > 0) {
             $countStmt = $conn->prepare($countSql);
             $countStmt->bind_param($whereTypes, ...$whereParams);
@@ -426,7 +427,7 @@ switch ($method) {
                 FROM tours t
                 LEFT JOIN guides g ON t.guide_id = g.id
                 LEFT JOIN tour_groups tg ON t.group_id = tg.id
-                LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+                " . fwlProductJoinSql('t', 'pr') . "
                 $whereClause
                 ORDER BY t.date ASC, t.time ASC
                 LIMIT ? OFFSET ?";
@@ -506,6 +507,9 @@ switch ($method) {
                 // Step 6.18: 'legacy' | 'current' | 'unknown' for a Viator booking, null otherwise -
                 // the same viatorAccountForDisplay() value the P&L line is named from.
                 $row['viator_account'] = viatorAccountForDisplay($row['booking_channel'] ?? null, $row['viator_account'] ?? null);
+                // Step 6.22: what the keyword rules (category chips, report label) read; the
+                // booking still shows its own `title`.
+                $row = fwlWithRuleTitle($conn, $row);
 
                 if ($listView) {
                     // Step 4.2: only what the list renders; everything the browser used to
@@ -521,7 +525,7 @@ switch ($method) {
                         $row['start_time_str'] = substr((string) $row['time'], 0, 5);
                     }
                     $light = [];
-                    foreach (['id', 'external_id', 'bokun_confirmation_code', 'title', 'product_id', 'product_type',
+                    foreach (['id', 'external_id', 'bokun_confirmation_code', 'title', 'rule_title', 'product_id', 'effective_product_id', 'product_type',
                               'is_private', 'date', 'time', 'start_time_str', 'guide_id', 'guide_name',
                               'group_id', 'group_info', 'participants', 'total_participants',
                               'pax_adults', 'pax_children', 'pax_infants', 'participant_names',

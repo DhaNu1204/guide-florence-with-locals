@@ -59,3 +59,50 @@ describe('Products page (step 7.2b)', () => {
     await waitFor(() => expect(updateProduct).toHaveBeenCalledWith(900001, { duration_minutes: 90 }));
   });
 });
+
+describe('Products page - Counts as (step 6.22)', () => {
+  const linkRows = [
+    { bokun_product_id: 962885, title: 'Uffizi & Accademia Walking Tour', product_type: 'tour', duration_minutes: 240, groups_as_product_id: null, upcoming_bookings: 144, last_date: null },
+    { bokun_product_id: 961802, title: 'Uffizi Gallery Priority Entrance Tickets', product_type: 'ticket', duration_minutes: 180, groups_as_product_id: null, upcoming_bookings: 33, last_date: null },
+    { bokun_product_id: 1324953, title: 'Uffizi Accademia and David Tour', product_type: 'tour', duration_minutes: null, groups_as_product_id: null, upcoming_bookings: 2, last_date: null },
+    { bokun_product_id: 1324951, title: 'Uffizi Gallery Reserved Entry Ticket', product_type: 'tour', duration_minutes: null, groups_as_product_id: 961802, upcoming_bookings: 0, last_date: null },
+  ];
+  beforeEach(() => { getProducts.mockResolvedValue(linkRows); updateProduct.mockReset(); });
+
+  it('a new product shows "No link"; the list offers only other unlinked products', async () => {
+    render(<Products />);
+    const select = await screen.findByLabelText('Counts as (product 1324953)');
+    expect(select.value).toBe('');
+    const options = [...select.querySelectorAll('option')].map((o) => o.value);
+    expect(options).toEqual(['', '962885', '961802']); // not itself, not the linked 1324951 (sorted by title)
+  });
+
+  it('a linked product is listed with its original (a ticket) and hides its own type and duration', async () => {
+    render(<Products />);
+    expect(await screen.findByText('Tickets (2)')).toBeInTheDocument();
+    const row = screen.getByTestId('product-1324951');
+    expect(row.querySelector('button[aria-pressed]')).toBeNull();
+    expect(screen.queryByLabelText('Duration in minutes of Uffizi Gallery Reserved Entry Ticket')).toBeNull();
+    expect(row.textContent).toContain('come from Uffizi Gallery Priority Entrance Tickets');
+    // the original cannot get a link while others count as it
+    expect(screen.getByTestId('link-961802').textContent).toContain('Counted as by 1 product');
+  });
+
+  it('choosing an original asks first and saves the link; "No link" removes it', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    updateProduct.mockResolvedValueOnce({ ...linkRows[2], groups_as_product_id: 962885 });
+    render(<Products />);
+    fireEvent.change(await screen.findByLabelText('Counts as (product 1324953)'), { target: { value: '962885' } });
+    await waitFor(() => expect(updateProduct).toHaveBeenCalledWith(1324953, { groups_as_product_id: 962885 }));
+    updateProduct.mockResolvedValueOnce({ ...linkRows[3], groups_as_product_id: null });
+    fireEvent.change(screen.getByLabelText('Counts as (product 1324951)'), { target: { value: '' } });
+    await waitFor(() => expect(updateProduct).toHaveBeenCalledWith(1324951, { groups_as_product_id: null }));
+  });
+
+  it('a refused confirmation saves nothing', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<Products />);
+    fireEvent.change(await screen.findByLabelText('Counts as (product 1324953)'), { target: { value: '962885' } });
+    expect(updateProduct).not.toHaveBeenCalled();
+  });
+});

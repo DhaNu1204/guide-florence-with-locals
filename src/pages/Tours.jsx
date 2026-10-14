@@ -771,7 +771,7 @@ const Tours = () => {
             add(tourCategory(g.display_name), countActivePax(g.tours));
           } else {
             if (item.cancelled) return; // skip cancelled standalone tours entirely
-            const cat = tourCategory(item.title);
+            const cat = tourCategory(item.rule_title || item.title); // step 6.22
             let key = cat;
             if (item.is_private) {
               // Private mirrors the shared categories exactly; only 'Other' -> 'Private (other)'.

@@ -50,6 +50,11 @@ const FALSE_TOUR_PATTERNS = [
  * isTicketProduct({ title: 'David and Accademia Gallery VIP Tour' })
  */
 export const isTicketProduct = (tour) => {
+  // Step 6.22: the server's product_type is the effective type (a linked product = its
+  // original's); it decides whenever the row carries it. Title keywords only for rows without.
+  if (tour && (tour.product_type === 'ticket' || tour.product_type === 'tour')) {
+    return tour.product_type === 'ticket';
+  }
   if (!tour || !tour.title) {
     return false;
   }

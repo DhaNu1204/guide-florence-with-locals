@@ -15,6 +15,7 @@
  */
 
 require_once __DIR__ . '/pnl_core.php'; // pnlCategory(), pnlGuideRateForCategory(), pnlLoadSettings()
+require_once __DIR__ . '/effective_product.php'; // step 6.22: rule titles + the effective product type
 
 if (!function_exists('ensureGroupBillingProductColumn')) {
 
@@ -32,10 +33,15 @@ function ensureGroupBillingProductColumn($conn) {
     }
 }
 
+/** Step 6.22: the title a member's category is read from (its rule title when the row carries one). */
+function billingRuleTitle(array $m) {
+    return (string) ($m['rule_title'] ?? $m['title'] ?? '');
+}
+
 /** Number of distinct P&L categories among member titles. */
 function billingDistinctCategories(array $members) {
     $cats = [];
-    foreach ($members as $m) { $cats[pnlCategory($m['title'] ?? '')] = true; }
+    foreach ($members as $m) { $cats[pnlCategory(billingRuleTitle($m))] = true; }
     return count($cats);
 }
 
@@ -66,7 +72,7 @@ function billingDefaultProductId(array $members, array $settings) {
         if ($pid <= 0) { continue; }
         $cand = [
             'pid'  => $pid,
-            'rate' => (float) pnlGuideRateForCategory(pnlCategory($m['title'] ?? ''), $settings),
+            'rate' => (float) pnlGuideRateForCategory(pnlCategory(billingRuleTitle($m)), $settings),
             'dur'  => (int) ($m['duration_minutes'] ?? 0),
         ];
         if ($best === null
@@ -88,7 +94,7 @@ function billingProductOptions(array $members) {
     foreach ($members as $m) {
         $pid = (int) ($m['product_id'] ?? 0);
         if ($pid <= 0 || isset($out[$pid])) { continue; }
-        $out[$pid] = ['product_id' => $pid, 'title' => $m['title'], 'category' => pnlCategory($m['title'] ?? '')];
+        $out[$pid] = ['product_id' => $pid, 'title' => $m['title'], 'category' => pnlCategory(billingRuleTitle($m))];
     }
     return array_values($out);
 }
@@ -113,7 +119,7 @@ function billingApplyToComposition(array $result, array $titles, array $productI
 function groupBillingMembers($conn, $groupId) {
     $stmt = $conn->prepare("SELECT t.id, t.product_id, t.title, pr.duration_minutes
                             FROM tours t
-                            LEFT JOIN products pr ON pr.bokun_product_id = t.product_id
+                            " . fwlProductJoinSql('t', 'pr') . "
                             WHERE t.group_id = ? AND t.cancelled = 0
                               AND (pr.product_type IS NULL OR pr.product_type <> 'ticket')
                             ORDER BY t.id");
@@ -122,7 +128,7 @@ function groupBillingMembers($conn, $groupId) {
     $stmt->execute();
     $res = $stmt->get_result();
     $rows = [];
-    while ($r = $res->fetch_assoc()) { $rows[] = $r; }
+    while ($r = $res->fetch_assoc()) { $r['rule_title'] = fwlRuleTitle($conn, $r['product_id'], $r['title']); $rows[] = $r; }
     $stmt->close();
     return $rows;
 }

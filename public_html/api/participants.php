@@ -22,6 +22,7 @@ require_once __DIR__ . '/tour_classification.php';   // computePaxBreakdown()
 require_once __DIR__ . '/radio_helpers.php';         // radioMuseumForTitle() - same mapping as 6.3
 require_once __DIR__ . '/participant_helpers.php';
 require_once __DIR__ . '/rate_helpers.php';          // step 6.14: rateIsVasari()
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: the effective product (type, duration, meeting point)
 
 Middleware::requireAuth($conn);
 autoRateLimit('participants');
@@ -44,14 +45,14 @@ if (isset($_GET['museum'])) {
     // Ticket products only (the products table decides tour vs ticket, as on Priority Tickets);
     // the museum is then read from each booking's own title in participantsDayBuild().
     $stmt = $conn->prepare("SELECT t.* FROM tours t
-                              JOIN products pr ON pr.bokun_product_id = t.product_id
+                              " . fwlProductJoinSql('t', 'pr') . "
                              WHERE pr.product_type = 'ticket' AND t.date = ?
                              ORDER BY t.time, t.id");
     $stmt->bind_param('s', $date);
     $stmt->execute();
     $res = $stmt->get_result();
     $dayRows = [];
-    while ($r = $res->fetch_assoc()) { $dayRows[] = $r; }
+    while ($r = $res->fetch_assoc()) { $dayRows[] = fwlWithRuleTitle($conn, $r); } // step 6.22: museum from the rule title
     $stmt->close();
 
     $data = participantsDayBuild($dayRows, $museum, $date, 'computePaxBreakdown');
@@ -121,7 +122,8 @@ $product = trim((string) ($first['group_display_name'] ?: $first['title']));
 // Its catch-all section 'Altro' means "this title names no museum": there is no museum door to
 // stand at, so the sheet falls back to the product name rather than printing an Italian word
 // that means nothing on an English participant list.
-$museumInfo = function_exists('radioMuseumForTitle') ? radioMuseumForTitle($first['title']) : null;
+$museumInfo = function_exists('radioMuseumForTitle')
+    ? radioMuseumForTitle(fwlRuleTitle($conn, $first['product_id'] ?? null, $first['title'])) : null; // step 6.22
 $museum = (is_array($museumInfo) && isset($museumInfo['museum']) && $museumInfo['museum'] !== RADIO_OTHER_SECTION)
     ? (string) $museumInfo['museum'] : '';
 $guideName = $first['guide_name'] ?: '';
