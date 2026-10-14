@@ -109,3 +109,10 @@ if (!function_exists('fwlEffectiveProducts')) {
         return $row;
     }
 }
+
+// The SQL helpers above name products.groups_as_product_id, so the column must exist before the
+// first query that uses them: provision it once per request when this file is loaded (every
+// endpoint and tool loads config.php - and so $conn - first).
+if (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) {
+    ensureProductGroupsAsColumn($GLOBALS['conn']);
+}
