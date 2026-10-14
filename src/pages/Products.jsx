@@ -88,7 +88,7 @@ function ProductRow({ product, allProducts, onSaved }) {
   };
 
   return (
-    <div className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center" data-testid={`product-${product.bokun_product_id}`}>
+    <div className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto_auto_auto] md:items-center" data-testid={`product-${product.bokun_product_id}`}>
       <div className="min-w-0">
         <input
           value={title}
@@ -106,8 +106,7 @@ function ProductRow({ product, allProducts, onSaved }) {
             Type, duration and meeting point come from {original ? original.title : `#${product.groups_as_product_id}`}.
           </p>
         )}
-      </div>
-      <div className="md:w-56">
+      <div className="mt-2 max-w-md">
         {linkedFrom.length > 0 ? (
           <p className="text-xs text-stone-500" data-testid={`link-${product.bokun_product_id}`}>
             Counted as by {linkedFrom.length} product{linkedFrom.length === 1 ? '' : 's'}
@@ -130,6 +129,7 @@ function ProductRow({ product, allProducts, onSaved }) {
             </select>
           </label>
         )}
+      </div>
       </div>
       {linked ? <div /> : (
       <div className="flex rounded-tuscan border border-stone-300 p-0.5" role="group" aria-label={`Type of ${product.title}`}>
