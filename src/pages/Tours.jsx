@@ -31,6 +31,7 @@ import { pickableGuides } from '../utils/guidePicker'; // step 7.2b: inactive gu
 import { useAssistantState } from '../components/assistant/assistantStore';
 import MergeTimeDialog from '../components/MergeTimeDialog';
 import { mergeTimes, defaultMergeTime } from '../utils/groupTime'; // step 6.16
+import { confirmMergeLanguages } from '../utils/groupLanguages'; // step 6.20
 import { useLiveRefresh } from '../hooks/useLiveRefresh'; // step 4.11: auto-refresh while open
 import UpdatedStamp from '../components/UpdatedStamp';
 
@@ -1106,6 +1107,9 @@ const Tours = () => {
       return;
     }
 
+    // Step 6.20: a guide speaks one language - bookings in two languages ask first; Cancel = no merge.
+    if (!confirmMergeLanguages(mergeTours, (q) => window.confirm(q))) return;
+
     // Step 6.16: the departure being merged INTO is the drop target.
     const dropTarget = targetType === 'group'
       ? { type: 'group', group: tourGroups.find(g => g.id === targetId) }
@@ -1210,6 +1214,9 @@ const Tours = () => {
       setTimeout(() => setError(null), 5000);
       return;
     }
+
+    // Step 6.20: same question as the desktop drag-and-drop; Cancel = no merge.
+    if (!confirmMergeLanguages(mergeTours, (q) => window.confirm(q))) return;
 
     // Step 6.16: on the phone the departure being merged into is the first one selected.
     const first = selectedItems[0];

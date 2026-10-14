@@ -37,6 +37,21 @@ describe('mixed-languages chip (step 6.12)', () => {
     expect(screen.getByTestId('mixed-languages-chip').textContent).toBe('Mixed languages');
   });
 
+  // Step 6.20: on desktop the row is wider than the Tours table (1,507 px needed vs 1,278 px shown
+  // at any screen width), so the last item is always scrolled out of view. The chip used to be
+  // that last item - after Guide and Notes - and nobody saw it on the 18 Oct 11:30 merge
+  // (English + Italian). Inside the table the title never shrinks, so anything after it is cut
+  // off on a 1024 px laptop or with the assistant open: the chip sits right after the time.
+  it('desktop: the chip comes right after the time, before the title, PAX, Guide and Notes', () => {
+    render(<TourGroup group={group([tour(7241, 'English'), tour(7802, 'Italian'), tour(7839, 'Italian')])} guides={[]} />);
+    const chip = screen.getByTestId('mixed-languages-chip');
+    const time = screen.getByText('14:30');
+    expect(time.nextElementSibling).toBe(chip);
+    const follows = (el) => Boolean(chip.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(screen.getByText('Uffizi Gallery Small Group Guided Tour with Tickets'))).toBe(true);
+    expect(follows(screen.getByText(/^\d+ PAX$/))).toBe(true);
+  });
+
   it('a one-language group has no chip', () => {
     render(<TourGroup group={group([tour(1, 'English'), tour(2, 'English'), tour(3, '')], { is_manual_merge: false })} guides={[]} />);
     expect(screen.queryByTestId('mixed-languages-chip')).toBeNull();

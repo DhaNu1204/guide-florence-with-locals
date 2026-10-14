@@ -173,6 +173,16 @@ const TourGroup = ({
           {groupTime}
         </span>
 
+        {/* Step 6.12: one guide speaks one language - never let a mixed group pass silently.
+            Step 6.20: right after the time - the row is wider than the table, and at the end
+            (after Guide and Notes) the chip was always scrolled out of view. */}
+        {mixedLanguages && (
+          <span data-testid="mixed-languages-chip" title={`Languages in this group: ${memberLanguages.join(', ')}`}
+            className="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">
+            Mixed languages
+          </span>
+        )}
+
         {/* Tour name */}
         <div className="flex-1 min-w-0 flex items-center gap-1.5">
           <span className="text-sm font-medium text-stone-900 truncate">
@@ -282,14 +292,6 @@ const TourGroup = ({
         {group.is_manual_merge && (
           <span className="text-xs bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded-full flex-shrink-0">
             Manual
-          </span>
-        )}
-
-        {/* Step 6.12: one guide speaks one language - never let a mixed group pass silently */}
-        {mixedLanguages && (
-          <span data-testid="mixed-languages-chip" title={`Languages in this group: ${memberLanguages.join(', ')}`}
-            className="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">
-            Mixed languages
           </span>
         )}
       </div>
