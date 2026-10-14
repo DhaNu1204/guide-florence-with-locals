@@ -12,6 +12,7 @@
 
 require_once 'config.php';
 require_once 'Middleware.php';
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: what a product counts as (type, rule title)
 
 // Require authentication for all guide payment operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -134,7 +135,7 @@ function getAllGuidePaymentSummaries($conn) {
                     WHERE t.guide_id = ?
                       AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                       AND t.cancelled = 0
-                      AND (NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket'))
+                      AND (NOT " . fwlIsTicketSql('t') . ")
                     GROUP BY tour_unit
                     HAVING MAX(p.id) IS NULL
                 ) unpaid_units
@@ -154,7 +155,7 @@ function getAllGuidePaymentSummaries($conn) {
                     WHERE t.guide_id = ?
                       AND CONCAT(t.date, ' ', COALESCE(t.time, '00:00:00')) < ?
                       AND t.cancelled = 0
-                      AND (NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket'))
+                      AND (NOT " . fwlIsTicketSql('t') . ")
                     GROUP BY tour_unit
                 ) paid_units
             ");
@@ -224,7 +225,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
               -- (tour_classification.php). The title keywords this replaced missed product 961802
               -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
               -- bookings the old filter would have counted as money owed to a guide.
-              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+              AND NOT " . fwlIsTicketSql('t') . "
             GROUP BY tour_unit
             HAVING MAX(p.id) IS NULL
         ) u
@@ -245,7 +246,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
               -- (tour_classification.php). The title keywords this replaced missed product 961802
               -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
               -- bookings the old filter would have counted as money owed to a guide.
-              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+              AND NOT " . fwlIsTicketSql('t') . "
             GROUP BY tour_unit
         ) p
     ");
@@ -336,7 +337,7 @@ function getGuidePaymentDetails($conn, $guide_id) {
                               -- (tour_classification.php). The title keywords this replaced missed product 961802
                               -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
                               -- bookings the old filter would have counted as money owed to a guide.
-                              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+                              AND NOT " . fwlIsTicketSql('t') . "
                               AND NOT EXISTS (
                                   SELECT 1 FROM payments p
                                   WHERE p.tour_id = t.id AND p.guide_id = t.guide_id
@@ -574,7 +575,7 @@ function getPaymentOverview($conn) {
                                   -- (tour_classification.php). The title keywords this replaced missed product 961802
                                   -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
                                   -- bookings the old filter would have counted as money owed to a guide.
-                                  AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+                                  AND NOT " . fwlIsTicketSql('t') . "
                                 GROUP BY tour_unit
                             ) paid_units");
     $paidStmt->bind_param("s", $romeNow);
@@ -596,7 +597,7 @@ function getPaymentOverview($conn) {
                                   -- (tour_classification.php). The title keywords this replaced missed product 961802
                                   -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
                                   -- bookings the old filter would have counted as money owed to a guide.
-                                  AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+                                  AND NOT " . fwlIsTicketSql('t') . "
                                 GROUP BY tour_unit
                                 HAVING MAX(p.id) IS NULL
                             ) unpaid_units");
@@ -617,7 +618,7 @@ function getPaymentOverview($conn) {
                                   -- (tour_classification.php). The title keywords this replaced missed product 961802
                                   -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
                                   -- bookings the old filter would have counted as money owed to a guide.
-                                  AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+                                  AND NOT " . fwlIsTicketSql('t') . "
                                 GROUP BY tour_unit
                             ) upcoming_units");
     $upcomingStmt->bind_param("s", $romeNow);
@@ -683,7 +684,7 @@ function getPendingTours($conn) {
               -- (tour_classification.php). The title keywords this replaced missed product 961802
               -- (Uffizi Gallery Reserved Ticket + Digital Audio Guide) entirely: 2,580 ticket
               -- bookings the old filter would have counted as money owed to a guide.
-              AND NOT EXISTS (SELECT 1 FROM products pr WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+              AND NOT " . fwlIsTicketSql('t') . "
               AND NOT EXISTS (
                   SELECT 1 FROM payments p
                   WHERE p.tour_id = t.id AND p.guide_id = t.guide_id

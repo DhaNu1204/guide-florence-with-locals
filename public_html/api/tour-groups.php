@@ -23,6 +23,7 @@ require_once __DIR__ . '/rate_helpers.php';  // step 6.14: tours.rate_title + th
 require_once __DIR__ . '/group_helpers.php'; // step 3.5: propagateGuideToTours() lives there (shared with bokun_sync.php)
 require_once __DIR__ . '/lib/assistant_assign.php'; // step 7.5: fwlDepartureById() for the stale-card guard (no side effects)
 require_once __DIR__ . '/lib/billing_product.php';   // step 6.17: the product a mixed manual merge counts as
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: what a product counts as (Auto-Group key, rule_title)
 
 // Require authentication for all tour group operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -361,6 +362,7 @@ function getGroupTours($conn, $groupId) {
         $row['cancelled'] = (bool)$row['cancelled'];
         if ($row['guide_id']) $row['guide_id'] = intval($row['guide_id']);
         $row['product_id'] = $row['product_id'] !== null ? intval($row['product_id']) : null; // step 6.17
+        $row = fwlWithRuleTitle($conn, $row); // step 6.22: rule_title + effective_product_id for the category chips
 
         // Server-computed participant breakdown so grouped member rows show adults/children/
         // infants (bokun_data is parsed here, then dropped to keep the payload small).
@@ -408,7 +410,7 @@ function autoGroupTours($conn, $data) {
 
     // Find ungrouped tours (or all non-manual tours if force=true)
     // NEVER touch tours in manually merged groups
-    $sql = "SELECT t.id, t.title, t.date, t.time, t.participants, t.cancelled, t.group_id, t.language
+    $sql = "SELECT t.id, t.title, t.date, t.time, t.participants, t.cancelled, t.group_id, t.language, t.product_id
             FROM tours t
             LEFT JOIN tour_groups tg ON t.group_id = tg.id
             WHERE t.date >= ? AND t.date <= ?
@@ -445,7 +447,8 @@ function autoGroupTours($conn, $data) {
     // Group tours by normalized title + date + time
     $departures = [];
     foreach ($tours as $tour) {
-        $key = normalizeTitle($tour['title']) . '|' . $tour['date'] . '|' . normalizeTime($tour['time']);
+        // Step 6.22: a linked product groups under its original's title (the rule title).
+        $key = normalizeTitle(fwlRuleTitle($conn, $tour['product_id'], $tour['title'])) . '|' . $tour['date'] . '|' . normalizeTime($tour['time']);
         if (!isset($departures[$key])) {
             $departures[$key] = [];
         }

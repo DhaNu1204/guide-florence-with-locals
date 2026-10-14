@@ -16,6 +16,8 @@
  * Unchanged answer: success + data {token: <the same token>, changed: false} - about 75 bytes.
  */
 
+require_once __DIR__ . '/effective_product.php'; // step 6.22: tour vs ticket of a linked product
+
 const CHANGE_TOKEN_DAYS_AHEAD = 7;
 const CHANGE_TOKEN_MAX_EVENTS = 5; // per kind
 
@@ -74,7 +76,7 @@ function changeTokenHash($conn, $from, $to) {
 function changeTokenEvents($conn, $since, $from, $to) {
     $events = [];
     $base = "SELECT t.id, t.date, TIME_FORMAT(t.time, '%H:%i') AS time, t.title, t.participants
-               FROM tours t LEFT JOIN products pr ON pr.bokun_product_id = t.product_id
+               FROM tours t " . fwlProductJoinSql('t', 'pr') . "
               WHERE t.date BETWEEN ? AND ? AND (pr.product_type IS NULL OR pr.product_type <> 'ticket')";
     $kinds = [
         'new'    => "$base AND t.cancelled = 0 AND t.created_at >= FROM_UNIXTIME(?) ORDER BY t.created_at, t.id LIMIT " . CHANGE_TOKEN_MAX_EVENTS,

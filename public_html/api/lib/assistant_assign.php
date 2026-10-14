@@ -14,6 +14,7 @@
 require_once __DIR__ . '/departure_queries.php';
 require_once __DIR__ . '/guide_product_fields.php';
 require_once __DIR__ . '/../twilio_helpers.php'; // normalizeWhatsapp(), twilioPost(), twilioDryRun() - no side effects
+require_once __DIR__ . '/effective_product.php'; // step 6.22: the effective product (type, duration, meeting point)
 
 const ASSIGN_CARD_TTL_SECONDS = 600;           // 10 minutes, then the buttons are disabled
 const ASSIGN_DIGEST_MINUTES = 21 * 60 + 30;    // the evening digest goes out at 21:30 Europe/Rome
@@ -44,7 +45,7 @@ if (!function_exists('fwlDepartureById')) {
                    COUNT(*) AS rows_found
             FROM tours t
             LEFT JOIN tour_groups tg ON tg.id = t.group_id
-            LEFT JOIN products pr ON pr.bokun_product_id = t.product_id
+            " . fwlProductJoinSql('t', 'pr') . "
             WHERE $where");
         $stmt->bind_param('i', $id);
         $stmt->execute();

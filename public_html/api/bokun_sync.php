@@ -7,6 +7,7 @@ require_once __DIR__ . '/manual_helpers.php';   // step 6.4: manual rows are inv
 require_once __DIR__ . '/viator_helpers.php';   // step 6.9: the old/new Viator account label
 require_once __DIR__ . '/rate_helpers.php';     // step 6.14: tours.rate_title
 require_once __DIR__ . '/lib/change_token.php'; // step 4.11: ensureCancelledAtColumn()
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: what a product counts as
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -716,7 +717,8 @@ function syncBookingsRun($startDate = null, $endDate = null, $syncType = 'auto',
                     $rowId = $isUpdate ? (int) $existing['id'] : (int) $conn->insert_id;
                     if ($rowId > 0) {
                         list($rateId, $rateTitle) = bokunRateInfo($booking);
-                        $isPriv = isPrivateBooking($tourData['product_id'], $rateId, $rateTitle) ? 1 : 0;
+                        // Step 6.22: a linked product counts as its original (rate ids stay its own).
+                        $isPriv = isPrivateBooking(fwlEffectiveProductId($conn, $tourData['product_id']), $rateId, $rateTitle) ? 1 : 0;
                         $storedRateTitle = rateTitleFromBokun($booking);
                         $ipStmt = $conn->prepare("UPDATE tours SET is_private = ?, rate_title = ? WHERE id = ?");
                         $ipStmt->bind_param("isi", $isPriv, $storedRateTitle, $rowId);
@@ -1205,6 +1207,18 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
         $tours[] = $row;
     }
     $stmt->close();
+    // Step 6.22: bucket by the product a booking COUNTS AS (products.groups_as_product_id), and
+    // read the group cap from the rule title. Same order as the SQL above, on the effective id.
+    foreach ($tours as &$gt) {
+        $gt['own_product_id'] = $gt['product_id'];
+        $gt['rule_title'] = fwlRuleTitle($conn, $gt['product_id'], $gt['title']);
+        $gt['product_id'] = fwlEffectiveProductId($conn, $gt['product_id']);
+    }
+    unset($gt);
+    usort($tours, function ($a, $b) {
+        return [(int) $a['product_id'], $a['date'], $a['time'], (int) $a['id']]
+           <=> [(int) $b['product_id'], $b['date'], $b['time'], (int) $b['id']];
+    });
 
     // (B) Current AUTO membership in range: tourId => groupId. Cancelled and now-private tours
     //     are included here on purpose - they must be detached from their group below.
@@ -1262,7 +1276,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
         if (count($bucketTours) < 2) {
             continue; // a departure with one booking is not a group
         }
-        $maxPax = getMaxPaxForTitle(pickDisplayTitle($bucketTours));
+        $maxPax = getMaxPaxForTitle(pickDisplayTitle(groupRuleTitleRows($bucketTours))); // step 6.22
         foreach (splitBucketByPax($bucketTours, $maxPax) as $subGroup) {
             if (count($subGroup) < 2) {
                 continue;
@@ -1276,7 +1290,7 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
                 'time'       => $subGroup[0]['time'],
                 'title'      => $displayTitle,
                 'total_pax'  => (int) array_sum(array_column($subGroup, 'participants')),
-                'max_pax'    => (int) getMaxPaxForTitle($displayTitle),
+                'max_pax'    => (int) getMaxPaxForTitle(pickDisplayTitle(groupRuleTitleRows($subGroup))), // step 6.22
             ];
         }
     }
@@ -1461,6 +1475,14 @@ function autoGroupAfterSync($conn, $startDate, $endDate) {
  * Pick a group's display title = the MOST FREQUENT booking title in the set.
  * Ties are broken by the title carrying the most PAX.
  */
+/** Step 6.22: the same rows with `title` = the rule title, for the title-keyed group cap. */
+function groupRuleTitleRows($groupTours) {
+    return array_map(function ($t) {
+        if (isset($t['rule_title'])) { $t['title'] = $t['rule_title']; }
+        return $t;
+    }, $groupTours);
+}
+
 function pickDisplayTitle($groupTours) {
     $byTitle = [];
     foreach ($groupTours as $t) {

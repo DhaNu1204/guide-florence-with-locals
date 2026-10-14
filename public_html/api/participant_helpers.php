@@ -230,7 +230,7 @@ if (!function_exists('participantsDayBuild')) {
         $live = [];
         $cancelled = 0;
         foreach ($rows as $r) {
-            $m = radioMuseumForTitle($r['title'] ?? '');
+            $m = radioMuseumForTitle($r['rule_title'] ?? ($r['title'] ?? '')); // step 6.22: a linked product's museum = its original's
             if (!is_array($m) || $m['museum'] !== $museum) { continue; }
             if ((int) ($r['cancelled'] ?? 0) === 1) { $cancelled++; continue; }
             $live[] = $r;

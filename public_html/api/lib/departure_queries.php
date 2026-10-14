@@ -25,6 +25,7 @@ if (!function_exists('fwlUnassignedReport')) {
                              COALESCE(MAX(tg.group_date), MIN(t.date)) AS unit_date,
                              LEFT(COALESCE(MAX(tg.departure_time), MAX(tg.group_time), MIN(t.time)), 5) AS unit_time,
                              COALESCE(MAX(tg.display_name), MIN(t.title)) AS unit_title,
+                             MIN(t.product_id) AS unit_product_id, -- step 6.22: for rule_title
                              COUNT(*) AS bookings,
                              SUM(COALESCE(t.participants, 0)) AS pax,
                              -- step 6.1: what language the departure is in (a mixed group
@@ -32,7 +33,7 @@ if (!function_exists('fwlUnassignedReport')) {
                              GROUP_CONCAT(DISTINCT NULLIF(TRIM(t.language), '') ORDER BY t.language SEPARATOR ', ') AS languages
                       FROM tours t
                       LEFT JOIN tour_groups tg ON t.group_id = tg.id
-                      LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+                      " . fwlProductJoinSql('t', 'pr') . "
                       $reportWhere
                       GROUP BY tour_unit
                       HAVING MAX(tg.guide_id) IS NULL AND MAX(t.guide_id) IS NULL
@@ -50,6 +51,8 @@ if (!function_exists('fwlUnassignedReport')) {
                 'date' => $r['unit_date'],
                 'time' => $r['unit_time'] ?: '00:00',
                 'title' => $r['unit_title'],
+                // Step 6.22: what the report's location label reads (a linked product = its original)
+                'rule_title' => fwlRuleTitle($conn, $r['unit_product_id'], $r['unit_title']),
                 'bookings' => intval($r['bookings']),
                 'pax' => intval($r['pax']),
                 'language' => $r['languages'] !== null && $r['languages'] !== '' ? $r['languages'] : 'Unknown',
@@ -61,6 +64,7 @@ if (!function_exists('fwlUnassignedReport')) {
 }
 
 require_once __DIR__ . '/guide_product_fields.php'; // step 7.2b: products.duration_minutes
+require_once __DIR__ . '/effective_product.php'; // step 6.22: the effective product (type, duration, meeting point)
 
 if (!function_exists('fwlDepartureUnits')) {
     /**
@@ -90,7 +94,7 @@ if (!function_exists('fwlDepartureUnits')) {
                            MAX(pr.duration_minutes) AS duration_minutes
                     FROM tours t
                     LEFT JOIN tour_groups tg ON t.group_id = tg.id
-                    LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+                    " . fwlProductJoinSql('t', 'pr') . "
                     WHERE t.date >= ? AND t.date <= ? AND (pr.product_type = 'tour' OR t.product_id IS NULL) AND t.cancelled = 0
                     GROUP BY tour_unit
                     $having

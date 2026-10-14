@@ -14,6 +14,7 @@
 require_once __DIR__ . '/../tour_classification.php'; // deriveListFields(): the Tours list's own PAX/time/language
 require_once __DIR__ . '/departure_queries.php';        // step 7.2: the unassigned report + per-departure rows
 require_once __DIR__ . '/pnl_core.php';                 // step 7.3: the Daily P&L computation (money tool)
+require_once __DIR__ . '/effective_product.php'; // step 6.22: the effective product (type, duration, meeting point)
 
 class AssistantToolError extends Exception {}
 
@@ -311,6 +312,7 @@ function assistantDaySummarize(array $rows, $date, DateTime $now) {
         $units['t' . (int) $r['id']] = [
             'group' => false,
             'title' => (string) $r['title'],
+            'rule_title' => (string) ($r['rule_title'] ?? $r['title']), // step 6.22: the page's tile reads it
             'start' => $start,
             'guests' => (int) $derived['total_participants'],
             'languages' => $lang !== '' ? [$lang => true] : [],
@@ -347,7 +349,7 @@ function assistantDaySummarize(array $rows, $date, DateTime $now) {
         $out['by_product'][$p]['departures']++;
         $out['by_product'][$p]['guests'] += $u['guests'];
 
-        $cat = assistantTourCategory($u['title']);
+        $cat = assistantTourCategory($u['rule_title'] ?? $u['title']); // step 6.22: as the Tours page tiles
         if ($u['private']) { $cat = $cat === 'Other' ? 'Private (other)' : 'Private ' . $cat; }
         if (!isset($out['by_category'][$cat])) { $out['by_category'][$cat] = ['departures' => 0, 'guests' => 0]; }
         $out['by_category'][$cat]['departures']++;
@@ -373,11 +375,11 @@ function assistantToolDaySummary($conn, array $input, array $ctx) {
         throw new AssistantToolError('date must be a real date in YYYY-MM-DD format');
     }
     $stmt = $conn->prepare("
-        SELECT t.id, t.group_id, t.title, t.time, t.participants, t.cancelled, t.language, t.is_private,
+        SELECT t.id, t.group_id, t.title, t.product_id, t.time, t.participants, t.cancelled, t.language, t.is_private,
                t.bokun_data, tg.group_time, tg.display_name AS group_display_name, tg.departure_time AS group_departure_time
         FROM tours t
         LEFT JOIN tour_groups tg ON t.group_id = tg.id
-        LEFT JOIN products pr ON t.product_id = pr.bokun_product_id
+        " . fwlProductJoinSql('t', 'pr') . "
         WHERE t.date = ? AND (pr.product_type = 'tour' OR t.product_id IS NULL)
         ORDER BY t.time ASC, t.id ASC
     ");
@@ -386,6 +388,7 @@ function assistantToolDaySummary($conn, array $input, array $ctx) {
     $res = $stmt->get_result();
     $rows = [];
     while ($r = $res->fetch_assoc()) {
+        $r['rule_title'] = fwlRuleTitle($conn, $r['product_id'], $r['title']); // step 6.22
         $rows[] = $r;
     }
     $stmt->close();

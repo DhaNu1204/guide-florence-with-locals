@@ -12,6 +12,7 @@ require_once __DIR__ . '/../pnl_links.php';     // step 6.2: merged costing unit
 require_once __DIR__ . '/../manual_helpers.php'; // step 6.4: hand-entered departures
 require_once __DIR__ . '/../viator_helpers.php'; // step 6.9: the old-Viator-account label
 require_once __DIR__ . '/billing_product.php';     // step 6.17: what a mixed manual merge counts as
+require_once __DIR__ . '/effective_product.php';   // step 6.22: type + rule title of a linked product
 
 if (!function_exists('pnlBuildRows')) {
 
@@ -434,7 +435,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
             FROM tours t
             LEFT JOIN guides g  ON g.id = t.guide_id
             LEFT JOIN tour_groups tg ON tg.id = t.group_id
-            LEFT JOIN products pr ON pr.bokun_product_id = t.product_id
+            " . fwlProductJoinSql('t', 'pr') . "
             WHERE t.date >= ? AND t.date <= ?
             ORDER BY t.date, t.time, t.id";
     $stmt = $conn->prepare($sql);
@@ -501,8 +502,11 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         }
 
         $u['bookings']++;
-        $u['titles'][] = $row['title'];
-        $u['members'][] = ['product_id' => $row['product_id'], 'title' => $row['title']]; // step 6.17
+        // Step 6.22: every rule below (category, tickets, gelato) reads the RULE title - the
+        // original product's for a linked product. The displayed unit title stays the booking's.
+        $ruleTitle = fwlRuleTitle($conn, $row['product_id'], $row['title']);
+        $u['titles'][] = $ruleTitle;
+        $u['members'][] = ['product_id' => $row['product_id'], 'title' => $row['title'], 'rule_title' => $ruleTitle]; // step 6.17
 
         // Step 6.9: a booking on the retiring Viator account gets its own line here, so a day
         // that mixes the two accounts shows both. The commission below still reads
@@ -542,7 +546,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
 
         // Museum ticket cost for THIS booking (per museum mentioned in ITS title).
         // Uffizi has a cheaper afternoon rate for entries from 16:00.
-        $museumsHere = pnlMuseumsInTitle($row['title']);
+        $museumsHere = pnlMuseumsInTitle($ruleTitle);
         if (manualIsManualRow($row) && count($museumsHere) === 0) {
             // No Bokun product and no museum in the title: we genuinely do not know what the
             // tickets cost. Marked unknown so the P&L shows "-" and asks for an override.
@@ -560,7 +564,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
                 $pax['children'] * $settings[$childKey];
         }
         unset($museumsHere);
-        if (strpos(mb_strtolower($row['title']), 'gelato') !== false) {
+        if (strpos(mb_strtolower($ruleTitle), 'gelato') !== false) {
             $u['has_gelato'] = true;
         }
         unset($u);
@@ -620,7 +624,7 @@ function pnlBuildRows($conn, $start, $end, $settings) {
         // category - its guide rate, its Profit-by-product line. Tickets/radios/gelato stay per booking.
         $billingIdx = $u['is_group'] ? billingMemberIndex($u['members'], $u['billing_product_id']) : null;
         if ($billingIdx !== null) {
-            $category = pnlCategory($u['members'][$billingIdx]['title']);
+            $category = pnlCategory(billingRuleTitle($u['members'][$billingIdx]));
         }
 
         // Overrides row (needed early: the outsourced flag changes auto costs)

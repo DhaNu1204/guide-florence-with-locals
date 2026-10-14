@@ -21,6 +21,7 @@ require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/lib/guide_report_core.php';
 require_once __DIR__ . '/lib/billing_product.php'; // step 6.17: a mixed merge's "Counts as" product
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: what a product counts as (type, rule title)
 
 // Require authentication for all report operations
 Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
@@ -110,10 +111,7 @@ function getAllGuidesOverview($conn, $range, $period) {
             WHERE t.date >= ? AND t.date <= ?
               AND t.cancelled = 0
               AND t.guide_id IS NOT NULL
-              AND (NOT EXISTS (
-                    SELECT 1 FROM products pr
-                    WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket'
-                  ))
+              AND (NOT " . fwlIsTicketSql('t') . ")
             ORDER BY g.name, t.date, t.time";
 
     $stmt = $conn->prepare($sql);
@@ -143,12 +141,13 @@ function getAllGuidesOverview($conn, $range, $period) {
 
         if ($row['group_id']) {
             // Accumulate member titles; each group becomes exactly ONE unit below.
-            $byGuide[$gid]['_groups'][intval($row['group_id'])][] = $row['title'];
+            // Step 6.22: the type is read from the rule title (a linked product = its original).
+            $byGuide[$gid]['_groups'][intval($row['group_id'])][] = fwlRuleTitle($conn, $row['product_id'], $row['title']);
             // Step 6.17: member products + the group's billing product, same order as the titles
             $byGuide[$gid]['_products'][intval($row['group_id'])][] = $row['product_id'];
             $byGuide[$gid]['_billing'][intval($row['group_id'])] = $row['billing_product_id'];
         } else {
-            $category = classifyTourCategory($row['title']);
+            $category = classifyTourCategory(fwlRuleTitle($conn, $row['product_id'], $row['title'])); // step 6.22
             $byGuide[$gid]['by_category'][$category]++;
             $byGuide[$gid]['total_tours']++;
         }
@@ -211,10 +210,7 @@ function getGuideReport($conn, $guide_id, $range, $period) {
                             WHERE t.guide_id = ?
                               AND t.date >= ? AND t.date <= ?
                               AND t.cancelled = 0
-                              AND (NOT EXISTS (
-                                    SELECT 1 FROM products pr
-                                    WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket'
-                                  ))
+                              AND (NOT " . fwlIsTicketSql('t') . ")
                             ORDER BY t.date, t.time");
     $stmt->bind_param("iss", $guide_id, $range['start'], $range['end']);
     $stmt->execute();
@@ -230,17 +226,19 @@ function getGuideReport($conn, $guide_id, $range, $period) {
             $gid = intval($row['group_id']);
             if (!isset($groupAccum[$gid])) {
                 $groupAccum[$gid] = [
-                    'titles' => [],
+                    'titles' => [],     // step 6.22: rule titles (classification)
+                    'own_titles' => [], // step 6.22: the bookings' own titles (display)
                     'products' => [], // step 6.17
                     'date'   => $row['date'],
                     'time'   => $row['time'],
                     'title'  => $row['title']
                 ];
             }
-            $groupAccum[$gid]['titles'][] = $row['title'];
+            $groupAccum[$gid]['titles'][] = fwlRuleTitle($conn, $row['product_id'], $row['title']);
+            $groupAccum[$gid]['own_titles'][] = $row['title'];
             $groupAccum[$gid]['products'][] = $row['product_id'];
         } else {
-            list($category, $composition, $label) = buildComposition([$row['title']]);
+            list($category, $composition, $label) = buildComposition([fwlRuleTitle($conn, $row['product_id'], $row['title'])]); // step 6.22
             $tours[] = [
                 'date'              => $row['date'],
                 'time'              => $row['time'],
@@ -266,7 +264,7 @@ function getGuideReport($conn, $guide_id, $range, $period) {
         $title = $groupInfo && $groupInfo['display_name'] ? $groupInfo['display_name'] : $accum['title'];
         if ($titleIndex !== null) {
             // Mixed unit (step 6.15): show a booking of the effective type, not the group name
-            $title = $accum['titles'][$titleIndex];
+            $title = $accum['own_titles'][$titleIndex]; // step 6.22: the booking's own title
         }
         $tours[] = [
             'date'              => $groupInfo && $groupInfo['group_date'] ? $groupInfo['group_date'] : $accum['date'],

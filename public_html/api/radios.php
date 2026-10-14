@@ -19,6 +19,7 @@
 require_once 'config.php';
 require_once 'Middleware.php';
 require_once __DIR__ . '/radio_helpers.php';
+require_once __DIR__ . '/lib/effective_product.php'; // step 6.22: what a product counts as (type, rule title)
 
 // Radio orders are money: admin only, for reads as well as writes.
 Middleware::requireRole($conn, 'admin');
@@ -70,8 +71,7 @@ function radioLoadDepartures($conn, $date) {
             LEFT JOIN guides g ON g.id = COALESCE(tg.guide_id, t.guide_id)
             WHERE t.date = ?
               AND t.cancelled = 0
-              AND NOT EXISTS (SELECT 1 FROM products pr
-                               WHERE pr.bokun_product_id = t.product_id AND pr.product_type = 'ticket')
+              AND NOT " . fwlIsTicketSql('t') . "
             GROUP BY unit, tg.departure_time, tg.group_time, tg.guide_id
             ORDER BY time, unit";
     $stmt = $conn->prepare($sql);
@@ -81,7 +81,8 @@ function radioLoadDepartures($conn, $date) {
 
     $departures = [];
     while ($row = $res->fetch_assoc()) {
-        $museum = radioMuseumForTitle($row['title']);
+        // Step 6.22: a linked product's departure is headed like its original (rule title).
+        $museum = radioMuseumForTitle(fwlRuleTitle($conn, $row['product_id'], $row['title']));
         $departures[] = [
             'unit'       => $row['unit'],
             'time'       => $row['time'],

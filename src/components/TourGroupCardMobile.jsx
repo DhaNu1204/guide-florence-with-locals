@@ -67,7 +67,7 @@ const TourGroupCardMobile = ({
   // the merged group mixes tour types (matters for guide pay), so flag it.
   const categoryCounts = (group.tours || []).reduce((acc, t) => {
     if (!t.cancelled) {
-      const c = tourCategory(t.title);
+      const c = tourCategory(t.rule_title || t.title); // step 6.22: rule title (linked product = its original)
       acc[c] = (acc[c] || 0) + 1;
     }
     return acc;
