@@ -24,6 +24,7 @@
 
 require_once 'config.php';
 require_once 'Middleware.php';
+require_once __DIR__ . '/lib/guide_assignment_log.php'; // step 6.19: logGuideChange()
 
 // --- Ensure the availability_requests table exists (self-provision) ---
 $conn->query("
@@ -252,6 +253,9 @@ function publicRespond($conn, $token) {
         $conn->rollback();
         throw $e;
     }
+
+    // Step 6.19: the guide accepted through their link (no signed-in user)
+    logGuideChange($conn, (int) $tourId, null, $tour['guide_id'], $guideId, 'guide_request', null);
 
     echo json_encode(['success' => true, 'status' => 'accepted']);
 }

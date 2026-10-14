@@ -106,7 +106,7 @@ export default function ConfirmAssignCard({ block, onChoose, onNavigate, disable
     setPhase('undoing');
     setMessage('');
     // Back to exactly what the card showed; refused (409) if someone changed it since.
-    const res = await saveDepartureGuide(dep, prev, guide.id, { force: true });
+    const res = await saveDepartureGuide(dep, prev, guide.id, { force: true, undo: true });
     if (!res.ok) {
       setPhase('done');
       setMessage(res.status === 409 && res.code === 'departure_changed'

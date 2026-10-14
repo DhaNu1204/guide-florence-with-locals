@@ -8,13 +8,16 @@
  */
 import { format } from 'date-fns';
 
-// Location from the tour title by keyword (unchanged from the old in-page report)
+// Location from the tour title by keyword (the old in-page report's list).
+// Step 6.19: "david" counts as Accademia, the same rule as the server (tour_classification.php,
+// lib/guide_report_core.php), so "Exclusive Evening Tour of Michelangelo's David" is not "Florence".
 export const getLocation = (title) => {
   if (!title) return 'Florence';
   const t = title.toLowerCase();
-  if (t.includes('uffizi') && t.includes('accademia')) return 'Uffizi + Accademia';
+  const accademia = t.includes('accademia') || t.includes('david');
+  if (t.includes('uffizi') && accademia) return 'Uffizi + Accademia';
   if (t.includes('uffizi')) return 'Uffizi';
-  if (t.includes('accademia')) return 'Accademia';
+  if (accademia) return 'Accademia';
   if (t.includes('duomo') || t.includes('cathedral')) return 'Duomo';
   if (t.includes('pitti')) return 'Pitti';
   if (t.includes('boboli')) return 'Boboli';

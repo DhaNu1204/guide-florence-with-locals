@@ -7,6 +7,7 @@ require_once __DIR__ . '/manual_helpers.php';   // step 6.4: manual rows are inv
 require_once __DIR__ . '/viator_helpers.php';   // step 6.9: the old/new Viator account label
 require_once __DIR__ . '/rate_helpers.php';     // step 6.14: tours.rate_title
 require_once __DIR__ . '/lib/change_token.php'; // step 4.11: ensureCancelledAtColumn()
+require_once __DIR__ . '/lib/guide_assignment_log.php'; // step 6.19: logGuideChange() - auto-assign action only, the sync never logs
 
 // Include SentryLogger if available (for error tracking)
 if (file_exists(__DIR__ . '/SentryLogger.php')) {
@@ -929,6 +930,7 @@ function autoAssignGuide($tourId) {
         $stmt->bind_param("ii", $guide['id'], $tourId);
         $stmt->execute();
         $stmt->close();
+        logGuideChange($conn, (int) $tourId, null, $tour['guide_id'], $guide['id'], 'auto_assign', $GLOBALS['authUser'] ?? null); // step 6.19
         
         // Update guide availability
         $stmt = $conn->prepare("

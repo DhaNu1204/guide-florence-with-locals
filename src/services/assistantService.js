@@ -82,8 +82,9 @@ const saveError = (e) => {
  * endpoint answers 409 departure_changed if that is no longer true.
  * @returns {Promise<{ok:true}|{ok:false,status,code,conflict}>}
  */
-export const saveDepartureGuide = async (departure, guideId, expectedPrev, { force = false } = {}) => {
+export const saveDepartureGuide = async (departure, guideId, expectedPrev, { force = false, undo = false } = {}) => {
   const body = { guide_id: guideId, expected_previous_guide_id: expectedPrev };
+  if (undo) body.assistant_undo = true; // step 6.19: the guide log tells an undo from a confirm
   try {
     if (departure.type === 'group') {
       await tourGroupsAPI.update(departure.id, body);

@@ -9,9 +9,10 @@ require_once __DIR__ . '/viator_helpers.php';      // pure helpers: the old-Viat
 require_once __DIR__ . '/rate_helpers.php';        // step 6.14: tours.rate_title + the Vasari rule
 require_once __DIR__ . '/lib/departure_queries.php'; // step 7.2: the unassigned report query (shared with the assistant)
 require_once __DIR__ . '/group_helpers.php';        // step 6.16: ensureGroupDepartureTimeColumn()
+require_once __DIR__ . '/lib/guide_assignment_log.php'; // step 6.19: logGuideChange()
 
 // Require authentication for all tour operations
-Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
+$authUser = Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
 
 // Apply rate limiting based on HTTP method
 autoRateLimit('tours');
@@ -626,6 +627,7 @@ switch ($method) {
             }
             $newId = $stmt->insert_id;
             $stmt->close();
+            logGuideChange($conn, $newId, null, null, $fields['guide_id'], 'manual_form', $authUser); // step 6.19
             echo json_encode([
                 'success' => true,
                 'data' => manualLoadTour($conn, $newId),
@@ -694,7 +696,8 @@ switch ($method) {
         
         if ($stmt->execute()) {
             $newTourId = $stmt->insert_id;
-            
+            logGuideChange($conn, $newTourId, null, null, $data['guideId'], 'create', $authUser); // step 6.19
+
             // Return the created tour
             $newTour = [
                 'id' => $newTourId,
@@ -781,6 +784,7 @@ switch ($method) {
                 break;
             }
             $stmt->close();
+            logGuideChange($conn, (int) $tourId, null, $existing['guide_id'] ?? null, $fields['guide_id'], 'manual_form', $authUser); // step 6.19
             echo json_encode([
                 'success' => true,
                 'data' => manualLoadTour($conn, (int) $tourId),
@@ -797,6 +801,16 @@ switch ($method) {
         }
         
         $data = json_decode(file_get_contents('php://input'), true);
+
+        // Step 6.19: the assistant's confirm card is the only caller that sends
+        // expected_previous_guide_id (its undo also sends assistant_undo) - the guide log's source.
+        $guideLogSource = 'tours_page';
+        if (is_array($data) && array_key_exists('expected_previous_guide_id', $data)) {
+            $guideLogSource = !empty($data['assistant_undo']) ? 'assistant_undo' : 'assistant';
+        }
+        if (is_array($data)) {
+            unset($data['assistant_undo']);
+        }
 
         // Step 7.5: optional stale-card guard for the assistant's confirm card. Only when the
         // request carries expected_previous_guide_id: if the tour's guide is no longer that one,
@@ -917,6 +931,8 @@ switch ($method) {
         // Handle both guideId and guide_id for backward compatibility.
         // array_key_exists (not isset) so an explicit null unassigns the guide:
         // "field omitted" = don't touch, "field present but null/empty" = set NULL.
+        $guideChange = false;
+        $oldGuideForLog = null;
         if (is_array($data) && (array_key_exists('guideId', $data) || array_key_exists('guide_id', $data))) {
             $setFields[] = "guide_id = ?";
             $guideValue = array_key_exists('guide_id', $data) ? $data['guide_id'] : $data['guideId'];
@@ -928,6 +944,19 @@ switch ($method) {
                 $bindTypes .= "i";
                 $bindValues[] = $guideValue;
             }
+            // Step 6.19: same rule as propagateGuideToTours for a group - a guide clears the
+            // "needs a guide" flag, removing the guide sets it back.
+            $setFields[] = "needs_guide_assignment = ?";
+            $bindTypes .= "i";
+            $bindValues[] = ($guideValue === '' || $guideValue === null || (int) $guideValue <= 0) ? 1 : 0;
+
+            $guideChange = true;
+            $oldStmt = $conn->prepare("SELECT guide_id FROM tours WHERE id = ?");
+            $oldStmt->bind_param("i", $tourId);
+            $oldStmt->execute();
+            $oldRow = $oldStmt->get_result()->fetch_assoc();
+            $oldStmt->close();
+            $oldGuideForLog = $oldRow ? $oldRow['guide_id'] : null;
         }
 
         // Handle notes field
@@ -1001,6 +1030,9 @@ switch ($method) {
         if ($stmt->execute()) {
             // Check if the tour was found and updated
             if ($stmt->affected_rows > 0) {
+                if ($guideChange) {
+                    logGuideChange($conn, (int) $tourId, null, $oldGuideForLog, $guideValue, $guideLogSource, $authUser); // step 6.19
+                }
                 // Fetch the updated tour
                 $selectStmt = $conn->prepare("SELECT t.*, g.name as guide_name FROM tours t LEFT JOIN guides g ON t.guide_id = g.id WHERE t.id = ?");
                 $selectStmt->bind_param("i", $tourId);

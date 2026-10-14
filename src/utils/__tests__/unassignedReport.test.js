@@ -14,6 +14,23 @@ describe('getLocation', () => {
     expect(getLocation('Florence Walking Tour')).toBe('Florence');
     expect(getLocation(null)).toBe('Florence');
   });
+
+  it('step 6.19: "david" is Accademia, like the server rule (accademia OR david)', () => {
+    expect(getLocation("Exclusive Evening Tour of Michelangelo's David")).toBe('Accademia');
+    expect(getLocation('Renaissance Masterpiece David & Historic Florence Tour')).toBe('Accademia');
+    expect(getLocation('Uffizi and David Tour')).toBe('Uffizi + Accademia');
+    // "Michelangelo" alone is not a museum (Piazzale Michelangelo, private walks)
+    expect(getLocation('Michelangelo Private Guided Tour')).toBe('Florence');
+  });
+
+  it('step 6.19: the 14 Oct 17:00 David departure reads Accademia in the report', () => {
+    const text = buildUnassignedReportText(
+      [{ tour_unit: 't6428', date: '2026-10-14', time: '17:00', title: "Exclusive Evening Tour of Michelangelo's David", language: 'English' }],
+      { filterLabel: '14 Oct 2026', now }
+    );
+    expect(text).toContain('  17:00  Accademia (English)');
+    expect(text).not.toContain('Florence (English)');
+  });
 });
 
 describe('buildUnassignedReportText', () => {

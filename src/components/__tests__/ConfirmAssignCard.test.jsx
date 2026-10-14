@@ -82,7 +82,7 @@ describe('ConfirmAssignCard (step 7.5)', () => {
 
     fireEvent.click(screen.getByText('Undo'));
     await screen.findByTestId('assistant-confirm-undone');
-    expect(saveDepartureGuide).toHaveBeenLastCalledWith(expect.objectContaining({ id: 42 }), null, 7, { force: true });
+    expect(saveDepartureGuide).toHaveBeenLastCalledWith(expect.objectContaining({ id: 42 }), null, 7, { force: true, undo: true });
     expect(reportUndoDone).toHaveBeenCalledWith(55);
     expect(seen).toHaveLength(2);
     window.removeEventListener('florence:bookings-updated', onUpdated);

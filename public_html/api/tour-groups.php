@@ -23,9 +23,10 @@ require_once __DIR__ . '/rate_helpers.php';  // step 6.14: tours.rate_title + th
 require_once __DIR__ . '/group_helpers.php'; // step 3.5: propagateGuideToTours() lives there (shared with bokun_sync.php)
 require_once __DIR__ . '/lib/assistant_assign.php'; // step 7.5: fwlDepartureById() for the stale-card guard (no side effects)
 require_once __DIR__ . '/lib/billing_product.php';   // step 6.17: the product a mixed manual merge counts as
+require_once __DIR__ . '/lib/guide_assignment_log.php'; // step 6.19: logGuideChange()
 
 // Require authentication for all tour group operations
-Middleware::requireAdminForWrites($conn); // step 1.1: viewers read, admins write
+guideLogActor(Middleware::requireAdminForWrites($conn)); // step 1.1: viewers read, admins write; step 6.19: who, for the guide log
 
 // Apply rate limiting
 autoRateLimit('tour_groups');
@@ -803,16 +804,27 @@ function unmergeTour($conn, $data) {
  */
 function updateGroup($conn, $groupId, $data) {
     // Verify group exists
-    $checkStmt = $conn->prepare("SELECT id FROM tour_groups WHERE id = ?");
+    $checkStmt = $conn->prepare("SELECT id, guide_id FROM tour_groups WHERE id = ?");
     $checkStmt->bind_param('i', $groupId);
     $checkStmt->execute();
-    if (!$checkStmt->get_result()->fetch_assoc()) {
+    $existingGroup = $checkStmt->get_result()->fetch_assoc();
+    if (!$existingGroup) {
         $checkStmt->close();
         http_response_code(404);
         echo json_encode(['error' => 'Group not found']);
         return;
     }
     $checkStmt->close();
+
+    // Step 6.19: the guide log's source - only the assistant's card sends expected_previous_guide_id
+    // (its undo also sends assistant_undo).
+    $guideLogSource = 'group_assign';
+    if (is_array($data) && array_key_exists('expected_previous_guide_id', $data)) {
+        $guideLogSource = !empty($data['assistant_undo']) ? 'assistant_undo' : 'assistant';
+    }
+    if (is_array($data)) {
+        unset($data['assistant_undo']);
+    }
 
     // Step 7.5: optional stale-card guard (the assistant's confirm card). The departure's
     // EFFECTIVE guide (the group's, else a member's) must still be the one the card showed;
@@ -921,6 +933,10 @@ function updateGroup($conn, $groupId, $data) {
         http_response_code(500);
         echo json_encode(['error' => 'Failed to update group']);
         return;
+    }
+
+    if (is_array($data) && array_key_exists('guide_id', $data)) {
+        logGuideChange($conn, null, (int) $groupId, $existingGroup['guide_id'], $data['guide_id'], $guideLogSource); // step 6.19
     }
 
     // The group's guide may have changed and was propagated to tours.guide_id
@@ -1147,10 +1163,18 @@ function syncGroupGuideFromTours($conn, $groupId) {
     $stmt->close();
 
     if ($row) {
+        // Step 6.19: the group's guide before, for the guide log (a merge that inherits a member's guide)
+        $prevStmt = $conn->prepare("SELECT guide_id FROM tour_groups WHERE id = ?");
+        $prevStmt->bind_param('i', $groupId);
+        $prevStmt->execute();
+        $prevRow = $prevStmt->get_result()->fetch_assoc();
+        $prevStmt->close();
+
         $updateStmt = $conn->prepare("UPDATE tour_groups SET guide_id = ?, guide_name = ?, updated_at = NOW() WHERE id = ?");
         $updateStmt->bind_param('isi', $row['guide_id'], $row['guide_name'], $groupId);
         $updateStmt->execute();
         $updateStmt->close();
+        logGuideChange($conn, null, (int) $groupId, $prevRow ? $prevRow['guide_id'] : null, $row['guide_id'], 'group_merge'); // step 6.19
 
         // Step 3.6a: a guide-less tour merged into a departure that already has a guide gets that
         // guide at once (same rule as the sync, step 3.5: fill only, never overwrite another guide).
