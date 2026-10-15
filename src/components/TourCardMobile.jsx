@@ -6,6 +6,7 @@ import ParticipantsButton from './ParticipantsButton';
 import ViatorLegacyChip from './ViatorLegacyChip';
 import VasariChip from './VasariChip';
 import { isGuidePaid } from '../utils/paymentBadges';
+import { CancelledToggle } from './CancelledCompact'; // step 6.23
 
 const getChannelColor = (channel) => {
   if (!channel) return 'bg-stone-100 text-stone-600';
@@ -82,6 +83,8 @@ const TourCardMobile = ({
   onToggleSelect,
   // Drag support (kept for data attributes)
   dragState,
+  // Step 6.23: an opened cancelled booking shows a chevron that folds it back to one line
+  onCollapseCancelled,
 }) => {
   const isEditingGuide = editingGuides[tour.id] !== undefined;
   const isEditingNotes = editingNotes[tour.id] !== undefined;
@@ -278,6 +281,9 @@ const TourCardMobile = ({
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-terracotta-100 text-terracotta-800">
                 Cancelled
               </span>
+            )}
+            {tour.cancelled && onCollapseCancelled && (
+              <CancelledToggle expanded onToggle={onCollapseCancelled} className="ml-auto" />
             )}
             {tour.rescheduled && !tour.cancelled && tour.original_date && tour.original_time &&
              (tour.original_date !== tour.date || tour.original_time !== tour.time) && (

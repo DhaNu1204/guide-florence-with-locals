@@ -34,6 +34,8 @@ import { mergeTimes, defaultMergeTime } from '../utils/groupTime'; // step 6.16
 import { confirmMergeLanguages } from '../utils/groupLanguages'; // step 6.20
 import { useLiveRefresh } from '../hooks/useLiveRefresh'; // step 4.11: auto-refresh while open
 import UpdatedStamp from '../components/UpdatedStamp';
+import { PinnedTable } from '../components/PinnedColumnHead'; // step 6.23: pinned column titles
+import { CompactCancelledTourRow, CompactCancelledCard, CancelledToggle, toggleId } from '../components/CancelledCompact'; // step 6.23
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -106,6 +108,24 @@ const computeItemStats = (items) => {
     }
   });
   return { activeTours, cancelledCount, pax };
+};
+
+// Step 6.23: the pinned stack on desktop - date row 44 px, section row 36 px, column titles 32 px.
+const STACK_DATE_PX = 44;
+const STACK_SECTION_PX = 36;
+const DESKTOP_COLUMNS = [
+  { label: 'Time', pad: 'px-4', w: 'w-20' },
+  { label: 'Channel', pad: 'px-4', w: 'w-24' },
+  { label: 'Tour', pad: 'px-6', w: 'w-96' },
+  { label: 'Language', pad: 'px-4', w: 'w-24' },
+  { label: 'People', pad: 'px-4', w: 'w-20' },
+  { label: 'Guide', pad: 'px-4', w: 'w-32' },
+  { label: 'Notes', pad: 'px-6', w: '' },
+];
+// Step 6.23: "Morning (6:00 – 11:59)" -> ["Morning", "6:00 – 11:59"] for the phone bar.
+const splitPeriod = (period) => {
+  const m = String(period || '').match(/^([^(]+?)\s*\((.*)\)\s*$/);
+  return m ? [m[1], m[2]] : [String(period || ''), ''];
 };
 
 // Renders "{activeTours} tours · {pax} PAX" with a muted "· {N} cancelled" only when N > 0.
@@ -311,6 +331,8 @@ const Tours = () => {
   const setError = (msg) => { if (msg) toast.error(msg); };
   const setSuccess = (msg) => { if (msg) toast.success(msg); };
   const [editingNotes, setEditingNotes] = useState({});
+  // Step 6.23: cancelled bookings opened from their one-line form ({tourId: true}); default closed.
+  const [expandedCancelled, setExpandedCancelled] = useState({});
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
@@ -1453,11 +1475,15 @@ const Tours = () => {
 
               return (
                 <div key={dateGroup.date}>
-                  {/* ========== Date Header — mobile card / desktop inline ========== */}
-                  <div className={`px-4 md:px-6 py-3 md:py-4 rounded-tuscan-lg md:rounded-none md:rounded-t-tuscan-lg border border-stone-200 md:border-b mb-2 md:mb-0 ${isTodayDate ? 'bg-gold-50' : 'bg-stone-50'}`}>
-                    <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-1">
+                  {/* ========== Date Header — desktop, pinned (step 6.23); the phone shows it in the section bar ========== */}
+                  <div
+                    className={`hidden md:flex md:sticky md:top-0 z-20 items-center px-6 rounded-t-tuscan-lg border border-stone-200 ${isTodayDate ? 'bg-gold-50' : 'bg-stone-50'}`}
+                    style={{ height: STACK_DATE_PX }}
+                    data-testid="tours-date-row"
+                  >
+                    <div className="flex flex-1 flex-row justify-between items-center gap-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className={`text-base md:text-lg font-semibold ${isTodayDate ? 'text-gold-900' : 'text-stone-900'}`}>
+                        <h3 className={`text-[17px] leading-tight font-bold ${isTodayDate ? 'text-gold-900' : 'text-stone-900'}`}>
                           {format(dateObj, 'EEEE, d MMMM yyyy')}
                         </h3>
                         {isTodayDate && (
@@ -1466,20 +1492,20 @@ const Tours = () => {
                           </span>
                         )}
                       </div>
-                      <div className="text-xs md:text-sm text-stone-600">
+                      <div className="text-sm text-stone-600">
                         <CountLabel {...dateStats} />
                       </div>
                     </div>
                   </div>
 
                   {/* ========== Desktop table wrapper ========== */}
-                  <div className="hidden md:block bg-white border border-stone-200 border-t-0 rounded-b-tuscan-lg shadow-tuscan overflow-hidden">
+                  <div className="hidden md:block bg-white border border-stone-200 border-t-0 rounded-b-tuscan-lg shadow-tuscan overflow-clip">
                   {/* Time Periods — desktop table */}
                   {dateGroup.periods.map((periodGroup, periodIndex) => (
                     <div key={`${dateGroup.date}-${periodGroup.period}`}>
-                      {/* Time Period Header */}
-                      <div className="bg-stone-100 px-6 py-2 border-b border-stone-200">
-                        <div className="flex justify-between items-center">
+                      {/* Time Period Header — pinned under the date row (step 6.23) */}
+                      <div className="sticky z-20 flex items-center bg-stone-100 px-6 border-b border-stone-200" style={{ top: STACK_DATE_PX, height: STACK_SECTION_PX }}>
+                        <div className="flex flex-1 justify-between items-center">
                           <h4 className="text-sm font-semibold text-stone-700">
                             {periodGroup.period}
                           </h4>
@@ -1489,34 +1515,8 @@ const Tours = () => {
                         </div>
                       </div>
 
-                      {/* Tours & Groups List — desktop table */}
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-stone-200">
-                          <thead className="bg-stone-50">
-                            <tr>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-20">
-                                Time
-                              </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-24">
-                                Channel
-                              </th>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-96">
-                                Tour
-                              </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-24">
-                                Language
-                              </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-20">
-                                People
-                              </th>
-                              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider w-32">
-                                Guide
-                              </th>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
-                                Notes
-                              </th>
-                            </tr>
-                          </thead>
+                      {/* Tours & Groups List — desktop table; column titles pinned (step 6.23) */}
+                      <PinnedTable columns={DESKTOP_COLUMNS} top={STACK_DATE_PX + STACK_SECTION_PX} tableClassName="min-w-full divide-y divide-stone-200">
                           <tbody className="bg-white divide-y divide-stone-200">
                             {periodGroup.items.map((item) => {
                           // === Render a TourGroup ===
@@ -1550,6 +1550,20 @@ const Tours = () => {
                           const tour = item;
                           const guideName = guides.find(g => g.id == tour.guide_id)?.name || 'Unassigned';
                           const isDraggedOver = dragState.overTargetId === tour.id && dragState.overTargetType === 'tour';
+                          // Step 6.23: a cancelled booking is one grey line until opened.
+                          if (tour.cancelled && !expandedCancelled[tour.id]) {
+                            return (
+                              <CompactCancelledTourRow
+                                key={tour.id}
+                                tour={tour}
+                                time={getBookingTime(tour)}
+                                language={getTourLanguage(tour)}
+                                pax={getParticipantCount(tour)}
+                                guideName={guideName}
+                                onToggle={() => setExpandedCancelled(prev => toggleId(prev, tour.id))}
+                              />
+                            );
+                          }
                           return (
                             <tr
                               key={tour.id}
@@ -1772,6 +1786,9 @@ const Tours = () => {
                                           Cancelled
                                         </span>
                                       )}
+                                      {tour.cancelled && (
+                                        <CancelledToggle expanded onToggle={() => setExpandedCancelled(prev => toggleId(prev, tour.id))} />
+                                      )}
                                       {tour.rescheduled && !tour.cancelled && tour.original_date && tour.original_time &&
                                        (tour.original_date !== tour.date || tour.original_time !== tour.time) && (
                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gold-100 text-gold-800" title={`Originally scheduled for ${tour.original_date} at ${tour.original_time}`}>
@@ -1820,8 +1837,7 @@ const Tours = () => {
                           );
                             })}
                           </tbody>
-                        </table>
-                      </div>
+                      </PinnedTable>
                     </div>
                   ))}
                   </div>
@@ -1830,23 +1846,34 @@ const Tours = () => {
                   <div className="md:hidden space-y-2">
                   {dateGroup.periods.map((periodGroup) => (
                     <div key={`mobile-${dateGroup.date}-${periodGroup.period}`}>
-                      {/* Time Period divider — mobile */}
-                      <div className="flex items-center gap-2 py-2 px-1">
-                        <div className="h-px flex-1 bg-stone-300" />
-                        <span className="text-xs font-semibold text-stone-500 uppercase whitespace-nowrap">
-                          {periodGroup.period.split(' (')[0]}
-                        </span>
-                        {(() => {
-                          const s = computeItemStats(periodGroup.items);
-                          return (
-                            <span className="text-xs text-stone-400">
-                              {s.activeTours} · {s.pax} PAX
-                              {s.cancelledCount > 0 && ` · ${s.cancelledCount} cancelled`}
-                            </span>
-                          );
-                        })()}
-                        <div className="h-px flex-1 bg-stone-300" />
-                      </div>
+                      {/* Step 6.23: one pinned two-line bar under the app header - day + counts / section + counts */}
+                      {(() => {
+                        const s = computeItemStats(periodGroup.items);
+                        const [periodName, periodRange] = splitPeriod(periodGroup.period);
+                        return (
+                          <div
+                            className={`sticky z-20 -mx-4 mb-2 px-4 py-1.5 border-y border-stone-200 shadow-[0_3px_6px_-2px_rgba(0,0,0,0.12)] ${isTodayDate ? 'bg-gold-50' : 'bg-stone-50'}`}
+                            style={{ top: 'var(--fwl-mobile-header, 61px)' }}
+                            data-testid="tours-mobile-bar"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-sm font-bold whitespace-nowrap ${isTodayDate ? 'text-gold-900' : 'text-stone-900'}`}>
+                                {format(dateObj, 'EEE d MMM')}
+                                {isTodayDate && <span className="ml-1.5 align-middle inline-flex items-center px-1.5 py-0 rounded-full text-[10px] font-medium bg-gold-100 text-gold-800">Today</span>}
+                              </span>
+                              <span className="text-xs text-stone-600 whitespace-nowrap">
+                                {dateStats.activeTours} tours · {dateStats.pax} PAX{dateStats.cancelledCount > 0 && <span className="text-stone-400"> · {dateStats.cancelledCount} canc.</span>}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-xs text-stone-500">
+                              <span className="whitespace-nowrap font-medium">{periodName}{periodRange && ` · ${periodRange}`}</span>
+                              <span className="whitespace-nowrap">
+                                {s.activeTours} tours · {s.pax} PAX{s.cancelledCount > 0 && ` · ${s.cancelledCount} canc.`}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Mobile cards */}
                       <div className="space-y-2">
@@ -1874,6 +1901,19 @@ const Tours = () => {
                           const tour = item;
                           const guideName = guides.find(g => g.id == tour.guide_id)?.name || 'Unassigned';
 
+                          // Step 6.23: a cancelled booking is one 44 px line until opened.
+                          if (tour.cancelled && !expandedCancelled[tour.id] && !selectionMode) {
+                            return (
+                              <CompactCancelledCard
+                                key={`mobile-tour-${tour.id}`}
+                                tour={tour}
+                                time={getBookingTime(tour)}
+                                pax={getParticipantCount(tour)}
+                                guideName={guideName}
+                                onToggle={() => setExpandedCancelled(prev => toggleId(prev, tour.id))}
+                              />
+                            );
+                          }
                           return (
                             <TourCardMobile
                               key={`mobile-tour-${tour.id}`}
@@ -1899,6 +1939,7 @@ const Tours = () => {
                               isSelected={selectedItems.some(s => s.id === tour.id && s.type === 'tour')}
                               onToggleSelect={handleToggleSelect}
                               dragState={dragState}
+                              onCollapseCancelled={tour.cancelled ? () => setExpandedCancelled(prev => toggleId(prev, tour.id)) : undefined}
                             />
                           );
                         })}

@@ -75,7 +75,10 @@ describe('where the chip shows (step 6.14)', () => {
     expect(screen.getByTestId('vasari-group-chip').textContent).toBe('Vasari · 4 PAX');
     expect(screen.queryAllByTestId('vasari-chip')).toHaveLength(0); // collapsed: no member rows
     fireEvent.click(screen.getByText(NAME));
-    // two Vasari members (one cancelled - still listed struck through, still labelled), none on the Uffizi-only row
+    // two Vasari members, none on the Uffizi-only row. Step 6.23: the cancelled one is a single grey
+    // line until opened, so its chip appears once it is opened.
+    expect(screen.getAllByTestId('vasari-chip')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Show cancelled booking details' }));
     expect(screen.getAllByTestId('vasari-chip')).toHaveLength(2);
   });
 
@@ -83,6 +86,8 @@ describe('where the chip shows (step 6.14)', () => {
     render(<TourGroupCardMobile group={group(members)} guides={[]} />);
     expect(screen.getByTestId('vasari-group-chip').textContent).toBe('Vasari · 4 PAX');
     fireEvent.click(screen.getByText(NAME));
+    expect(screen.getAllByTestId('vasari-chip')).toHaveLength(1); // step 6.23: cancelled member folded
+    fireEvent.click(screen.getByRole('button', { name: 'Show cancelled booking details' }));
     expect(screen.getAllByTestId('vasari-chip')).toHaveLength(2);
   });
 
