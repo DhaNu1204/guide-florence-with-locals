@@ -128,6 +128,9 @@ const splitPeriod = (period) => {
   return m ? [m[1], m[2]] : [String(period || ''), ''];
 };
 
+// Step 6.23: re-run the header measurement when the layout switches between phone and desktop.
+const isMobileHeaderKey = () => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'm' : 'd');
+
 // Renders "{activeTours} tours · {pax} PAX" with a muted "· {N} cancelled" only when N > 0.
 const CountLabel = ({ activeTours, cancelledCount, pax }) => (
   <>
@@ -333,6 +336,17 @@ const Tours = () => {
   const [editingNotes, setEditingNotes] = useState({});
   // Step 6.23: cancelled bookings opened from their one-line form ({tourId: true}); default closed.
   const [expandedCancelled, setExpandedCancelled] = useState({});
+  // Step 6.23: the phone bar pins right under the app's fixed header - measured, not guessed
+  // (its height depends on the font and the device), and kept current if it changes.
+  useEffect(() => {
+    const header = document.querySelector('header.fixed');
+    if (!header) return undefined;
+    const apply = () => document.documentElement.style.setProperty('--fwl-mobile-header', `${Math.round(header.getBoundingClientRect().height)}px`);
+    apply();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
+    if (ro) ro.observe(header);
+    return () => { if (ro) ro.disconnect(); };
+  }, [isMobileHeaderKey()]);
   const [editingGuides, setEditingGuides] = useState({});
   const [editingLanguages, setEditingLanguages] = useState({});
   const [savingChanges, setSavingChanges] = useState({});
