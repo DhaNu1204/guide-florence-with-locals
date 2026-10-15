@@ -10,6 +10,7 @@ import GroupCountsAs from './GroupCountsAs'; // step 6.17
 import VasariChip, { VasariGroupChip } from './VasariChip';
 import BookedTimeChip from './BookedTimeChip';
 import { groupDepartureTime } from '../utils/groupTime';
+import { CancelledPill, CancelledToggle, firstGuestLabel, toggleId, CANCELLED_BG, CANCELLED_TEXT } from './CancelledCompact'; // step 6.23
 
 // Small per-booking category badge; Combo gets the gold treatment so a
 // higher-pay booking hiding inside a group is easy to spot.
@@ -51,6 +52,8 @@ const TourGroupCardMobile = ({
   const [selectedGuideId, setSelectedGuideId] = useState(group.guide_id || '');
   const [savingGuide, setSavingGuide] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
+  // Step 6.23: cancelled members are one grey line until opened ({tourId: true}).
+  const [openCancelled, setOpenCancelled] = useState({});
 
   // PAX / booking counts EXCLUDE cancelled bookings (cancelled still listed when expanded).
   const totalPax = group.tours ? countActivePax(group.tours) : (group.total_pax || 0);
@@ -285,7 +288,21 @@ const TourGroupCardMobile = ({
           <GroupCountsAs group={group} onRefresh={onRefresh} onSuccess={onSuccess} onError={onError}
             className="px-3 py-2 border-b border-stone-100 bg-gold-50/40" />
           <div className="divide-y divide-stone-100">
-            {(group.tours || []).map((tour) => (
+            {(group.tours || []).map((tour) => (tour.cancelled && !openCancelled[tour.id]) ? (
+              <div
+                key={tour.id}
+                data-testid={`cancelled-compact-${tour.id}`}
+                className="h-11 pl-3 pr-1 flex items-center gap-2 cursor-pointer touch-manipulation"
+                style={{ backgroundColor: CANCELLED_BG, color: CANCELLED_TEXT }}
+                onClick={() => setOpenCancelled(prev => toggleId(prev, tour.id))}
+              >
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {[firstGuestLabel(tour) || 'N/A', `${tour.participants || 1} PAX`, tour.booking_channel || 'Direct'].join(' · ')}
+                </span>
+                <CancelledPill />
+                <CancelledToggle expanded={false} onToggle={() => setOpenCancelled(prev => toggleId(prev, tour.id))} />
+              </div>
+            ) : (
               <div
                 key={tour.id}
                 className={`px-3 py-2.5 flex items-center gap-2 ${tour.cancelled ? 'bg-red-50' : ''}`}
@@ -337,6 +354,9 @@ const TourGroupCardMobile = ({
                 >
                   <FiScissors size={14} />
                 </button>
+                {tour.cancelled && (
+                  <CancelledToggle expanded onToggle={() => setOpenCancelled(prev => toggleId(prev, tour.id))} />
+                )}
               </div>
             ))}
           </div>

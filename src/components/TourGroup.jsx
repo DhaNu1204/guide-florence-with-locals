@@ -8,6 +8,7 @@ import GroupCountsAs from './GroupCountsAs'; // step 6.17
 import VasariChip, { VasariGroupChip } from './VasariChip';
 import BookedTimeChip from './BookedTimeChip';
 import { groupDepartureTime } from '../utils/groupTime';
+import { CompactCancelledMemberRow, CancelledToggle, toggleId } from './CancelledCompact'; // step 6.23
 import { tourGroupsAPI } from '../services/mysqlDB';
 import { getMaxPax, countActivePax, countActiveBookings, getPaxBreakdown, aggregateBreakdown, formatBreakdown, tourCategory } from '../utils/tourCapacity';
 
@@ -70,6 +71,8 @@ const TourGroup = ({
   const [selectedGuideId, setSelectedGuideId] = useState(group.guide_id || '');
   const [savingGuide, setSavingGuide] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
+  // Step 6.23: cancelled members are one grey line until opened ({tourId: true}).
+  const [openCancelled, setOpenCancelled] = useState({});
 
   // PAX / booking counts EXCLUDE cancelled bookings (cancelled still shown in the
   // expanded list, struck-through, but never counted toward PAX, the badge, or FULL).
@@ -315,7 +318,14 @@ const TourGroup = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {(group.tours || []).map((tour) => (
+              {(group.tours || []).map((tour) => (tour.cancelled && !openCancelled[tour.id]) ? (
+                <CompactCancelledMemberRow
+                  key={tour.id}
+                  tour={tour}
+                  typeLabel={tourCategory(tour.rule_title || tour.title)}
+                  onToggle={() => setOpenCancelled(prev => toggleId(prev, tour.id))}
+                />
+              ) : (
                 <tr
                   key={tour.id}
                   className={`hover:bg-stone-50 ${tour.cancelled ? 'bg-red-50 line-through' : ''}`}
@@ -365,6 +375,9 @@ const TourGroup = ({
                       <FiScissors size={12} />
                       Unmerge
                     </button>
+                    {tour.cancelled && (
+                      <CancelledToggle expanded onToggle={() => setOpenCancelled(prev => toggleId(prev, tour.id))} className="no-underline" />
+                    )}
                   </td>
                 </tr>
               ))}
