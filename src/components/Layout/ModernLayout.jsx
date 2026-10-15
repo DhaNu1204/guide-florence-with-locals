@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   FiHome,
@@ -31,6 +31,17 @@ const ModernLayout = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // Step 6.23: pages pin bars right under the phone header (Tours) - publish its real height.
+  const mobileHeaderRef = useRef(null);
+  useEffect(() => {
+    const header = mobileHeaderRef.current;
+    if (!isMobile || !header) return undefined;
+    const apply = () => document.documentElement.style.setProperty('--fwl-mobile-header', `${Math.round(header.getBoundingClientRect().height)}px`);
+    apply();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
+    if (ro) ro.observe(header);
+    return () => { if (ro) ro.disconnect(); };
+  }, [isMobile]);
   // Step 1.1: role and name come from AuthContext (verified against the server on load),
   // not from localStorage, which anyone can edit in DevTools.
   const { userRole, userName, logout, canSeePnl } = useAuth();
@@ -293,7 +304,7 @@ const ModernLayout = ({ children }) => {
 
       {/* Mobile Header */}
       {isMobile && (
-        <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-tuscan border-b border-stone-200">
+        <header ref={mobileHeaderRef} className="fixed top-0 left-0 right-0 z-50 bg-white shadow-tuscan border-b border-stone-200">
           <div className="flex items-center justify-between px-3 py-2">
             <div className="flex items-center space-x-2">
               <button
