@@ -377,6 +377,11 @@ export const getTours = async (forceRefresh = false, page = 1, perPage = 50, fil
     if (filters.product_type) {
       url += `&product_type=${encodeURIComponent(filters.product_type)}`;
     }
+    // Step 6.24: the 6.1 language filter ('Unknown' = rows without one). It was never sent, so the
+    // dropdown filtered nothing. 'all' means no filter (Tours.jsx leaves the key out then).
+    if (filters.language && filters.language !== 'all') {
+      url += `&language=${encodeURIComponent(filters.language)}`;
+    }
     // Step 4.2: { view: 'list' } asks for light rows (no bokun_data) for list screens
     if (filters.view) {
       url += `&view=${encodeURIComponent(filters.view)}`;
@@ -428,6 +433,9 @@ export const getUnassignedReport = async (filters = {}) => {
   }
   if (filters.upcoming) url += `&upcoming=true`;
   if (filters.past) url += `&past=true`;
+  // Step 6.24: the server already applies the list's language condition to the report; send it,
+  // so the needs-a-guide number and the report cover the language the list shows.
+  if (filters.language && filters.language !== 'all') url += `&language=${encodeURIComponent(filters.language)}`;
   if (filters.count_only) url += `&count_only=true`;
   const response = await axios.get(addCacheBuster(url));
   return response.data && response.data.data ? response.data.data : { total: 0, departures: [] };
