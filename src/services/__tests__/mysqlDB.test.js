@@ -82,6 +82,24 @@ describe('MySQL Database Service', () => {
       expect(axios.get.mock.calls[0][0]).not.toContain('view=');
     });
 
+    // Step 6.24: the language filter reaches the server (it was silently dropped since 6.1)
+    it('getTours sends the language filter, encoded, and never "all"', async () => {
+      axios.get.mockResolvedValue({ data: { data: [], pagination: {} } });
+
+      await mysqlDBModule.getTours(false, 1, 500, { upcoming: true, language: 'Spanish', view: 'list' });
+      await mysqlDBModule.getTours(false, 1, 500, { date: '2026-10-18', language: 'Unknown' });
+      await mysqlDBModule.getTours(false, 1, 500, { upcoming: true, language: 'Português' });
+      await mysqlDBModule.getTours(false, 1, 500, { upcoming: true, language: 'all' });
+      await mysqlDBModule.getTours(false, 1, 500, { upcoming: true });
+
+      const urls = axios.get.mock.calls.map((c) => c[0]);
+      expect(urls[0]).toContain('&language=Spanish');
+      expect(urls[1]).toContain('&language=Unknown');
+      expect(urls[2]).toContain('&language=Portugu%C3%AAs');
+      expect(urls[3]).not.toContain('language=');
+      expect(urls[4]).not.toContain('language=');
+    });
+
     it('getTourById calls the single-row endpoint and unwraps data', async () => {
       axios.get.mockResolvedValue({ data: { success: true, data: { id: 42, bokun_data: '{}' } } });
 
@@ -114,6 +132,19 @@ describe('MySQL Database Service', () => {
       const url = axios.get.mock.calls[0][0];
       expect(url).toContain('start_date=2026-09-01');
       expect(url).toContain('end_date=2026-09-21');
+    });
+
+    // Step 6.24: the count / report cover the language the list shows
+    it('sends the language filter with the count and the report', async () => {
+      axios.get.mockResolvedValue({ data: { success: true, data: { total: 3, departures: [] } } });
+
+      const n = await mysqlDBModule.getUnassignedCount({ upcoming: true, language: 'Italian' });
+      await mysqlDBModule.getUnassignedReport({ upcoming: true, language: 'all' });
+
+      expect(n).toBe(3);
+      expect(axios.get.mock.calls[0][0]).toContain('&language=Italian');
+      expect(axios.get.mock.calls[0][0]).toContain('count_only=true');
+      expect(axios.get.mock.calls[1][0]).not.toContain('language=');
     });
   });
 
