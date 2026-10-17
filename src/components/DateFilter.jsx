@@ -20,6 +20,7 @@ const DateFilter = ({
   showDateRange, setShowDateRange,
   rangeStartDate, setRangeStartDate,
   rangeEndDate, setRangeEndDate,
+  variant = 'card', // step 9.2: 'toolbar' = the one-line Tours desktop toolbar (same state, same setters)
 }) => {
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(filterDate || new Date());
@@ -95,50 +96,8 @@ const DateFilter = ({
     },
   ];
 
-  return (
-    <div>
-      <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">
-        {showDateRange ? 'Date Range' : 'Select Date'}
-      </label>
-
-      {showDateRange ? (
-        /* ---- Date range: two native inputs, restyled to match the theme ---- */
-        <div className="flex gap-2 items-center mb-2">
-          <input
-            type="date"
-            value={rangeStartDate}
-            onChange={(e) => setRangeStartDate(e.target.value)}
-            className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
-          />
-          <span className="text-stone-400 text-sm flex-shrink-0">to</span>
-          <input
-            type="date"
-            value={rangeEndDate}
-            min={rangeStartDate || undefined}
-            onChange={(e) => setRangeEndDate(e.target.value)}
-            className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
-          />
-        </div>
-      ) : (
-        /* ---- Single date: themed calendar popover ---- */
-        <div className="relative mb-2" ref={wrapRef}>
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            aria-label="Select date"
-            className={`w-full flex items-center gap-2 px-3 py-2.5 md:py-2 text-base md:text-sm text-left bg-white border rounded-tuscan transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-500 ${
-              open ? 'border-terracotta-400 ring-2 ring-terracotta-200' : 'border-stone-300 hover:border-stone-400'
-            }`}
-          >
-            <FiCalendar className="h-4 w-4 text-terracotta-500 flex-shrink-0" />
-            <span className={singleMode && filterDate ? 'text-stone-900' : 'text-stone-400'}>
-              {triggerLabel}
-            </span>
-          </button>
-
-          {open && (
+  // The themed calendar popover (shared by both variants).
+  const calendar = open && (
             <div
               role="dialog"
               aria-label="Calendar"
@@ -199,7 +158,111 @@ const DateFilter = ({
                 })}
               </div>
             </div>
-          )}
+  );
+
+  // Step 9.2: ‹ date › stepper - one day back / forward from the day shown (today when a list mode is on).
+  const stepDay = (delta) => {
+    const base = singleMode && filterDate ? filterDate : startOfDay(new Date());
+    setFilterDate(startOfDay(addDays(base, delta)));
+    clearFlags();
+    setOpen(false);
+  };
+
+  if (variant === 'toolbar') {
+    const stepBtn = 'h-9 w-9 flex items-center justify-center rounded-lg text-ink-2 hover:bg-section hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent';
+    return (
+      <div className="flex flex-wrap items-center gap-2" data-testid="tours-date-toolbar">
+        <div className="relative flex items-center h-9 border border-line rounded-lg bg-surface" ref={wrapRef}>
+          <button type="button" onClick={() => stepDay(-1)} aria-label="Previous day" className={stepBtn}>
+            <FiChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-label="Select date"
+            className={`h-9 min-w-[150px] px-2 text-sm font-medium tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${singleMode && filterDate ? 'text-ink' : 'text-ink-2'}`}
+          >
+            {triggerLabel}
+          </button>
+          <button type="button" onClick={() => stepDay(1)} aria-label="Next day" className={stepBtn}>
+            <FiChevronRight className="h-4 w-4" />
+          </button>
+          {calendar && <div className="absolute left-0 top-full w-72 z-30">{calendar}</div>}
+        </div>
+        <div className="flex items-center h-9 p-0.5 bg-section rounded-lg" role="group" aria-label="Date mode">
+          {segments.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={s.onClick}
+              aria-pressed={s.active}
+              className={`h-8 px-3 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                s.active ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink'
+              }`}
+            >
+              {s.key === 'range' ? 'Range…' : s.label}
+            </button>
+          ))}
+        </div>
+        {showDateRange && (
+          <div className="flex items-center gap-2" data-testid="tours-range-inputs">
+            <input type="date" aria-label="From" value={rangeStartDate} onChange={(e) => setRangeStartDate(e.target.value)}
+              className="h-9 px-2 text-sm border border-line rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-accent" />
+            <span className="text-ink-2 text-sm">to</span>
+            <input type="date" aria-label="To" value={rangeEndDate} min={rangeStartDate || undefined} onChange={(e) => setRangeEndDate(e.target.value)}
+              className="h-9 px-2 text-sm border border-line rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-accent" />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-stone-700 mb-1.5 md:mb-2">
+        {showDateRange ? 'Date Range' : 'Select Date'}
+      </label>
+
+      {showDateRange ? (
+        /* ---- Date range: two native inputs, restyled to match the theme ---- */
+        <div className="flex gap-2 items-center mb-2">
+          <input
+            type="date"
+            value={rangeStartDate}
+            onChange={(e) => setRangeStartDate(e.target.value)}
+            className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+          />
+          <span className="text-stone-400 text-sm flex-shrink-0">to</span>
+          <input
+            type="date"
+            value={rangeEndDate}
+            min={rangeStartDate || undefined}
+            onChange={(e) => setRangeEndDate(e.target.value)}
+            className="flex-1 min-w-0 px-3 py-2.5 md:py-2 text-base md:text-sm border border-stone-300 rounded-tuscan focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+          />
+        </div>
+      ) : (
+        /* ---- Single date: themed calendar popover ---- */
+        <div className="relative mb-2" ref={wrapRef}>
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-label="Select date"
+            className={`w-full flex items-center gap-2 px-3 py-2.5 md:py-2 text-base md:text-sm text-left bg-white border rounded-tuscan transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-500 ${
+              open ? 'border-terracotta-400 ring-2 ring-terracotta-200' : 'border-stone-300 hover:border-stone-400'
+            }`}
+          >
+            <FiCalendar className="h-4 w-4 text-terracotta-500 flex-shrink-0" />
+            <span className={singleMode && filterDate ? 'text-stone-900' : 'text-stone-400'}>
+              {triggerLabel}
+            </span>
+          </button>
+
+          {calendar}
         </div>
       )}
 

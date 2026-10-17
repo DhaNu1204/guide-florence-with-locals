@@ -128,8 +128,9 @@ describe('Tours language filter (step 6.1)', () => {
   it('a row with no language shows the chip as Unknown', async () => {
     renderTours();
     const chips = await screen.findAllByTestId('tour-language-chip');
-    const texts = chips.map((c) => c.textContent);
-    expect(texts).toContain('English');
-    expect(texts).toContain('Unknown');
+    // Step 9.2: the desktop cell shows a short code ("EN", "—") with the full name as its title.
+    const names = chips.map((c) => c.getAttribute('title') || c.textContent);
+    expect(names).toContain('English');
+    expect(names).toContain('Unknown');
   });
 });

@@ -35,7 +35,9 @@ const ModernLayout = ({ children }) => {
   const mobileHeaderRef = useRef(null);
   useEffect(() => {
     const header = mobileHeaderRef.current;
-    if (!isMobile || !header) return undefined;
+    // Step 9.2: with the sidebar (no phone header) the Tours card list pins its bar at the very top.
+    if (!isMobile) { document.documentElement.style.setProperty('--fwl-mobile-header', '0px'); return undefined; }
+    if (!header) return undefined;
     const apply = () => document.documentElement.style.setProperty('--fwl-mobile-header', `${Math.round(header.getBoundingClientRect().height)}px`);
     apply();
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;

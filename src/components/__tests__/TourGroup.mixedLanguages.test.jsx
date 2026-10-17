@@ -29,7 +29,7 @@ describe('mixed-languages chip (step 6.12)', () => {
     const chip = screen.getByTestId('mixed-languages-chip');
     expect(chip.textContent).toBe('Mixed languages');
     expect(chip.getAttribute('title')).toBe('Languages in this group: English, Italian');
-    expect(screen.getByText('Manual')).toBeTruthy();
+    expect(screen.getByText('Manual group')).toBeTruthy(); // step 9.2 status pill
   });
 
   it('a manual mixed merge shows the chip on the phone card', () => {
@@ -42,14 +42,15 @@ describe('mixed-languages chip (step 6.12)', () => {
   // that last item - after Guide and Notes - and nobody saw it on the 18 Oct 11:30 merge
   // (English + Italian). Inside the table the title never shrinks, so anything after it is cut
   // off on a 1024 px laptop or with the assistant open: the chip sits right after the time.
-  it('desktop: the chip comes right after the time, before the title, PAX, Guide and Notes', () => {
+  // Step 9.2: the row is a fixed nine-column grid that never scrolls sideways (the title shrinks
+  // with an ellipsis), so the Status column - where the chip now sits - is always on screen.
+  it('desktop: the chip is a status pill in the group row itself (Status column, always visible)', () => {
     render(<TourGroup group={group([tour(7241, 'English'), tour(7802, 'Italian'), tour(7839, 'Italian')])} guides={[]} />);
     const chip = screen.getByTestId('mixed-languages-chip');
-    const time = screen.getByText('14:30');
-    expect(time.nextElementSibling).toBe(chip);
-    const follows = (el) => Boolean(chip.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(follows(screen.getByText('Uffizi Gallery Small Group Guided Tour with Tickets'))).toBe(true);
-    expect(follows(screen.getByText(/^\d+ PAX$/))).toBe(true);
+    const row = screen.getByText('14:30').closest('[role="row"]');
+    expect(row.className).toContain('fwl-tours-grid');
+    expect(row.children[6].contains(chip)).toBe(true); // time · tour · channel · lang · guests · guide · STATUS
+    expect(row.contains(screen.getByText('Uffizi Gallery Small Group Guided Tour with Tickets'))).toBe(true);
   });
 
   it('a one-language group has no chip', () => {
