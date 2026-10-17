@@ -341,6 +341,19 @@ Versioned migrations + `schema_migrations` (§3) · front controller with route 
 
 ---
 
+## Phase 9 — Visual redesign (approved 17 Oct 2026)
+Rules and tokens: `docs/DESIGN.md`. Frontend only in every step: no PHP, no API change, no change to data loading. Rollback for each step: revert its merge commit.
+
+### 9.1 Design tokens, font, base components, sidebar — [ ] in progress
+- **Change:** `docs/DESIGN.md` (nine rules + token table) and one line in `CLAUDE.md`. Tokens in `tailwind.config.js` `theme.extend.colors` (page, surface, line, line-soft, muted-row, section, ink, ink-2, ink-3, accent, accent-hover, accent-soft, danger*, warn-*, info-*, note-*, canc-*); existing Tuscan colours kept. Geist 400/500/600 self-hosted (`@fontsource/geist`), default Tailwind sans; `tabular-nums` for times and guests. Base components in `src/components/base/` (`ui/` collides with the existing `UI/` on Windows): Button, IconButton, Pill, Avatar, SectionHeader, Toolbar, one vitest render test each; old `UI/Button` imports untouched. Sidebar (`ModernLayout`) only: same links and routes grouped under OPERATIONS / MONEY / SETUP, "Load measurements" labelled "Diagnostics" (route unchanged), active item accent-soft + accent text + 600, sidebar #FAF9F6 + right border, app background = page. No page content restyled.
+- **Verify:** every page opens for admin, sudesh and viewer with the same menu items as before (only grouping/label differ); role-hidden items still hidden; Geist loads offline after first visit in the PWA; no request to fonts.googleapis.com; `npm run test:run` green incl. new tests; `npm run build` main chunk change reported (target ≤ +25 KB, font files separate); smoke 12/12 staging, then production.
+
+### 9.2 Tours page desktop — [ ] queued
+### 9.3 Tours page phone + bottom tab bar — [ ] queued
+### 9.4 Assign guide sheet — [ ] queued
+
+---
+
 ## Claude Code operating notes
 - `CLAUDE.md` must be rewritten: remove credentials (0.3), put the **step loop** and **smoke test** at the top, link to this plan and the analysis, and cut the changelog-style sections into `docs/CHANGELOG.md` (the file is 58 KB and mostly history).
 - Skills added to the repo under `.claude/skills/`: `implement-step` (the loop above), `staging-deploy` (deploy + smoke test against a target), `bug-triage` (reproduce on staging with SQL/curl before touching code). Use them by name: `/implement-step 3.5`.

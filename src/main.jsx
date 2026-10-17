@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import * as Sentry from "@sentry/react";
 import App from './App';
 import { markEntry } from './utils/perfBeacon';
+// Step 9.1: Geist self-hosted (files land in /assets/, cached by the service worker; CSP font-src 'self').
+import '@fontsource/geist/400.css';
+import '@fontsource/geist/500.css';
+import '@fontsource/geist/600.css';
 import './index.css';
 
 // Step 4.7: field instrumentation (measurement only - see src/utils/perfBeacon.js).
