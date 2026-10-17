@@ -94,6 +94,10 @@ import Tours from '../Tours';
 import { ToastProvider } from '../../components/Toast/ToastProvider';
 import { validateManualTour } from '../../components/ManualTourModal';
 
+// Step 9.2: open the desktop row's â‹¯ menu (its label names the time and the title).
+const openRowMenu = (title) =>
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Actions for .*${title.source}`) }));
+
 const renderPage = () => render(
   <ToastProvider>
     <MemoryRouter>
@@ -122,7 +126,7 @@ describe('Tours - hand-entered departures (step 6.4)', () => {
     renderPage();
     await screen.findAllByText(/Michelangelo's Life and Legacy/);
     const chips = screen.getAllByTestId('tour-language-chip');
-    expect(chips.some((c) => c.textContent === 'English')).toBe(true);
+    expect(chips.some((c) => (c.getAttribute('title') || c.textContent) === 'English')).toBe(true); // step 9.2: "EN" titled English
   });
 
   it('offers Add tour to an admin', async () => {
@@ -138,6 +142,9 @@ describe('Tours - hand-entered departures (step 6.4)', () => {
     expect(screen.queryByTestId('add-manual-tour')).toBeNull();
     expect(screen.queryByTestId('manual-edit-9001')).toBeNull();
     expect(screen.queryByTestId('manual-delete-9001')).toBeNull();
+    openRowMenu(/Michelangelo/); // ... and not in the row menu either
+    expect(screen.queryByTestId('manual-edit-9001')).toBeNull();
+    expect(screen.queryByTestId('manual-delete-9001')).toBeNull();
   });
 
   it('sends the typed departure to the manual endpoint', async () => {
@@ -151,7 +158,7 @@ describe('Tours - hand-entered departures (step 6.4)', () => {
     fireEvent.change(within(form).getByLabelText('Start time'), { target: { value: '09:30' } });
     fireEvent.change(within(form).getByLabelText('Participants'), { target: { value: '2' } });
     fireEvent.change(within(form).getByLabelText('Revenue (optional)'), { target: { value: '418.29' } });
-    fireEvent.click(screen.getByRole('button', { name: /Add tour$/ }));
+    fireEvent.click(within(form).getByRole('button', { name: /Add tour$/ })); // step 9.2: the desktop header has an Add tour too
 
     await waitFor(() => expect(mysqlDB.createManualTour).toHaveBeenCalled());
     const payload = mysqlDB.createManualTour.mock.calls[0][0];
@@ -174,7 +181,7 @@ describe('Tours - hand-entered departures (step 6.4)', () => {
 
     const fill = (label, value) =>
       fireEvent.change(within(form).getByLabelText(label), { target: { value } });
-    const submit = () => fireEvent.click(screen.getByRole('button', { name: /Add tour$/ }));
+    const submit = () => fireEvent.click(within(form).getByRole('button', { name: /Add tour$/ }));
 
     fill('Tour name', 'A hand-entered tour');
     fill('Date', '2026-08-21');
@@ -232,6 +239,7 @@ describe('Tours - hand-entered departures (step 6.4)', () => {
 
     // one click removes the owner's copy - and only his copy
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    openRowMenu(/Michelangelo/); // step 9.2: row actions live in the â‹¯ menu
     fireEvent.click(screen.getByTestId('manual-dedupe-9001'));
     await waitFor(() => expect(mysqlDB.deleteManualTour).toHaveBeenCalledWith(9001));
     confirmSpy.mockRestore();
@@ -241,6 +249,7 @@ describe('Tours - hand-entered departures (step 6.4)', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderPage();
     await screen.findAllByText(/Michelangelo's Life and Legacy/);
+    openRowMenu(/Michelangelo/);
     fireEvent.click(screen.getByTestId('manual-delete-9001'));
     expect(confirmSpy).toHaveBeenCalled();
     expect(mysqlDB.deleteManualTour).not.toHaveBeenCalled();

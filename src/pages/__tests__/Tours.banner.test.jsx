@@ -79,6 +79,19 @@ describe('Tours page banner + group loading (step 5.2)', () => {
     expect(sent.guide_id).toBeUndefined();
   });
 
+  // Step 9.2: the desktop attention strip shows the same server number as the Summary line, and
+  // names the first departure on screen that has no guide.
+  it('the attention strip count equals the summary count', async () => {
+    renderPage();
+    const summary = await screen.findByTestId('need-guide-banner');
+    const strip = screen.getByTestId('attention-strip');
+    const n = (text) => Number(text.match(/\d+/)[0]);
+    expect(n(screen.getByTestId('need-guide-count').textContent)).toBe(n(summary.textContent));
+    expect(n(summary.textContent)).toBe(17);
+    expect(strip.textContent).toContain('23:41 Uffizi Gallery Guided Tour');
+    expect(strip.textContent).toContain('Viator');
+  });
+
   it('loads ALL groups with the same date filter as the tours', async () => {
     renderPage();
     await screen.findByTestId('need-guide-banner');

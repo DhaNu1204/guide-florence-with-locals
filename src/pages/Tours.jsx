@@ -34,8 +34,18 @@ import { mergeTimes, defaultMergeTime } from '../utils/groupTime'; // step 6.16
 import { confirmMergeLanguages } from '../utils/groupLanguages'; // step 6.20
 import { useLiveRefresh } from '../hooks/useLiveRefresh'; // step 4.11: auto-refresh while open
 import UpdatedStamp from '../components/UpdatedStamp';
-import { PinnedTable } from '../components/PinnedColumnHead'; // step 6.23: pinned column titles
-import { CompactCancelledTourRow, CompactCancelledCard, CancelledToggle, toggleId } from '../components/CancelledCompact'; // step 6.23
+import { CompactCancelledCard, toggleId } from '../components/CancelledCompact'; // step 6.23
+// Step 9.2: the desktop layout (docs/DESIGN.md) - header, toolbar, attention strip, day cards, row grid.
+import { downloadParticipantsPdf } from '../services/mysqlDB';
+import { groupDepartureTime } from '../utils/groupTime';
+import ToursHeader from '../components/tours/ToursHeader';
+import ToursToolbar from '../components/tours/ToursToolbar';
+import AttentionStrip from '../components/tours/AttentionStrip';
+import DayCard, { dayCountsText } from '../components/tours/DayCard';
+import BookingRow from '../components/tours/BookingRow';
+import CancelledLine from '../components/tours/CancelledLine';
+import { SectionBar, GuideEditor, RowExtra } from '../components/tours/RowParts';
+import { shortChannel } from '../components/tours/rowText';
 
 // Fixed display order for the Summary category tiles. Buckets with 0 tours are hidden.
 const CATEGORY_ORDER = ['Combo', 'Uffizi', 'Accademia', 'Pitti', 'Other', 'Private Combo', 'Private Uffizi', 'Private Accademia', 'Private Pitti', 'Private (other)'];
@@ -110,18 +120,31 @@ const computeItemStats = (items) => {
   return { activeTours, cancelledCount, pax };
 };
 
-// Step 6.23: the pinned stack on desktop - date row 44 px, section row 36 px, column titles 32 px.
-const STACK_DATE_PX = 44;
-const STACK_SECTION_PX = 36;
-const DESKTOP_COLUMNS = [
-  { label: 'Time', pad: 'px-4', w: 'w-20' },
-  { label: 'Channel', pad: 'px-4', w: 'w-24' },
-  { label: 'Tour', pad: 'px-6', w: 'w-96' },
-  { label: 'Language', pad: 'px-4', w: 'w-24' },
-  { label: 'People', pad: 'px-4', w: 'w-20' },
-  { label: 'Guide', pad: 'px-4', w: 'w-32' },
-  { label: 'Notes', pad: 'px-6', w: '' },
-];
+// The Summary's category rule for one listed item: a group counts under its display name, a
+// cancelled standalone booking not at all, a private booking under "Private <category>".
+const itemCategory = (item) => {
+  if (item._isGroup) return { key: tourCategory(item.group.display_name), pax: countActivePax(item.group.tours) };
+  if (item.cancelled) return null; // skip cancelled standalone tours entirely
+  const cat = tourCategory(item.rule_title || item.title); // step 6.22
+  // Private mirrors the shared categories exactly; only 'Other' -> 'Private (other)'.
+  const key = item.is_private ? (cat === 'Other' ? 'Private (other)' : `Private ${cat}`) : cat;
+  return { key, pax: getParticipantCount(item) };
+};
+
+// Step 9.2: the day header's "Uffizi 7 · Combo 3" - departures per category, in the Summary order.
+const dayCategories = (items) => {
+  const n = {};
+  (items || []).forEach((item) => { const c = itemCategory(item); if (c) n[c.key] = (n[c.key] || 0) + 1; });
+  return CATEGORY_ORDER.filter((c) => n[c]).map((c) => [c, n[c]]);
+};
+
+// Step 7.4 / 9.2: a departure whose EFFECTIVE guide is missing (the unassigned report's rule:
+// neither the group nor any member has one; cancelled bookings are not departures).
+const itemNeedsGuide = (item) => {
+  if (!item._isGroup) return !item.cancelled && !item.guide_id;
+  const active = (item.group.tours || []).filter((t) => t && !t.cancelled);
+  return active.length > 0 && !item.group.guide_id && !active.some((t) => t.guide_id);
+};
 // Step 6.23: "Morning (6:00 – 11:59)" -> ["Morning", "6:00 – 11:59"] for the phone bar.
 const splitPeriod = (period) => {
   const m = String(period || '').match(/^([^(]+?)\s*\((.*)\)\s*$/);
@@ -736,11 +759,7 @@ const Tours = () => {
   // bookings are not departures). Without it this is groupedTours, unchanged.
   const listedTours = useMemo(() => {
     if (!onlyUnassigned) return groupedTours;
-    const needsGuide = (item) => {
-      if (!item._isGroup) return !item.cancelled && !item.guide_id;
-      const active = (item.group.tours || []).filter((t) => t && !t.cancelled);
-      return active.length > 0 && !item.group.guide_id && !active.some((t) => t.guide_id);
-    };
+    const needsGuide = itemNeedsGuide;
     return groupedTours
       .map((d) => ({
         ...d,
@@ -788,19 +807,8 @@ const Tours = () => {
     groupedTours.forEach(dateGroup => {
       dateGroup.periods.forEach(periodGroup => {
         periodGroup.items.forEach(item => {
-          if (item._isGroup) {
-            const g = item.group;
-            add(tourCategory(g.display_name), countActivePax(g.tours));
-          } else {
-            if (item.cancelled) return; // skip cancelled standalone tours entirely
-            const cat = tourCategory(item.rule_title || item.title); // step 6.22
-            let key = cat;
-            if (item.is_private) {
-              // Private mirrors the shared categories exactly; only 'Other' -> 'Private (other)'.
-              key = cat === 'Other' ? 'Private (other)' : `Private ${cat}`;
-            }
-            add(key, getParticipantCount(item));
-          }
+          const c = itemCategory(item); // step 9.2: the same rule, shared with the day headers
+          if (c) add(c.key, c.pax);
         });
       });
     });
@@ -1314,6 +1322,56 @@ const Tours = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Step 9.2: the attention strip's first departure without a guide (in the order on screen) and
+  // its "Assign guide" - the existing inline picker of that row, scrolled into view.
+  const [assignFocus, setAssignFocus] = useState(null); // { key: 't12' | 'g34', nonce }
+  const firstNeedsGuide = useMemo(() => {
+    for (const d of listedTours) {
+      for (const p of d.periods) {
+        const item = p.items.find(itemNeedsGuide);
+        if (!item) continue;
+        if (item._isGroup) {
+          const g = item.group;
+          const channels = [...new Set((g.tours || []).filter((t) => !t.cancelled).map((t) => shortChannel(t.booking_channel)))];
+          return { key: `g${g.id}`, time: groupDepartureTime(g), title: g.display_name, channel: channels.length > 1 ? 'Mixed' : (channels[0] || 'Website'), guests: countActivePax(g.tours) };
+        }
+        return { key: `t${item.id}`, id: item.id, time: getBookingTime(item), title: item.title, channel: shortChannel(item.booking_channel), guests: getParticipantCount(item) };
+      }
+    }
+    return null;
+  }, [listedTours]);
+  const wideListRef = useRef(null);
+  useEffect(() => {
+    if (!assignFocus || !wideListRef.current) return;
+    const sel = assignFocus.key.startsWith('g') ? `[data-group-id="${assignFocus.key.slice(1)}"]` : `[data-row-tour-id="${assignFocus.key.slice(1)}"]`;
+    const el = wideListRef.current.querySelector(sel);
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [assignFocus]);
+  const assignFirst = () => {
+    if (!firstNeedsGuide) return;
+    if (firstNeedsGuide.id) setEditingGuides(prev => ({ ...prev, [firstNeedsGuide.id]: '' }));
+    setAssignFocus({ key: firstNeedsGuide.key, nonce: Date.now() });
+  };
+  // Step 6.8 from the row menu - the same download and message as the old icon button.
+  const downloadSheet = async (unit) => {
+    try {
+      await downloadParticipantsPdf(unit);
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Could not build the participant list');
+    }
+  };
+  const groupProps = (item) => ({
+    group: item.group,
+    guides,
+    onRefresh: () => loadData(true, currentPage, getCurrentFilters()),
+    onError: (msg) => { setError(msg); setTimeout(() => setError(null), 5000); },
+    onSuccess: (msg) => { setSuccess(msg); setTimeout(() => setSuccess(null), 4000); },
+    onTourClick: (tour) => {
+      const fullTour = tours.find(t => t.id === tour.id) || tour;
+      handleRowClick(fullTour);
+    },
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1322,9 +1380,144 @@ const Tours = () => {
     );
   }
 
+  // Step 9.2: one desktop booking row. Every action of the old table row is still reachable: the
+  // row click (booking details), the guide cell (inline picker), the note icon (inline note editor,
+  // under the row), and the ⋯ menu (details, Ask, guide, note, participant sheet, manual edit /
+  // remove / dedupe). Drag-and-drop merging is unchanged; a cancelled line is never draggable.
+  const renderBookingRow = (tour) => {
+    const guideName = guides.find(g => g.id == tour.guide_id)?.name || null;
+    const time = getBookingTime(tour);
+    const language = getTourLanguage(tour);
+    const pax = getParticipantCount(tour);
+    if (tour.cancelled && !expandedCancelled[tour.id]) {
+      return (
+        <CancelledLine
+          key={tour.id}
+          tour={tour}
+          time={time}
+          language={language}
+          pax={pax}
+          guideLabel={guideName || 'Unassigned'}
+          onToggle={() => setExpandedCancelled(prev => toggleId(prev, tour.id))}
+        />
+      );
+    }
+    const startGuide = () => setEditingGuides(prev => ({ ...prev, [tour.id]: tour.guide_id || '' }));
+    const editingNote = editingNotes[tour.id] !== undefined;
+    const toggleNote = () => (editingNote ? handleNotesEditCancel(tour.id)
+      : setEditingNotes(prev => ({ ...prev, [tour.id]: tour.notes || '' })));
+    const manualAdmin = tour.is_manual && isAdmin();
+    const duplicate = tour.possible_duplicate_of && tour.possible_duplicate_of.length > 0;
+    const menuItems = [
+      { label: 'Booking details', onClick: () => handleRowClick(tour) },
+      !tour.guide_id && !tour.cancelled && { label: 'Ask a guide (WhatsApp)', icon: FiMessageCircle, onClick: () => openAskGuide(tour), testId: `ask-guide-${tour.id}` },
+      { label: tour.guide_id ? 'Change guide' : 'Assign guide', onClick: startGuide },
+      { label: tour.notes ? 'Edit note' : 'Add note', onClick: () => setEditingNotes(prev => ({ ...prev, [tour.id]: tour.notes || '' })) },
+      { label: 'Participant list (PDF)', icon: FiDownload, onClick: () => downloadSheet(`t${tour.id}`), testId: `participants-pdf-t${tour.id}` },
+      manualAdmin && { label: 'Edit tour', onClick: () => handleOpenManualEdit(tour), testId: `manual-edit-${tour.id}` },
+      manualAdmin && {
+        label: 'Remove tour', danger: true, testId: `manual-delete-${tour.id}`,
+        onClick: () => handleDeleteManualTour(tour, `Remove the hand-entered tour "${tour.title}" on ${tour.date}? This cannot be undone.`),
+      },
+      manualAdmin && duplicate && {
+        label: 'Same tour — remove mine', danger: true, testId: `manual-dedupe-${tour.id}`,
+        onClick: () => handleDeleteManualTour(tour, 'Bokun is now sending this departure as well. Remove your hand-entered copy and keep the synced one?'),
+      },
+    ];
+    return (
+      <BookingRow
+        key={tour.id}
+        tour={tour}
+        time={time}
+        language={language}
+        pax={pax}
+        paxBreakdown={formatBreakdown(getPaxBreakdown(tour))}
+        guideName={guideName}
+        onEditGuide={startGuide}
+        guideEditor={editingGuides[tour.id] !== undefined ? (
+          <GuideEditor
+            value={editingGuides[tour.id]}
+            options={pickableGuides(guides, tour.guide_id)}
+            onChange={(v) => handleGuideChange(tour.id, v)}
+            onSave={() => saveGuideAssignment(tour.id)}
+            onCancel={() => handleGuideEditCancel(tour.id)}
+            saving={savingChanges[`guide_${tour.id}`]}
+          />
+        ) : null}
+        onEditNote={toggleNote}
+        noteEditor={editingNote ? (
+          <RowExtra>
+            <div className="flex items-start gap-2 max-w-xl">
+              <textarea
+                value={editingNotes[tour.id]}
+                onChange={(e) => handleNotesChange(tour.id, e.target.value)}
+                className="flex-1 px-2 py-1.5 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent resize-y"
+                rows="2"
+                placeholder="Add notes..."
+                aria-label="Notes"
+                autoFocus
+              />
+              <button type="button" onClick={() => saveNotes(tour.id)} disabled={savingChanges[`notes_${tour.id}`]}
+                title="Save notes" className="h-9 px-3 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-50">
+                Save
+              </button>
+              <button type="button" onClick={() => handleNotesEditCancel(tour.id)} title="Cancel"
+                className="h-9 px-3 rounded-lg border border-line text-sm text-ink hover:bg-section">
+                Cancel
+              </button>
+            </div>
+          </RowExtra>
+        ) : null}
+        requestStatus={openRequests[tour.id]}
+        menuItems={menuItems}
+        onOpen={handleRowClick}
+        onCollapseCancelled={tour.cancelled ? () => setExpandedCancelled(prev => toggleId(prev, tour.id)) : undefined}
+        isDragOver={dragState.overTargetId === tour.id && dragState.overTargetType === 'tour'}
+        isDragged={dragState.draggedId === tour.id && dragState.draggedType === 'tour'}
+        dragProps={{
+          draggable: true,
+          onDragStart: (e) => { e.stopPropagation(); handleDragStart(e, tour.id, 'tour'); },
+          onDragEnd: handleDragEnd,
+          onDragOver: (e) => { e.stopPropagation(); handleDragOver(e, tour.id, 'tour'); },
+          onDragLeave: (e) => { e.stopPropagation(); handleDragLeave(e); },
+          onDrop: (e) => { e.stopPropagation(); handleDrop(e, tour.id, 'tour'); },
+        }}
+      />
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-stone-50 p-3 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-4 md:space-y-6">
+    <div className="min-h-screen p-3 md:p-0">
+      {/* Step 9.2: .fwl-tours is a size container - the row list (.fwl-tours-wide) shows when the PAGE
+          has room for the nine columns, the card list (.fwl-tours-narrow) otherwise (src/index.css). */}
+      <div className="fwl-tours max-w-7xl mx-auto space-y-4 md:space-y-6">
+        {/* Step 9.2: desktop header + one toolbar card */}
+        <div className="fwl-tours-wide space-y-4">
+          <ToursHeader
+            loadedAt={loadedAt}
+            loading={loading}
+            autoGrouping={autoGrouping}
+            canAdd={isAdmin()}
+            onAutoGroup={handleAutoGroup}
+            onAdd={handleOpenManualAdd}
+            onSync={handleRefresh}
+            onReport={downloadUnassignedReport}
+          />
+          <ToursToolbar
+            dateProps={{
+              filterDate, setFilterDate, showUpcoming, setShowUpcoming, showPast, setShowPast,
+              showDateRange, setShowDateRange, rangeStartDate, setRangeStartDate, rangeEndDate, setRangeEndDate,
+            }}
+            guides={guides}
+            selectedGuideId={selectedGuideId}
+            onGuide={setSelectedGuideId}
+            languageOptions={languageOptions}
+            selectedLanguage={selectedLanguage}
+            onLanguage={setSelectedLanguage}
+          />
+        </div>
+
+        <div className="fwl-tours-narrow space-y-4">
         {/* Header — responsive */}
         <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
           <div>
@@ -1338,7 +1531,7 @@ const Tours = () => {
             {/* Mobile: selection mode toggle */}
             <button
               onClick={toggleSelectionMode}
-              className={`md:hidden flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation ${
+              className={`flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-tuscan text-sm font-medium transition-colors touch-manipulation ${
                 selectionMode
                   ? 'bg-terracotta-500 text-white'
                   : 'bg-stone-200 text-stone-700'
@@ -1432,7 +1625,7 @@ const Tours = () => {
             />
           </div>
         </Card>
-
+        </div>
 
         {/* Step 5.2 / 4.8: the list could not be loaded completely - say so instead of showing a wrong list */}
         {loadError && (
@@ -1457,8 +1650,15 @@ const Tours = () => {
           </div>
         )}
 
+        {/* Step 9.2: the actionable number first (desktop; the phone keeps its Summary line) */}
+        {!(loadError && !shownAt) && (
+          <div className="fwl-tours-wide">
+            <AttentionStrip count={needGuideCount} first={firstNeedsGuide} onReport={downloadUnassignedReport} onAssign={assignFirst} />
+          </div>
+        )}
+
         {/* Tours by Date */}
-        <div className="space-y-6">
+        <div className="space-y-6" ref={wideListRef}>
           {loadError && !shownAt ? null : listedTours.length === 0 ? (
             <Card>
               <div className="text-center py-8">
@@ -1475,375 +1675,43 @@ const Tours = () => {
 
               return (
                 <div key={dateGroup.date}>
-                  {/* ========== Date Header — desktop, pinned (step 6.23); the phone shows it in the section bar ========== */}
-                  <div
-                    className={`hidden md:flex md:sticky md:top-0 z-20 items-center px-6 rounded-t-tuscan-lg border border-stone-200 ${isTodayDate ? 'bg-gold-50' : 'bg-stone-50'}`}
-                    style={{ height: STACK_DATE_PX }}
-                    data-testid="tours-date-row"
-                  >
-                    <div className="flex flex-1 flex-row justify-between items-center gap-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className={`text-[17px] leading-tight font-bold ${isTodayDate ? 'text-gold-900' : 'text-stone-900'}`}>
-                          {format(dateObj, 'EEEE, d MMMM yyyy')}
-                        </h3>
-                        {isTodayDate && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gold-100 text-gold-800">
-                            Today
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-stone-600">
-                        <CountLabel {...dateStats} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ========== Desktop table wrapper ========== */}
-                  <div className="hidden md:block bg-white border border-stone-200 border-t-0 rounded-b-tuscan-lg shadow-tuscan overflow-clip">
-                  {/* Time Periods — desktop table */}
-                  {dateGroup.periods.map((periodGroup, periodIndex) => (
-                    <div key={`${dateGroup.date}-${periodGroup.period}`}>
-                      {/* Time Period Header — pinned under the date row (step 6.23) */}
-                      <div className="sticky z-20 flex items-center bg-stone-100 px-6 border-b border-stone-200" style={{ top: STACK_DATE_PX, height: STACK_SECTION_PX }}>
-                        <div className="flex flex-1 justify-between items-center">
-                          <h4 className="text-sm font-semibold text-stone-700">
-                            {periodGroup.period}
-                          </h4>
-                          <div className="text-xs text-stone-600">
-                            <CountLabel {...computeItemStats(periodGroup.items)} />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Tours & Groups List — desktop table; column titles pinned (step 6.23) */}
-                      <PinnedTable columns={DESKTOP_COLUMNS} top={STACK_DATE_PX + STACK_SECTION_PX} tableClassName="min-w-full divide-y divide-stone-200">
-                          <tbody className="bg-white divide-y divide-stone-200">
-                            {periodGroup.items.map((item) => {
-                          // === Render a TourGroup ===
-                          if (item._isGroup) {
-                            return (
-                              <tr key={`group-${item.group.id}`} className="!border-0">
-                                <td colSpan="7" className="p-2">
-                                  <TourGroup
-                                    group={item.group}
-                                    guides={guides}
-                                    onRefresh={() => loadData(true, currentPage, getCurrentFilters())}
-                                    onError={(msg) => { setError(msg); setTimeout(() => setError(null), 5000); }}
-                                    onSuccess={(msg) => { setSuccess(msg); setTimeout(() => setSuccess(null), 4000); }}
-                                    onTourClick={(tour) => {
-                                      const fullTour = tours.find(t => t.id === tour.id) || tour;
-                                      handleRowClick(fullTour);
-                                    }}
-                                    draggable={true}
-                                    onDragStart={(e) => handleDragStart(e, item.group.id, 'group')}
-                                    onDragOver={(e) => handleDragOver(e, item.group.id, 'group')}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={(e) => handleDrop(e, item.group.id, 'group')}
-                                    isDragOver={dragState.overTargetId === item.group.id && dragState.overTargetType === 'group'}
-                                  />
-                                </td>
-                              </tr>
-                            );
-                          }
-
-                          // === Render an ungrouped tour row ===
-                          const tour = item;
-                          const guideName = guides.find(g => g.id == tour.guide_id)?.name || 'Unassigned';
-                          const isDraggedOver = dragState.overTargetId === tour.id && dragState.overTargetType === 'tour';
-                          // Step 6.23: a cancelled booking is one grey line until opened.
-                          if (tour.cancelled && !expandedCancelled[tour.id]) {
-                            return (
-                              <CompactCancelledTourRow
-                                key={tour.id}
-                                tour={tour}
-                                time={getBookingTime(tour)}
-                                language={getTourLanguage(tour)}
-                                pax={getParticipantCount(tour)}
-                                guideName={guideName}
-                                onToggle={() => setExpandedCancelled(prev => toggleId(prev, tour.id))}
+                  {/* ========== Desktop: one day card, one row grid (step 9.2; 6.23 stack kept) ========== */}
+                  <div className="fwl-tours-wide">
+                    <DayCard
+                      title={format(dateObj, 'EEEE d MMMM')}
+                      relative={isTodayDate ? 'Today' : isTomorrow(dateGroup.date) ? 'Tomorrow' : null}
+                      stats={dateStats}
+                      categories={dayCategories(dateGroup.periods.flatMap(periodGroup => periodGroup.items))}
+                    >
+                      {dateGroup.periods.map((periodGroup) => {
+                        const [periodName, periodRange] = splitPeriod(periodGroup.period);
+                        return (
+                          <div key={`${dateGroup.date}-${periodGroup.period}`} role="rowgroup">
+                            <SectionBar
+                              period={periodRange ? `${periodName} · ${periodRange}` : periodName}
+                              counts={dayCountsText(computeItemStats(periodGroup.items))}
+                            />
+                            {periodGroup.items.map((item) => (item._isGroup ? (
+                              <TourGroup
+                                key={`group-${item.group.id}`}
+                                {...groupProps(item)}
+                                openGuideNonce={assignFocus && assignFocus.key === `g${item.group.id}` ? assignFocus.nonce : 0}
+                                draggable={true}
+                                onDragStart={(e) => handleDragStart(e, item.group.id, 'group')}
+                                onDragOver={(e) => handleDragOver(e, item.group.id, 'group')}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, item.group.id, 'group')}
+                                isDragOver={dragState.overTargetId === item.group.id && dragState.overTargetType === 'group'}
                               />
-                            );
-                          }
-                          return (
-                            <tr
-                              key={tour.id}
-                              className={`cursor-pointer transition-all ${
-                                isDraggedOver
-                                  ? 'bg-terracotta-50 ring-2 ring-terracotta-200'
-                                  : tour.cancelled
-                                    ? 'bg-red-50'
-                                    : tour.guide_id
-                                      ? 'bg-green-50 hover:bg-green-100'
-                                      : 'hover:bg-stone-50'
-                              } ${
-                                dragState.draggedId === tour.id && dragState.draggedType === 'tour' ? 'opacity-50' : ''
-                              }`}
-                              onClick={() => handleRowClick(tour)}
-                              draggable={true}
-                              onDragStart={(e) => {
-                                e.stopPropagation();
-                                handleDragStart(e, tour.id, 'tour');
-                              }}
-                              onDragEnd={handleDragEnd}
-                              onDragOver={(e) => {
-                                e.stopPropagation();
-                                handleDragOver(e, tour.id, 'tour');
-                              }}
-                              onDragLeave={(e) => {
-                                e.stopPropagation();
-                                handleDragLeave(e);
-                              }}
-                              onDrop={(e) => {
-                                e.stopPropagation();
-                                handleDrop(e, tour.id, 'tour');
-                              }}
-                            >
-                              <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-stone-900">
-                                {getBookingTime(tour)}
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
-                                <div className="truncate">
-                                  {tour.booking_channel || 'Website'}
-                                </div>
-                                {/* Step 6.9: booked through the Viator account he is retiring. */}
-                                <ViatorLegacyChip account={tour.viator_account} className="mt-1" />
-                                {/* Step 6.14: Uffizi + Vasari Corridor rate. */}
-                                <VasariChip tour={tour} className="mt-1 mr-1" />
-                                {/* Step 6.4: this departure was typed in, not synced. */}
-                                {tour.is_manual && (
-                                  <span
-                                    className="inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-tuscan bg-amber-100 text-amber-800"
-                                    data-testid="manual-tour-badge"
-                                    title="Added by hand - the Bokun sync never changes this row"
-                                  >
-                                    Added by hand
-                                  </span>
-                                )}
-                                {tour.possible_duplicate_of && tour.possible_duplicate_of.length > 0 && (
-                                  <span
-                                    className="inline-block mt-1 ml-1 px-2 py-0.5 text-xs font-medium rounded-tuscan bg-red-100 text-red-800"
-                                    data-testid="duplicate-badge"
-                                    title={`Same date, time and PAX as tour ${tour.possible_duplicate_of.join(', ')} - nothing was merged`}
-                                  >
-                                    Possible duplicate
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-sm text-stone-900">
-                                <div className="break-words">
-                                  {tour.title}
-                                  <ParticipantNamesCompact tour={tour} />
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
-                                <span
-                                  className={`inline-block px-2 py-1 text-xs font-medium rounded-tuscan ${
-                                    getTourLanguage(tour)
-                                      ? 'bg-renaissance-50 text-renaissance-700'
-                                      : 'bg-stone-100 text-stone-500'
-                                  }`}
-                                  data-testid="tour-language-chip"
-                                >
-                                  {getTourLanguage(tour) || 'Unknown'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900">
-                                {getParticipantCount(tour)} PAX
-                                {(() => {
-                                  const s = formatBreakdown(getPaxBreakdown(tour));
-                                  return s ? <span className="text-xs text-stone-500 ml-1">({s})</span> : null;
-                                })()}
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-stone-900" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex items-center gap-2">
-                                  {editingGuides[tour.id] !== undefined ? (
-                                    <div className="flex items-center gap-2">
-                                      <select
-                                        value={editingGuides[tour.id]}
-                                        onChange={(e) => handleGuideChange(tour.id, e.target.value)}
-                                        className="px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
-                                      >
-                                        <option value="">Unassigned</option>
-                                        {pickableGuides(guides, tour.guide_id).map(guide => (
-                                          <option key={guide.id} value={guide.id}>{guide.name}</option>
-                                        ))}
-                                      </select>
-                                      <button
-                                        onClick={() => saveGuideAssignment(tour.id)}
-                                        disabled={savingChanges[`guide_${tour.id}`]}
-                                        className="p-2 min-h-[40px] min-w-[40px] text-olive-600 hover:text-olive-800 hover:bg-olive-50 active:bg-olive-100 disabled:opacity-50 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
-                                        title="Save guide assignment"
-                                      >
-                                        <FiSave size={18} />
-                                      </button>
-                                      <button
-                                        onClick={() => setEditingGuides(prev => {
-                                          const newState = { ...prev };
-                                          delete newState[tour.id];
-                                          return newState;
-                                        })}
-                                        className="p-2 min-h-[40px] min-w-[40px] text-stone-400 hover:text-stone-600 hover:bg-stone-100 active:bg-stone-200 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
-                                        title="Cancel"
-                                      >
-                                        <span className="text-lg font-bold">&times;</span>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span
-                                        className="cursor-pointer hover:bg-stone-100 px-2 py-1 rounded-tuscan"
-                                        onClick={() => setEditingGuides(prev => ({
-                                          ...prev,
-                                          [tour.id]: tour.guide_id || ''
-                                        }))}
-                                      >
-                                        {guideName}
-                                      </span>
-                                      {!tour.guide_id && !tour.cancelled && (
-                                        <>
-                                          {openRequests[tour.id] && (
-                                            openRequests[tour.id].status === 'pending' ? (
-                                              <span className="text-xs font-medium text-gold-800 bg-gold-50 border border-gold-300 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                Richiesto a {openRequests[tour.id].guide_name} — in attesa
-                                              </span>
-                                            ) : (
-                                              <span className="text-xs font-medium text-stone-600 bg-stone-100 border border-stone-300 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                Rifiutato da {openRequests[tour.id].guide_name}
-                                              </span>
-                                            )
-                                          )}
-                                          <button
-                                            onClick={() => openAskGuide(tour)}
-                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[32px] text-xs font-medium text-olive-700 bg-olive-50 hover:bg-olive-100 active:bg-olive-200 border border-olive-200 rounded-tuscan transition-colors touch-manipulation"
-                                            title="Ask a guide via WhatsApp"
-                                          >
-                                            <FiMessageCircle size={13} />
-                                            Ask
-                                          </button>
-                                        </>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 text-sm text-stone-900" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex items-start gap-2">
-                                  <div className="flex flex-col gap-2 flex-1">
-                                    {editingNotes[tour.id] !== undefined ? (
-                                      <div className="flex items-center gap-2">
-                                        <textarea
-                                          value={editingNotes[tour.id]}
-                                          onChange={(e) => handleNotesChange(tour.id, e.target.value)}
-                                          className="flex-1 px-2 py-1 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none"
-                                          rows="2"
-                                          placeholder="Add notes..."
-                                        />
-                                        <button
-                                          onClick={() => saveNotes(tour.id)}
-                                          disabled={savingChanges[`notes_${tour.id}`]}
-                                          className="p-2 min-h-[40px] min-w-[40px] text-olive-600 hover:text-olive-800 hover:bg-olive-50 active:bg-olive-100 disabled:opacity-50 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
-                                          title="Save notes"
-                                        >
-                                          <FiSave size={18} />
-                                        </button>
-                                        <button
-                                          onClick={() => setEditingNotes(prev => {
-                                            const newState = { ...prev };
-                                            delete newState[tour.id];
-                                            return newState;
-                                          })}
-                                          className="p-2 min-h-[40px] min-w-[40px] text-stone-400 hover:text-stone-600 hover:bg-stone-100 active:bg-stone-200 rounded-tuscan transition-colors touch-manipulation flex items-center justify-center"
-                                          title="Cancel"
-                                        >
-                                          <span className="text-lg font-bold">&times;</span>
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <div
-                                        className="cursor-pointer hover:bg-stone-100 px-2 py-1 rounded-tuscan min-h-[2rem] flex items-center"
-                                        onClick={() => setEditingNotes(prev => ({
-                                          ...prev,
-                                          [tour.id]: tour.notes || ''
-                                        }))}
-                                      >
-                                        {tour.notes || 'Click to add notes...'}
-                                      </div>
-                                    )}
-
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      {Number(tour.is_private) === 1 && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                          Private
-                                        </span>
-                                      )}
-                                      {isGuidePaid(tour) && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-olive-100 text-olive-800">
-                                          Guide paid
-                                        </span>
-                                      )}
-                                      {tour.cancelled && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-terracotta-100 text-terracotta-800">
-                                          Cancelled
-                                        </span>
-                                      )}
-                                      {tour.cancelled && (
-                                        <CancelledToggle expanded onToggle={() => setExpandedCancelled(prev => toggleId(prev, tour.id))} />
-                                      )}
-                                      {tour.rescheduled && !tour.cancelled && tour.original_date && tour.original_time &&
-                                       (tour.original_date !== tour.date || tour.original_time !== tour.time) && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gold-100 text-gold-800" title={`Originally scheduled for ${tour.original_date} at ${tour.original_time}`}>
-                                          Rescheduled
-                                        </span>
-                                      )}
-                                      {/* Step 6.4: a hand-entered row is the only kind the owner may edit or remove here. */}
-                                      {/* Step 6.8: the participant list for THIS departure, as a PDF for the museum door.
-                                    Icon only - he opens this page on his phone in the street and the row
-                                    must not get any wider. */}
-                                      <ParticipantsButton unit={`t${tour.id}`} onError={setError} />
-                                      {tour.is_manual && isAdmin() && (
-                                        <>
-                                          <button
-                                            onClick={() => handleOpenManualEdit(tour)}
-                                            data-testid={`manual-edit-${tour.id}`}
-                                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-700 hover:bg-stone-200"
-                                          >
-                                            Edit
-                                          </button>
-                                          <button
-                                            onClick={() => handleDeleteManualTour(tour,
-                                              `Remove the hand-entered tour "${tour.title}" on ${tour.date}? This cannot be undone.`)}
-                                            data-testid={`manual-delete-${tour.id}`}
-                                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100"
-                                          >
-                                            Remove
-                                          </button>
-                                        </>
-                                      )}
-                                      {tour.is_manual && isAdmin() && tour.possible_duplicate_of && tour.possible_duplicate_of.length > 0 && (
-                                        <button
-                                          onClick={() => handleDeleteManualTour(tour,
-                                            'Bokun is now sending this departure as well. Remove your hand-entered copy and keep the synced one?')}
-                                          data-testid={`manual-dedupe-${tour.id}`}
-                                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-600 text-white hover:bg-red-700"
-                                        >
-                                          Same tour — remove mine
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                            })}
-                          </tbody>
-                      </PinnedTable>
-                    </div>
-                  ))}
+                            ) : renderBookingRow(item)))}
+                          </div>
+                        );
+                      })}
+                    </DayCard>
                   </div>
 
                   {/* ========== Mobile cards ========== */}
-                  <div className="md:hidden space-y-2">
+                  <div className="fwl-tours-narrow space-y-2">
                   {dateGroup.periods.map((periodGroup) => (
                     <div key={`mobile-${dateGroup.date}-${periodGroup.period}`}>
                       {/* Step 6.23: one pinned two-line bar under the app header - day + counts / section + counts */}
@@ -2025,8 +1893,10 @@ const Tours = () => {
             </Card>
           )}
 
-          {/* Summary — responsive */}
+          {/* Summary — the phone / narrow page only; on desktop its numbers are in the day headers
+              and the attention strip (step 9.2) */}
           {groupedTours.length > 0 && (
+            <div className="fwl-tours-narrow">
             <Card>
               <div className="px-4 md:px-6 py-3 md:py-4">
                 <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2 text-center md:text-left">
@@ -2094,6 +1964,7 @@ const Tours = () => {
                 })()}
               </div>
             </Card>
+            </div>
           )}
         </div>
       </div>
@@ -2140,7 +2011,7 @@ const Tours = () => {
 
       {/* Mobile Merge/Assign Floating Bottom Bar */}
       {selectionMode && selectedItems.length > 0 && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-terracotta-400 shadow-tuscan-xl px-4 py-3 animate-slide-in-bottom safe-area-inset-bottom">
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-terracotta-400 shadow-tuscan-xl px-4 py-3 animate-slide-in-bottom safe-area-inset-bottom">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm font-medium text-stone-700">
               {selectedItems.length} selected

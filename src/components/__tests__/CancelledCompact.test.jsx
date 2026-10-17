@@ -89,14 +89,15 @@ describe('step 6.23 compact cancelled booking', () => {
       ],
     };
     render(<TourGroup group={group} guides={[]} />);
-    expect(screen.getByText('4 PAX')).toBeTruthy();                 // 2 + 2, the cancelled 5 never counts
-    fireEvent.click(screen.getByText(COMBO, { selector: 'span' }).closest('div.cursor-pointer'));
+    const guests = () => screen.getByTestId(`group-guests-${group.id}`).textContent;
+    expect(guests()).toMatch(/^4 \/ /);                              // 2 + 2, the cancelled 5 never counts (step 9.2: "4 / max")
+    fireEvent.click(screen.getByRole('button', { name: 'Show bookings in this group' })); // step 9.2 chevron
     const compact = screen.getByTestId('cancelled-compact-7615');
-    expect(compact.style.height).toBe('40px');
+    expect(compact.className).toContain('h-10'); // 40 px
     fireEvent.click(within(compact).getByRole('button', { name: 'Show cancelled booking details' }));
     expect(screen.queryByTestId('cancelled-compact-7615')).toBeNull();
     const hide = screen.getByRole('button', { name: 'Hide cancelled booking details' });
-    expect(screen.getByText('4 PAX')).toBeTruthy();                 // opening changed no count
+    expect(guests()).toMatch(/^4 \/ /);                              // opening changed no count
     fireEvent.click(hide);
     expect(screen.getByTestId('cancelled-compact-7615')).toBeTruthy();
   });

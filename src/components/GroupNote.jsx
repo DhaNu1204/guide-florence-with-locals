@@ -15,7 +15,9 @@ export function cleanGroupNote(text) {
   return t === '' ? null : t;
 }
 
-const GroupNote = ({ groupId, note, onSaved, variant = 'row' }) => {
+// Step 9.2: the note's state and actions, shared by the inline component below and the desktop
+// group row (note icon in the grid, editor under the row). Behaviour unchanged.
+export function useGroupNote(groupId, note, onSaved) {
   const [saved, setSaved] = useState(cleanGroupNote(note));
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -80,6 +82,57 @@ const GroupNote = ({ groupId, note, onSaved, variant = 'row' }) => {
     }
   };
 
+  return { saved, editing, draft, setDraft, saving, error, startEdit, cancel, save, onKeyDown, textareaRef, fieldId };
+}
+
+/** The inline editor (label, textarea, Save / Cancel). */
+export const GroupNoteEditor = ({ note: n }) => {
+  const { draft, setDraft, onKeyDown, textareaRef, fieldId, error, save, saving, cancel } = n;
+  return (
+    <>
+      <label htmlFor={fieldId} className="block text-xs font-medium text-stone-600 mb-1">
+        Note for this group
+      </label>
+      <textarea
+        id={fieldId}
+        ref={textareaRef}
+        rows={3}
+        maxLength={2000}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={onKeyDown}
+        className="w-full px-2 py-1.5 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-y"
+        placeholder="e.g. Meet at Loggia dei Lanzi 9:15"
+      />
+      {error && (
+        <p role="alert" className="mt-1 text-xs text-terracotta-700">{error}</p>
+      )}
+      <div className="mt-1.5 flex gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="min-h-[44px] px-3 rounded-tuscan bg-terracotta-600 text-white text-sm font-medium hover:bg-terracotta-700 disabled:opacity-50 touch-manipulation"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          disabled={saving}
+          className="min-h-[44px] px-3 rounded-tuscan border border-stone-300 text-stone-700 text-sm hover:bg-stone-100 disabled:opacity-50 touch-manipulation"
+        >
+          Cancel
+        </button>
+      </div>
+    </>
+  );
+};
+
+const GroupNote = ({ groupId, note, onSaved, variant = 'row' }) => {
+  const n = useGroupNote(groupId, note, onSaved);
+  const { saved, editing, startEdit } = n;
+
   // Clicks, taps and keys inside the note never reach the row (no expand/collapse, no drag).
   const stop = (e) => e.stopPropagation();
   const wrapperProps = {
@@ -94,41 +147,7 @@ const GroupNote = ({ groupId, note, onSaved, variant = 'row' }) => {
   if (editing) {
     return (
       <div {...wrapperProps}>
-        <label htmlFor={fieldId} className="block text-xs font-medium text-stone-600 mb-1">
-          Note for this group
-        </label>
-        <textarea
-          id={fieldId}
-          ref={textareaRef}
-          rows={3}
-          maxLength={2000}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          className="w-full px-2 py-1.5 border border-stone-300 rounded-tuscan text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-y"
-          placeholder="e.g. Meet at Loggia dei Lanzi 9:15"
-        />
-        {error && (
-          <p role="alert" className="mt-1 text-xs text-terracotta-700">{error}</p>
-        )}
-        <div className="mt-1.5 flex gap-2">
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving}
-            className="min-h-[44px] px-3 rounded-tuscan bg-terracotta-600 text-white text-sm font-medium hover:bg-terracotta-700 disabled:opacity-50 touch-manipulation"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          <button
-            type="button"
-            onClick={cancel}
-            disabled={saving}
-            className="min-h-[44px] px-3 rounded-tuscan border border-stone-300 text-stone-700 text-sm hover:bg-stone-100 disabled:opacity-50 touch-manipulation"
-          >
-            Cancel
-          </button>
-        </div>
+        <GroupNoteEditor note={n} />
       </div>
     );
   }

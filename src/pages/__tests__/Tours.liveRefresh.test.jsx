@@ -78,7 +78,7 @@ describe('Tours page - step 4.11 silent refresh', () => {
       </ToastProvider>
     );
     await screen.findAllByText('Portuguese');
-    expect(screen.getByTestId('updated-stamp')).toBeInTheDocument();
+    expect(screen.getAllByTestId('updated-stamp').length).toBeGreaterThan(0); // step 9.2: desktop + phone header
 
     // something on the page has focus (a stand-in for a note being typed)
     const field = document.createElement('input');

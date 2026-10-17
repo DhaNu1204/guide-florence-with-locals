@@ -132,23 +132,27 @@ describe('group note inside the group row / card (step 6.13)', () => {
 
   it('desktop: clicking the note does not expand the group; the row still does', () => {
     render(<TourGroup group={group({ notes: 'Meet at Loggia 9:15' })} guides={[]} />);
+    // step 9.2: the chevron's label tells whether the members are shown
+    const expandedNow = () => Boolean(screen.queryByRole('button', { name: 'Hide bookings in this group' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit group note' }));
-    expect(screen.queryByText('Customer')).toBeNull(); // expanded table header absent
+    expect(expandedNow()).toBe(false);
     expect(screen.getByLabelText('Note for this group')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Note for this group'));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText('Customer')).toBeNull();
+    expect(expandedNow()).toBe(false);
+    expect(screen.getByText(/Note: .Meet at Loggia 9:15./)).toBeTruthy(); // the saved note is in the meta line
     fireEvent.click(screen.getByText('14:30'));
-    expect(screen.getByText('Customer')).toBeTruthy();
+    expect(expandedNow()).toBe(true);
   });
 
-  it('desktop: an empty group shows the dashed add button, 44px tall', () => {
+  // Step 9.2: the dashed box became the quiet note icon (faint without a note); same editor.
+  it('desktop: an empty group shows a faint note icon that opens the editor', () => {
     render(<TourGroup group={group()} guides={[]} />);
     const add = screen.getByRole('button', { name: /add note for this group/i });
-    expect(add.className).toContain('border-dashed');
-    expect(add.className).toContain('min-h-[44px]');
+    expect(add.className).not.toContain('bg-note-bg');
     fireEvent.click(add);
-    expect(screen.queryByText('Customer')).toBeNull();
+    expect(screen.getByLabelText('Note for this group')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Hide bookings in this group' })).toBeNull();
   });
 
   it('phone card: the note sits full width and a tap on it does not expand the card', () => {

@@ -3,3 +3,23 @@
 @tailwind utilities;
 
  
+/* Step 9.2 (docs/DESIGN.md rule 3 + 4): the Tours desktop row grid. The switch between the row
+   list and the card list follows the width the PAGE has (container query), not the window: the
+   256 px sidebar and the assistant drawer take room the window width does not show. Columns:
+   time · tour · channel · lang · guests · guide · status · note · menu. */
+.fwl-tours { container: fwl-tours / inline-size; }
+.fwl-tours-wide { display: none; }
+@container fwl-tours (min-width: 870px) {
+  .fwl-tours-wide { display: block; }
+  .fwl-tours-narrow { display: none; }
+}
+.fwl-tours-grid {
+  display: grid;
+  grid-template-columns: 56px minmax(150px, 1fr) 80px 44px 64px 160px 120px 32px 32px;
+  column-gap: 12px;
+  align-items: center;
+  padding: 0 16px;
+}
+@container fwl-tours (min-width: 1060px) {
+  .fwl-tours-grid { grid-template-columns: 56px minmax(260px, 1fr) 88px 48px 76px 188px 150px 32px 32px; }
+}

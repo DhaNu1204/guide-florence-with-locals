@@ -19,12 +19,12 @@ const Bubble = ({ onClick, loading }) => (
     onClick={onClick}
     aria-label={loading ? 'Loading assistant' : 'Assistant'}
     title="Assistant"
-    className="fixed right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-terracotta-500 text-white shadow-tuscan-lg hover:bg-terracotta-600 active:scale-95 touch-manipulation"
+    className="fixed right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-ink text-white shadow-lg hover:bg-ink/90 active:scale-95 touch-manipulation"
     style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
   >
     {loading
       ? <span className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
-      : <FiMessageCircle className="text-2xl" />}
+      : <FiMessageCircle className="text-xl" />}
   </button>
 );
 
