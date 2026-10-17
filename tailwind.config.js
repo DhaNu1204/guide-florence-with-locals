@@ -6,8 +6,39 @@ export default {
   ],
   theme: {
     extend: {
+      // Step 9.1: Geist (self-hosted, src/main.jsx) is the default sans.
+      fontFamily: {
+        sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"'],
+      },
       // Tuscan Color Palette - Inspired by Florence
       colors: {
+        // Step 9.1: redesign tokens (docs/DESIGN.md). The Tuscan scales below stay for pages
+        // not yet redesigned.
+        page: '#F6F5F2',
+        surface: '#FFFFFF',
+        line: '#E6E3DD',
+        'line-soft': '#EEECE7',
+        'muted-row': '#FBFAF8',
+        section: { DEFAULT: '#F3F1ED', phone: '#EFEDE8' },
+        ink: '#1D1C1A',
+        'ink-2': '#6B6862',
+        'ink-3': '#8A867F',
+        accent: '#B8481F',
+        'accent-hover': '#A8401B',
+        'accent-soft': '#F6E6DE',
+        danger: '#B42318',
+        'danger-strong': '#912018',
+        'danger-pill': '#FEE4E2',
+        'danger-strip': '#FEF3F2',
+        'danger-border': '#F9D2CD',
+        'warn-bg': '#FEF0C7',
+        'warn-ink': '#7A2E0E',
+        'info-bg': '#E8EEF9',
+        'info-ink': '#1F4FA3',
+        'note-bg': '#FEF7E0',
+        'note-ink': '#7A4A06',
+        'canc-bg': '#EFEDE9',
+        'canc-ink': '#5F5C56',
         // Terracotta - Warm reds/oranges (Florentine rooftops)
         terracotta: {
           50: '#fef6f3',

@@ -57,6 +57,7 @@ Full detail with the reasoning in **`docs/DOMAIN_RULES.md`** — read the sectio
 ## 6. Conventions
 - PHP: prepared statements only; generic error messages to the client, details to `error_log`; every new endpoint starts with `require_once 'config.php'; require_once 'Middleware.php'; Middleware::requireAuth($conn);` and `requireRole` for writes; response envelope `{success, data}` / `{success:false, error}` with a real HTTP status.
 - New tables/columns: a numbered file in `database/migrations/` **and** (until Phase 8) the existing `CREATE TABLE IF NOT EXISTS` self-provision pattern.
+- UI work follows docs/DESIGN.md
 - React: functional components + hooks; Tailwind Tuscan theme (terracotta `#C75D3A`, cream `#FAF6F0`); mobile-first, 44px touch targets; dates via the shared `parseYmd/formatYmd` helpers (step 5.6) — never `new Date('YYYY-MM-DD')`.
 - Tests: Vitest + RTL in `__tests__/`; add one when you touch `src/utils`, `src/services` or logic-bearing components. `npm run test:run` must be green before any deploy.
 - Commits: `step <id>: <what>` with the verified values in the body. One step per PR/merge.

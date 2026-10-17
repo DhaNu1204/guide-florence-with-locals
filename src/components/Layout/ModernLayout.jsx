@@ -75,119 +75,38 @@ const ModernLayout = ({ children }) => {
     navigate('/login', { replace: true });
   };
 
-  // Tuscan-themed menu items
+  // Step 9.1: same links and routes as before, grouped (docs/DESIGN.md). Only "Load measurements"
+  // is relabelled ("Diagnostics"); its route is unchanged.
+  const NAV_GROUPS = ['Operations', 'Money', 'Setup'];
   const menuItems = [
+    { title: 'Today', icon: FiClock, path: '/today', group: 'Operations' }, // step 4.6: the light page the installed app opens on
+    { title: 'Dashboard', icon: FiHome, path: '/', group: 'Operations' },
+    { title: 'Tours', icon: FiCalendar, path: '/tours', group: 'Operations' },
+    { title: 'Guides', icon: FiUsers, path: '/guides', group: 'Operations' },
+    { title: 'Priority Tickets', icon: FiTag, path: '/priority-tickets', group: 'Operations' },
+    { title: 'Tickets', icon: BsBoxSeam, path: '/tickets', group: 'Operations' },
+    { title: 'Radios', icon: FiRadio, path: '/radios', group: 'Operations', adminOnly: true },
+    { title: 'Payments', icon: FiDollarSign, path: '/payments', group: 'Money' },
+    { title: 'Guide Reports', icon: FiClipboard, path: '/guide-reports', group: 'Money' },
     {
-      title: 'Today', // step 4.6: the light page the installed app opens on
-      icon: FiClock,
-      path: '/today',
-      color: 'text-terracotta-600',
-      bgColor: 'bg-terracotta-50',
-      borderColor: 'border-terracotta-500'
-    },
-    {
-      title: 'Dashboard',
-      icon: FiHome,
-      path: '/',
-      color: 'text-terracotta-600',
-      bgColor: 'bg-terracotta-50',
-      borderColor: 'border-terracotta-500'
-    },
-    {
-      title: 'Tours',
-      icon: FiCalendar,
-      path: '/tours',
-      color: 'text-olive-600',
-      bgColor: 'bg-olive-50',
-      borderColor: 'border-olive-500'
-    },
-    {
-      title: 'Guides',
-      icon: FiUsers,
-      path: '/guides',
-      color: 'text-olive-600',
-      bgColor: 'bg-olive-50',
-      borderColor: 'border-olive-500'
-    },
-    {
-      title: 'Priority Tickets',
-      icon: FiTag,
-      path: '/priority-tickets',
-      color: 'text-gold-600',
-      bgColor: 'bg-gold-50',
-      borderColor: 'border-gold-500'
-    },
-    {
-      title: 'Tickets',
-      icon: BsBoxSeam,
-      path: '/tickets',
-      color: 'text-gold-600',
-      bgColor: 'bg-gold-50',
-      borderColor: 'border-gold-500'
-    },
-    {
-      title: 'Payments',
-      icon: FiDollarSign,
-      path: '/payments',
-      color: 'text-olive-600',
-      bgColor: 'bg-olive-50',
-      borderColor: 'border-olive-500'
-    },
-    {
-      title: 'Guide Reports',
-      icon: FiClipboard,
-      path: '/guide-reports',
-      color: 'text-renaissance-600',
-      bgColor: 'bg-renaissance-50',
-      borderColor: 'border-renaissance-500'
-    },
-    {
-      title: 'Daily P&L',
-      icon: FiTrendingUp,
-      path: '/daily-pnl',
-      color: 'text-terracotta-600',
-      bgColor: 'bg-terracotta-50',
-      borderColor: 'border-terracotta-500',
+      title: 'Daily P&L', icon: FiTrendingUp, path: '/daily-pnl', group: 'Money',
       ownerOnly: true // step 6.10: money is the owner's alone, not every admin's
     },
     {
-      title: 'Load measurements',
-      icon: FiActivity,
-      path: '/load-measurements',
-      color: 'text-stone-600',
-      bgColor: 'bg-stone-50',
-      borderColor: 'border-stone-400',
-      adminOnly: true
-    },
-    {
-      title: 'Radios',
-      icon: FiRadio,
-      path: '/radios',
-      color: 'text-terracotta-600',
-      bgColor: 'bg-terracotta-50',
-      borderColor: 'border-terracotta-500',
-      adminOnly: true
-    },
-    {
-      title: 'Products',
-      icon: FiPackage,
-      path: '/products',
-      color: 'text-stone-600',
-      bgColor: 'bg-stone-50',
-      borderColor: 'border-stone-500',
+      title: 'Products', icon: FiPackage, path: '/products', group: 'Setup',
       adminOnly: true // step 7.2b: product type + duration settings (AdminRoute-guarded)
     },
     {
-      title: 'Bokun Integration',
-      icon: FiRefreshCw,
-      path: '/bokun-integration',
-      color: 'text-renaissance-600',
-      bgColor: 'bg-renaissance-50',
-      borderColor: 'border-renaissance-500',
+      title: 'Bokun Integration', icon: FiRefreshCw, path: '/bokun-integration', group: 'Setup',
       adminOnly: true // step 1.1: the page is AdminRoute-guarded, the menu must match
-    }
+    },
+    { title: 'Diagnostics', icon: FiActivity, path: '/load-measurements', group: 'Setup', adminOnly: true }
   ].filter((item) => (!item.adminOnly || userInfo.role === 'admin')
                   && (!item.ownerOnly || (typeof canSeePnl === 'function' && canSeePnl())));
+  // A group with nothing visible for this user (viewer: Setup) is not shown at all.
+  const navSections = NAV_GROUPS
+    .map((group) => ({ group, items: menuItems.filter((item) => item.group === group) }))
+    .filter((section) => section.items.length > 0);
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -195,11 +114,11 @@ const ModernLayout = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-tuscan-gradient">
+    <div className="min-h-screen bg-page">
       {/* Desktop Sidebar */}
       <aside className={`
-        fixed top-0 left-0 z-40 h-full bg-white shadow-tuscan-xl transition-all duration-300 ease-in-out
-        border-r border-stone-200/50
+        fixed top-0 left-0 z-40 h-full bg-[#FAF9F6] transition-all duration-300 ease-in-out
+        border-r border-line
         ${isMobile ? 'hidden' : isSidebarOpen ? 'w-64' : 'w-20'}
       `}>
         {/* Sidebar Header */}
@@ -237,32 +156,42 @@ const ModernLayout = ({ children }) => {
           </div>
         )}
 
-        {/* Navigation Menu */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                title={!isSidebarOpen ? item.title : undefined}
-                className={`
-                  flex items-center px-3 py-3 rounded-tuscan-lg transition-all duration-200
-                  ${!isSidebarOpen && !isMobile ? 'justify-center' : 'space-x-3'}
-                  ${active
-                    ? `${item.bgColor} ${item.color} border-l-4 ${item.borderColor} shadow-tuscan-sm`
-                    : 'hover:bg-stone-100 text-stone-600 hover:text-stone-800'
-                  }
-                `}
-              >
-                <Icon className={`text-xl flex-shrink-0 ${active ? item.color : ''}`} />
-                {(isSidebarOpen || isMobile) && (
-                  <span className="font-medium">{item.title}</span>
-                )}
-              </Link>
-            );
-          })}
+        {/* Navigation Menu (step 9.1: grouped under small labels) */}
+        <nav className="flex-1 p-3 overflow-y-auto">
+          {navSections.map(({ group, items }) => (
+            <div key={group} className="mb-2">
+              {isSidebarOpen ? (
+                <p className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{group}</p>
+              ) : (
+                <div className="mx-3 my-2 border-t border-line" aria-hidden="true" />
+              )}
+              <div className="space-y-0.5">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.path);
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      title={!isSidebarOpen ? item.title : undefined}
+                      aria-current={active ? 'page' : undefined}
+                      className={`
+                        flex items-center h-9 px-3 rounded-lg text-sm transition-colors
+                        ${!isSidebarOpen ? 'justify-center' : 'gap-3'}
+                        ${active
+                          ? 'bg-accent-soft text-accent-hover font-semibold'
+                          : 'text-ink-2 font-medium hover:bg-section hover:text-ink'
+                        }
+                      `}
+                    >
+                      <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                      {isSidebarOpen && <span>{item.title}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Sidebar Footer - User Profile & Logout */}
@@ -334,7 +263,7 @@ const ModernLayout = ({ children }) => {
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity duration-300"
             onClick={() => setIsMobileMenuOpen(false)}
           />
-          <div className="fixed top-0 left-0 w-80 max-w-[85vw] h-full bg-white z-50 shadow-tuscan-xl transform transition-transform duration-300 ease-out animate-slide-in-left">
+          <div className="fixed top-0 left-0 w-80 max-w-[85vw] h-full bg-[#FAF9F6] z-50 shadow-tuscan-xl transform transition-transform duration-300 ease-out animate-slide-in-left">
             {/* Mobile Menu Header */}
             <div className="flex items-center justify-between p-4 border-b border-stone-200">
               <div className="flex items-center space-x-3">
@@ -354,29 +283,37 @@ const ModernLayout = ({ children }) => {
               </button>
             </div>
 
-            {/* Mobile Navigation */}
-            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-              {menuItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.path);
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={`
-                      flex items-center space-x-3 px-4 py-3 min-h-[48px] rounded-tuscan-lg transition-all duration-200 touch-manipulation active:scale-[0.98]
-                      ${active
-                        ? `${item.bgColor} ${item.color} border-l-4 ${item.borderColor} shadow-tuscan-sm`
-                        : 'hover:bg-stone-100 active:bg-stone-200 text-stone-600 hover:text-stone-800'
-                      }
-                    `}
-                  >
-                    <Icon className={`text-xl flex-shrink-0 ${active ? item.color : ''}`} />
-                    <span className="font-medium">{item.title}</span>
-                  </Link>
-                );
-              })}
+            {/* Mobile Navigation (step 9.1: grouped under small labels, 44 px rows) */}
+            <nav className="flex-1 p-3 overflow-y-auto">
+              {navSections.map(({ group, items }) => (
+                <div key={group} className="mb-2">
+                  <p className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{group}</p>
+                  <div className="space-y-0.5">
+                    {items.map((item) => {
+                      const Icon = item.icon;
+                      const active = isActive(item.path);
+                      return (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          aria-current={active ? 'page' : undefined}
+                          className={`
+                            flex items-center gap-3 px-4 min-h-[44px] rounded-lg text-sm transition-colors touch-manipulation
+                            ${active
+                              ? 'bg-accent-soft text-accent-hover font-semibold'
+                              : 'text-ink-2 font-medium hover:bg-section active:bg-section hover:text-ink'
+                            }
+                          `}
+                        >
+                          <Icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
+                          <span>{item.title}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </nav>
 
             {/* Mobile Menu Footer - User Profile & Logout */}
